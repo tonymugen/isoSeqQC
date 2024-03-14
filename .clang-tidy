@@ -1,0 +1,31 @@
+Checks: "*,
+        -abseil-*,
+        -altera-*,
+        -android-*,
+		-boost-*,
+		-darwin-*,
+        -fuchsia-*,
+        -google-*,
+		-hicpp-*,
+		-linuxkernel-*,
+        -llvm*,
+        -modernize-use-trailing-return-type,
+		-mpi-*,
+		-objc-*,
+		-openmp-*,
+        -zircon-*,
+        -readability-static-accessed-through-instance,
+        -readability-avoid-const-params-in-decls,
+		-cppcoreguidelines-pro-bounds-pointer-arithmetic,
+		-cppcoreguidelines-pro-type-reinterpret-cast,
+		-misc-no-recursion
+"
+WarningsAsErrors: ''
+HeaderFilterRegex: ''
+FormatStyle:     none
+CheckOptions:
+ - key: readability-magic-numbers.IgnoredFloatingPointValues
+   value: '1.0;0.5;2.0;'
+ - key: cppcoreguidelines-avoid-magic-numbers.IgnoredFloatingPointValues
+   value: '1.0;0.5;2.0;'
+
