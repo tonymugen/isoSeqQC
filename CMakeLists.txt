@@ -69,16 +69,24 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 else()
 	message(AUTHOR_WARNING "No compiler warnings set for CXX compiler: ${CMAKE_CXX_COMPILER_ID}")
 endif()
-Include(FetchContent)
-set (FETCHCONTENT_QUIET FALSE)
-#FetchContent_Declare(
-#	brutilities
-#	GIT_REPOSITORY https://github.com/tonymugen/bayesicUtilities
-#	GIT_TAG main
-#	GIT_PROGRESS TRUE
-#	SYSTEM            # to disable warnings
-#)
-#FetchContent_MakeAvailable(brutilities)
+include(ExternalProject)
+ExternalProject_Add(htslib
+	#SOURCE_DIR             htslib
+	GIT_REPOSITORY         https://github.com/samtools/htslib
+	GIT_TAG                6a7d33abc6cae840023868ccdd946d0d8759f259
+	GIT_SUBMODULES_RECURSE TRUE
+	GIT_PROGRESS           TRUE
+	CONFIGURE_COMMAND      autoreconf -i <SOURCE_DIR>
+	COMMAND                <SOURCE_DIR>/configure
+	BUILD_COMMAND          make
+	INSTALL_COMMAND        ""  # no need to install system-wide
+	EXCLUDE_FROM_ALL       TRUE
+	SYSTEM                 # to disable warnings
+)
+ExternalProject_Get_Property(htslib BINARY_DIR)
+set(htslib_BINARY_DIR ${BINARY_DIR})
+ExternalProject_Get_Property(htslib SOURCE_DIR)
+set(htslib_SOURCE_DIR ${SOURCE_DIR})
 
 #
 # Tests with Catch2
@@ -88,6 +96,8 @@ option(BUILD_TESTS
 	OFF
 )
 if(PROJECT_IS_TOP_LEVEL AND BUILD_TESTS)
+	Include(FetchContent)
+	set (FETCHCONTENT_QUIET FALSE)
 	FetchContent_Declare(
 	  Catch2
 	  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
@@ -195,11 +205,15 @@ if(PROJECT_IS_TOP_LEVEL AND BUILD_TESTS)
 	add_executable(tests
 		tests/tests.cpp
 	)
+	add_dependencies(tests
+		htslib
+	)
 	target_link_libraries(tests
-		#PRIVATE vash
+		PRIVATE ${htslib_BINARY_DIR}/libhts.so
 		PRIVATE Catch2::Catch2WithMain
 	)
 	target_include_directories(tests
+		PRIVATE ${htslib_SOURCE_DIR}/htslib
 		PRIVATE include
 	)
 	include(CTest)
