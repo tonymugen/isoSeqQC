@@ -27,8 +27,3 @@
  *
  */
 
-#pragma once
-
-namespace IsoSeqSpace {
-
-}

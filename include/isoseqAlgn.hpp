@@ -27,3 +27,54 @@
  *
  */
 
+#pragma once
+
+#include <cstdint>
+#include <vector>
+#include <string>
+
+namespace isaSpace {
+	class SAMrecord;
+
+	/** \brief Summary of a SAM record
+	 *
+	 * Stores relevant information from a SAM format alignment record.
+	 *
+	 */
+	class SAMrecord {
+	public:
+		/** \brief Default constructor */
+		SAMrecord() = default;
+		/** \brief Copy constructor
+		 *
+		 * \param[in] toCopy object to copy
+		 */
+		SAMrecord(const SAMrecord &toCopy) = default;
+		/** \brief Copy assignment operator
+		 *
+		 * \param[in] toCopy object to copy
+		 * \return `SAMrecord` object
+		 */
+		SAMrecord& operator=(const SAMrecord &toCopy) = default;
+		/** \brief Move constructor
+		 *
+		 * \param[in] toMove object to move
+		 */
+		SAMrecord(SAMrecord &&toMove) noexcept = default;
+		/** \brief Move assignment operator
+		 *
+		 * \param[in] toMove object to move
+		 * \return `SAMrecord` object
+		 */
+		SAMrecord& operator=(SAMrecord &&toMove) noexcept = default;
+		/** \brief Destructor */
+		~SAMrecord() = default;
+	private:
+		/** \brief Read (i.e. query) name */
+		std::string readName_;
+		/** \brief Mapping quality */
+		uint8_t mappingQuality_ = 0;
+		/** \brief CIGAR string */
+		std::vector<uint32_t> cigar_;
+	};
+}
