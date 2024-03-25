@@ -23,7 +23,34 @@
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
  * \version 0.1
  *
- * Interface definitions of classes that take `.bam` files with isoSeq alignments and identify potential fused transcripts.
+ * Implementation of classes that take `.bam` files with isoSeq alignments and identify potential fused transcripts.
  *
  */
 
+#include <cstdint>
+#include <memory>
+#include <vector>
+#include <array>
+
+#include "sam.h"
+
+#include "isoseqAlgn.hpp"
+
+using namespace isaSpace;
+
+SAMrecord::SAMrecord(const std::vector< std::unique_ptr<bam1_t> > &alignmentGroup) : 
+			readName_{bam_get_qname( alignmentGroup.front() )}, // NOLINT
+			mappingQuality_{alignmentGroup.front()->core.qual} {
+
+	constexpr std::array<char, 2> alignmentScoreToken{'A', 'S'};
+	for (const auto &eachAlignment : alignmentGroup) {
+		cigar_.emplace_back(bam_get_cigar(eachAlignment), bam_get_cigar(eachAlignment) + eachAlignment->core.n_cigar); // NOLINT
+		positionOnReference_.emplace_back(eachAlignment->core.pos);
+		auto *const alignmentScoreRecord{bam_aux_get( eachAlignment.get(), alignmentScoreToken.data() )};
+		if (alignmentScoreRecord == nullptr) {
+			alignmentScore_.emplace_back(0);
+		} else {
+			alignmentScore_.emplace_back( static_cast<uint16_t>( bam_aux2i(alignmentScoreRecord) ) );
+		}
+	}
+}

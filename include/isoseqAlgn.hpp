@@ -23,15 +23,18 @@
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
  * \version 0.1
  *
- * Implementation of classes that take `.bam` files with isoSeq alignments and identify potential fused transcripts.
+ * Interface definitions of classes that take `.bam` files with isoSeq alignments and identify potential fused transcripts.
  *
  */
 
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 #include <string>
+
+#include "sam.h"
 
 namespace isaSpace {
 	class SAMrecord;
@@ -39,12 +42,21 @@ namespace isaSpace {
 	/** \brief Summary of a SAM record
 	 *
 	 * Stores relevant information from a SAM format alignment record.
+	 * Includes primary and secondary alignments of a read.
 	 *
 	 */
 	class SAMrecord {
 	public:
 		/** \brief Default constructor */
 		SAMrecord() = default;
+		/** \brief Constructor with data 
+		 *
+		 * Constructs an object from alignment records.
+		 * The records group the primary and all the secondary alignments of a given read.
+		 *
+		 * \param[in] alignmentGroup alignment records of a read
+		 */
+		SAMrecord(const std::vector< std::unique_ptr<bam1_t> > &alignmentGroup);
 		/** \brief Copy constructor
 		 *
 		 * \param[in] toCopy object to copy
@@ -72,9 +84,13 @@ namespace isaSpace {
 	private:
 		/** \brief Read (i.e. query) name */
 		std::string readName_;
-		/** \brief Mapping quality */
+		/** \brief Mapping quality (one for all alignments) */
 		uint8_t mappingQuality_ = 0;
-		/** \brief CIGAR string */
-		std::vector<uint32_t> cigar_;
+		/** \brief Start of the alignment position on the reference (one per alignment) */
+		std::vector<uint32_t> positionOnReference_;
+		/** \brief `minimap2` alignment scores (one per alignment) */
+		std::vector<uint16_t> alignmentScore_;
+		/** \brief CIGAR strings (one per alignment) */
+		std::vector< std::vector<uint32_t> > cigar_;
 	};
 }

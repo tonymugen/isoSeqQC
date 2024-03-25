@@ -71,7 +71,6 @@ else()
 endif()
 include(ExternalProject)
 ExternalProject_Add(htslib
-	#SOURCE_DIR             htslib
 	GIT_REPOSITORY         https://github.com/samtools/htslib
 	GIT_TAG                6a7d33abc6cae840023868ccdd946d0d8759f259
 	GIT_SUBMODULES_RECURSE TRUE
@@ -176,28 +175,23 @@ include(GNUInstallDirs)
 #)
 
 # library
-#add_library(vash
-#	${CMAKE_CURRENT_LIST_DIR}/src/gvarHash.cpp
-#	${CMAKE_CURRENT_LIST_DIR}/src/vashFunctions.cpp
-#	${CMAKE_CURRENT_LIST_DIR}/src/similarityMatrix.cpp
-#	${brutilities_SOURCE_DIR}/src/random.cpp
-#)
-#target_include_directories(vash
-#	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
-#	PRIVATE ${brutilities_SOURCE_DIR}/include
-#)
-#set_target_properties(vash PROPERTIES
-#	POSITION_INDEPENDENT_CODE ON
-#	CXX_STANDARD_REQUIRED ON
-#)
-#target_compile_options(vash
-#	PRIVATE ${PROJECT_WARNINGS_CXX} -mbmi -mbmi2 -mpopcnt -pthread
-#)
-#if(PROJECT_IS_TOP_LEVEL AND BUILD_TESTS)
-#	target_compile_options(vash
-#		PRIVATE -fsanitize=${SANITIZER_LIST}
-#	)
-#endif()
+add_library(isoseqAln
+	${CMAKE_CURRENT_LIST_DIR}/src/isoseqAlgn.cpp
+	${htslib_BINARY_DIR}/libhts.so
+)
+target_include_directories(isoseqAln
+	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
+	PRIVATE ${htslib_SOURCE_DIR}/htslib
+)
+set_target_properties(isoseqAln PROPERTIES
+	POSITION_INDEPENDENT_CODE ON
+	CXX_STANDARD_REQUIRED ON
+)
+if(PROJECT_IS_TOP_LEVEL AND BUILD_TESTS)
+	target_compile_options(isoseqAln
+		PRIVATE -fsanitize=${SANITIZER_LIST}
+	)
+endif()
 # no install for now
 
 # tests
