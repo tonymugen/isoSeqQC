@@ -3,4 +3,5 @@ build*/*
 tests/*
 !tests/*.cpp
 !tests/*.txt
+!tests/*.bam
 Doxyfile

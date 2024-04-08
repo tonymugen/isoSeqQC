@@ -177,8 +177,8 @@ include(GNUInstallDirs)
 # library
 add_library(isoseqAln
 	${CMAKE_CURRENT_LIST_DIR}/src/isoseqAlgn.cpp
-	${htslib_BINARY_DIR}/libhts.so
 )
+add_dependencies(isoseqAln htslib)
 target_include_directories(isoseqAln
 	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
 	PRIVATE ${htslib_SOURCE_DIR}/htslib
