@@ -20,10 +20,15 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
+#include <limits>
+
 #include <iostream>
 
 #include "bgzf.h"
 #include "sam.h"
+
+#include "isoseqAlgn.hpp"
 
 #include "catch2/catch_test_macros.hpp"
 //#include "catch2/matchers/catch_matchers.hpp"
@@ -38,6 +43,8 @@ TEST_CASE("HTSLIB doodles") {
 			bgzf_close(bamFile);
 		}
 	);
+
+	// must read the header first to get to the alignments
 	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> testBAMheader(
 		bam_hdr_read( testBAMfile.get() ),
 		[](sam_hdr_t *samHeader) {
@@ -46,24 +53,29 @@ TEST_CASE("HTSLIB doodles") {
 	);
 
 	const std::string testHeaderText{sam_hdr_str( testBAMheader.get() )};
-	std::cout << testHeaderText << "\n";
-
-	std::unique_ptr<bam1_t, void(*)(bam1_t *)> firstBAMalnPtr(
-		bam_init1(),
-		[](bam1_t *bamPtr){
-			bam_destroy1(bamPtr);
-		}
-	);
-	int32_t nBytes = bam_read1( testBAMfile.get(), firstBAMalnPtr.get() );
-
-	const std::string queryName{bam_get_qname( firstBAMalnPtr.get() )}; // NOLINT
-	std::cout << "QNAME: " << queryName << "; number of bytes: " << nBytes << "\n";
-
-	auto *const alignmentScoreRecord{bam_aux_get(firstBAMalnPtr.get(), "AS")};
 	std::cout << "=================\n";
-	if (alignmentScoreRecord != nullptr) {
-		std::cout << "value = " << bam_aux2i(alignmentScoreRecord) << "\n";
+	constexpr uint16_t isPrimary{0x900};
+	std::vector<isaSpace::SAMrecord> primaryRecords;
+	uint32_t nAlignments{0};
+	while (true) {
+		isaSpace::CbamRecordDeleter localDeleter;
+		std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRecordPtr(bam_init1(), localDeleter);
+		int32_t nBytes = bam_read1( testBAMfile.get(), bamRecordPtr.get() );
+		if ( (nBytes == -1) || ( nAlignments == std::numeric_limits<uint32_t>::max() ) ) {
+			break;
+		}
+		if (nBytes < -1) {
+			continue;
+		}
+		if ( (bamRecordPtr->core.flag & isPrimary) == 0 ) {
+			primaryRecords.emplace_back(bamRecordPtr);
+		}
+		++nAlignments;
+		//std::vector<uint32_t> cigar(bam_get_cigar( bamRecords.back().get() ), bam_get_cigar( bamRecords.back().get() ) +  bamRecords.back()->core.n_cigar); // NOLINT
+		//std::cout << "first CIGAR: " << bam_cigar_oplen( cigar.front() ) << bam_cigar_opchr( cigar.front() ) << "\n"; // NOLINT
+		//std::cout << std::bitset<16>(0x900) << "\n" << std::bitset<16>(bamRecordPtr->core.flag) << "\n\n";//NOLINT
 	}
+	std::cout << "Number saved: " << primaryRecords.size() << "; total: " << nAlignments << "\n";
 	std::cout << "+++++++++++++++++\n";
 
 }

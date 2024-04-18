@@ -203,6 +203,7 @@ if(PROJECT_IS_TOP_LEVEL AND BUILD_TESTS)
 		htslib
 	)
 	target_link_libraries(tests
+		PRIVATE isoseqAln
 		PRIVATE ${htslib_BINARY_DIR}/libhts.so
 		PRIVATE Catch2::Catch2WithMain
 	)

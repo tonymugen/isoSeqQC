@@ -38,19 +38,17 @@
 
 using namespace isaSpace;
 
-SAMrecord::SAMrecord(const std::vector< std::unique_ptr<bam1_t> > &alignmentGroup) : 
-			readName_{bam_get_qname( alignmentGroup.front() )}, // NOLINT
-			mappingQuality_{alignmentGroup.front()->core.qual} {
+SAMrecord::SAMrecord(const std::unique_ptr<bam1_t, CbamRecordDeleter> &alignmentRecord) : 
+			readName_{bam_get_qname( alignmentRecord.get() )}, // NOLINT
+			mappingQuality_{alignmentRecord->core.qual} {
 
 	constexpr std::array<char, 2> alignmentScoreToken{'A', 'S'};
-	for (const auto &eachAlignment : alignmentGroup) {
-		cigar_.emplace_back(bam_get_cigar(eachAlignment), bam_get_cigar(eachAlignment) + eachAlignment->core.n_cigar); // NOLINT
-		positionOnReference_.emplace_back(eachAlignment->core.pos);
-		auto *const alignmentScoreRecord{bam_aux_get( eachAlignment.get(), alignmentScoreToken.data() )};
-		if (alignmentScoreRecord == nullptr) {
-			alignmentScore_.emplace_back(0);
-		} else {
-			alignmentScore_.emplace_back( static_cast<uint16_t>( bam_aux2i(alignmentScoreRecord) ) );
-		}
+	cigar_.emplace_back(bam_get_cigar(alignmentRecord), bam_get_cigar(alignmentRecord) + alignmentRecord->core.n_cigar); // NOLINT
+	positionOnReference_.emplace_back(alignmentRecord->core.pos);
+	auto *const alignmentScoreRecord{bam_aux_get( alignmentRecord.get(), alignmentScoreToken.data() )};
+	if (alignmentScoreRecord == nullptr) {
+		alignmentScore_.emplace_back(0);
+	} else {
+		alignmentScore_.emplace_back( static_cast<uint16_t>( bam_aux2i(alignmentScoreRecord) ) );
 	}
 }

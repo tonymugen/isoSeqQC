@@ -37,11 +37,19 @@
 #include "sam.h"
 
 namespace isaSpace {
+	struct CbamRecordDeleter;
 	class SAMrecord;
 
-	/** \brief Summary of a SAM record
+	/** \brief Deleter of the C BAM record */
+	struct CbamRecordDeleter {
+		void operator()(bam1_t *bamRecordPtr) const {
+			bam_destroy1(bamRecordPtr);
+		}
+	};
+
+	/** \brief Summary of a SAM record set
 	 *
-	 * Stores relevant information from a SAM format alignment record.
+	 * Stores relevant information from SAM format alignment records.
 	 * Includes primary and secondary alignments of a read.
 	 *
 	 */
@@ -51,12 +59,13 @@ namespace isaSpace {
 		SAMrecord() = default;
 		/** \brief Constructor with data 
 		 *
-		 * Constructs an object from alignment records.
-		 * The records group the primary and all the secondary alignments of a given read.
+		 * Constructs an object from an alignment record.
+		 * This should be the first record of a read encountered in a `.bam` file,
+		 * typically the primary alignment.
 		 *
-		 * \param[in] alignmentGroup alignment records of a read
+		 * \param[in] alignmentRecord alignment record of a read
 		 */
-		SAMrecord(const std::vector< std::unique_ptr<bam1_t> > &alignmentGroup);
+		SAMrecord(const std::unique_ptr<bam1_t, CbamRecordDeleter> &alignmentRecord);
 		/** \brief Copy constructor
 		 *
 		 * \param[in] toCopy object to copy
@@ -81,6 +90,12 @@ namespace isaSpace {
 		SAMrecord& operator=(SAMrecord &&toMove) noexcept = default;
 		/** \brief Destructor */
 		~SAMrecord() = default;
+
+		/** \brief Output read name 
+		 *
+		 * \return read name
+		 */
+		[[gnu::warn_unused_result]] std::string getReadName() const {return readName_; };
 	private:
 		/** \brief Read (i.e. query) name */
 		std::string readName_;
