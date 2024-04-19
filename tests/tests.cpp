@@ -21,7 +21,6 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <limits>
 
 #include <iostream>
 
@@ -54,28 +53,35 @@ TEST_CASE("HTSLIB doodles") {
 
 	const std::string testHeaderText{sam_hdr_str( testBAMheader.get() )};
 	std::cout << "=================\n";
-	constexpr uint16_t isPrimary{0x900};
+	constexpr uint16_t isNotPrimary{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
 	std::vector<isaSpace::SAMrecord> primaryRecords;
-	uint32_t nAlignments{0};
+	uint32_t iRecord{1};
 	while (true) {
 		isaSpace::CbamRecordDeleter localDeleter;
 		std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRecordPtr(bam_init1(), localDeleter);
 		int32_t nBytes = bam_read1( testBAMfile.get(), bamRecordPtr.get() );
-		if ( (nBytes == -1) || ( nAlignments == std::numeric_limits<uint32_t>::max() ) ) {
+		if (nBytes == -1) {
 			break;
 		}
 		if (nBytes < -1) {
 			continue;
 		}
-		if ( (bamRecordPtr->core.flag & isPrimary) == 0 ) {
+		++iRecord;
+		const std::string currQname( bam_get_qname( bamRecordPtr.get() ) ); // NOLINT
+		auto *const currCIGARptr = bam_get_cigar( bamRecordPtr.get() );     // NOLINT
+		// is it a primary alignment with a soft clip?
+		if ( (bam_cigar_opchr(*currCIGARptr) == 'S') && ( (bamRecordPtr->core.flag & isNotPrimary) == 0 ) ) { // NOLINT
 			primaryRecords.emplace_back(bamRecordPtr);
+			continue;
 		}
-		++nAlignments;
+		if ( ( !primaryRecords.empty() ) && ( currQname == primaryRecords.back().getReadName() ) ) {
+			primaryRecords.back().appendSecondary(bamRecordPtr);
+		}
 		//std::vector<uint32_t> cigar(bam_get_cigar( bamRecords.back().get() ), bam_get_cigar( bamRecords.back().get() ) +  bamRecords.back()->core.n_cigar); // NOLINT
 		//std::cout << "first CIGAR: " << bam_cigar_oplen( cigar.front() ) << bam_cigar_opchr( cigar.front() ) << "\n"; // NOLINT
 		//std::cout << std::bitset<16>(0x900) << "\n" << std::bitset<16>(bamRecordPtr->core.flag) << "\n\n";//NOLINT
 	}
-	std::cout << "Number saved: " << primaryRecords.size() << "; total: " << nAlignments << "\n";
+	std::cout << "Number saved: " << primaryRecords.size() << "; number considered: " << iRecord << "\n";
 	std::cout << "+++++++++++++++++\n";
 
 }

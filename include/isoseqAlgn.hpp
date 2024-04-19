@@ -96,6 +96,13 @@ namespace isaSpace {
 		 * \return read name
 		 */
 		[[gnu::warn_unused_result]] std::string getReadName() const {return readName_; };
+		/** \brief Append a secondary read
+		 *
+		 * Append a secondary alignment record to the current.
+		 *
+		 * \param[in] alignmentRecord alignment record of a read
+		 */
+		void appendSecondary(const std::unique_ptr<bam1_t, CbamRecordDeleter> &alignmentRecord);
 	private:
 		/** \brief Read (i.e. query) name */
 		std::string readName_;
