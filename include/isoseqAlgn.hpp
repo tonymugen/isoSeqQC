@@ -31,6 +31,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 #include <string>
 
@@ -38,6 +39,7 @@
 
 namespace isaSpace {
 	struct CbamRecordDeleter;
+	class ExonGroup;
 	class SAMrecord;
 
 	/** \brief Deleter of the C BAM record */
@@ -45,6 +47,52 @@ namespace isaSpace {
 		void operator()(bam1_t *bamRecordPtr) const {
 			bam_destroy1(bamRecordPtr);
 		}
+	};
+
+	/** \brief Group of exons from the same mRNA
+	 *
+	 *
+	 */
+	class ExonGroup {
+	public:
+		/** \brief Default constructor */
+		ExonGroup() = default;
+		/** \brief Copy constructor
+		 *
+		 * \param[in] toCopy object to copy
+		 */
+		ExonGroup(const ExonGroup &toCopy) = default;
+		/** \brief Copy assignment operator
+		 *
+		 * \param[in] toCopy object to copy
+		 * \return `ExonGroup` object
+		 */
+		ExonGroup& operator=(const ExonGroup &toCopy) = default;
+		/** \brief Move constructor
+		 *
+		 * \param[in] toMove object to move
+		 */
+		ExonGroup(ExonGroup &&toMove) noexcept = default;
+		/** \brief Move assignment operator
+		 *
+		 * \param[in] toMove object to move
+		 * \return `ExonGroup` object
+		 */
+		ExonGroup& operator=(ExonGroup &&toMove) noexcept = default;
+		/** \brief Destructor */
+		~ExonGroup() = default;
+	private:
+		/** \brief mRNA name */
+		std::string mRNAname_;
+		/** \brief Chromosome name */
+		std::string chrName_;
+		/** \brief Start and end positions of each exon in order
+		 *
+		 * `hts_pos_t` is `int64_t`
+		 */
+		std::vector< std::pair<hts_pos_t, hts_pos_t> > exonRanges_;
+		/** \brief Strand (+ or -) */
+		char strand_ = '\0';
 	};
 
 	/** \brief Summary of a SAM record set
