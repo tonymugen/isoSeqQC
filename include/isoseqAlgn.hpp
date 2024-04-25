@@ -57,6 +57,11 @@ namespace isaSpace {
 	public:
 		/** \brief Default constructor */
 		ExonGroup() = default;
+		/** \brief Constructor with lines from a GFF file 
+		 *
+		 * \param[in] exonGFFlines vector of exon lines from a GFF file
+		 */
+		ExonGroup(const std::vector< std::string > &exonGFFlines);
 		/** \brief Copy constructor
 		 *
 		 * \param[in] toCopy object to copy
@@ -84,15 +89,13 @@ namespace isaSpace {
 	private:
 		/** \brief mRNA name */
 		std::string mRNAname_;
-		/** \brief Chromosome name */
-		std::string chrName_;
 		/** \brief Start and end positions of each exon in order
 		 *
 		 * `hts_pos_t` is `int64_t`
 		 */
 		std::vector< std::pair<hts_pos_t, hts_pos_t> > exonRanges_;
-		/** \brief Strand (+ or -) */
-		char strand_ = '\0';
+		/** \brief Parent (mRNA) ID field token size */
+		static const std::string::difference_type parentTokenSize_;
 	};
 
 	/** \brief Summary of a SAM record set

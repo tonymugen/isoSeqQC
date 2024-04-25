@@ -28,9 +28,13 @@
  */
 
 #include <cstdint>
+#include <iterator>
 #include <memory>
+#include <algorithm>
 #include <vector>
 #include <array>
+#include <string>
+#include <sstream>
 
 #include "sam.h"
 
@@ -38,6 +42,55 @@
 
 using namespace isaSpace;
 
+// ExonGroup methods
+constexpr std::string::difference_type parentTokenSize_{7};
+
+ExonGroup::ExonGroup(const std::vector< std::string > &exonGFFlines) {
+	if ( exonGFFlines.empty() ) {
+		throw std::string("ERROR: vector of exons is empty in ") + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+	// set the mRNA name
+	const std::string idToken("Parent=");
+	auto mRNAnameStartIt = std::search(
+		exonGFFlines.front().cbegin(),
+		exonGFFlines.front().cend(),
+		idToken.cbegin(),
+		idToken.cend()
+	);
+	if ( mRNAnameStartIt == exonGFFlines.front().cend() ) {
+		throw std::string("ERROR: no mRNA ID token for an exon in a GFF line in ") + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+	std::advance(mRNAnameStartIt, parentTokenSize_);
+
+	const auto mRNAnameEndIt = std::find(
+		mRNAnameStartIt,
+		exonGFFlines.front().cend(),
+		';'
+	);
+	std::copy(
+		mRNAnameStartIt,
+		mRNAnameEndIt,
+		std::back_inserter(mRNAname_)
+	);
+
+	for (const auto &eachLine : exonGFFlines) {
+		std::stringstream lineStream;
+		lineStream.str(eachLine);
+		std::string field;
+		lineStream >> field;
+		lineStream >> field;
+		lineStream >> field;
+		lineStream >> field;
+		const auto exonStart{static_cast<hts_pos_t>( std::stoi(field) )};
+		lineStream >> field;
+		const auto exonEnd{static_cast<hts_pos_t>( std::stoi(field) )};
+
+		// make sure the range is increasing as per GFF spec
+		exonRanges_.emplace_back( std::min(exonStart, exonEnd), std::max(exonStart, exonEnd) );
+	}
+}
+
+//SAMrecord methods
 SAMrecord::SAMrecord(const std::unique_ptr<bam1_t, CbamRecordDeleter> &alignmentRecord) : 
 			readName_{bam_get_qname( alignmentRecord.get() )}, // NOLINT
 			mappingQuality_{alignmentRecord->core.qual} {
