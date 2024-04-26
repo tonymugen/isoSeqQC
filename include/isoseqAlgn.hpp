@@ -33,7 +33,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
-#include <string>
+#include <sstream>
 
 #include "sam.h"
 
@@ -59,9 +59,12 @@ namespace isaSpace {
 		ExonGroup() = default;
 		/** \brief Constructor with lines from a GFF file 
 		 *
+		 * First three columns of each GFF line are processed and eliminated
+		 * before passing to the function.
+		 *
 		 * \param[in] exonGFFlines vector of exon lines from a GFF file
 		 */
-		ExonGroup(const std::vector< std::string > &exonGFFlines);
+		ExonGroup(const std::string &geneName, std::vector< std::stringstream > &exonGFFlines);
 		/** \brief Copy constructor
 		 *
 		 * \param[in] toCopy object to copy
@@ -87,8 +90,8 @@ namespace isaSpace {
 		/** \brief Destructor */
 		~ExonGroup() = default;
 	private:
-		/** \brief mRNA name */
-		std::string mRNAname_;
+		/** \brief Gene name */
+		std::string geneName_;
 		/** \brief Start and end positions of each exon in order
 		 *
 		 * `hts_pos_t` is `int64_t`

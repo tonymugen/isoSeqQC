@@ -45,44 +45,17 @@ using namespace isaSpace;
 // ExonGroup methods
 constexpr std::string::difference_type parentTokenSize_{7};
 
-ExonGroup::ExonGroup(const std::vector< std::string > &exonGFFlines) {
+ExonGroup::ExonGroup(const std::string &geneName, std::vector< std::stringstream > &exonGFFlines) {
 	if ( exonGFFlines.empty() ) {
 		throw std::string("ERROR: vector of exons is empty in ") + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
-	// set the mRNA name
-	const std::string idToken("Parent=");
-	auto mRNAnameStartIt = std::search(
-		exonGFFlines.front().cbegin(),
-		exonGFFlines.front().cend(),
-		idToken.cbegin(),
-		idToken.cend()
-	);
-	if ( mRNAnameStartIt == exonGFFlines.front().cend() ) {
-		throw std::string("ERROR: no mRNA ID token for an exon in a GFF line in ") + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
-	std::advance(mRNAnameStartIt, parentTokenSize_);
+	geneName_ = geneName;
 
-	const auto mRNAnameEndIt = std::find(
-		mRNAnameStartIt,
-		exonGFFlines.front().cend(),
-		';'
-	);
-	std::copy(
-		mRNAnameStartIt,
-		mRNAnameEndIt,
-		std::back_inserter(mRNAname_)
-	);
-
-	for (const auto &eachLine : exonGFFlines) {
-		std::stringstream lineStream;
-		lineStream.str(eachLine);
+	for (auto &eachLine : exonGFFlines) {
 		std::string field;
-		lineStream >> field;
-		lineStream >> field;
-		lineStream >> field;
-		lineStream >> field;
+		eachLine >> field;
 		const auto exonStart{static_cast<hts_pos_t>( std::stoi(field) )};
-		lineStream >> field;
+		eachLine >> field;
 		const auto exonEnd{static_cast<hts_pos_t>( std::stoi(field) )};
 
 		// make sure the range is increasing as per GFF spec

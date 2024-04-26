@@ -19,6 +19,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -32,6 +34,18 @@
 #include "catch2/catch_test_macros.hpp"
 //#include "catch2/matchers/catch_matchers.hpp"
 //#include "catch2/matchers/catch_matchers_string.hpp"
+
+TEST_CASE("GFF parsing") {
+	const std::string goodGFFname("../tests/goodGFF.gff");
+	std::vector<isaSpace::ExonGroup> exonGroups;
+	std::string gffLine;
+	std::fstream goodGFF(goodGFFname, std::ios::in);
+	std::vector<std::stringstream> exons;
+	while ( std::getline(goodGFF, gffLine) ) {
+		;
+	}
+	goodGFF.close();
+}
 
 TEST_CASE("HTSLIB doodles") {
 	const std::string testBAMname("../tests/testAlgn.bam");
@@ -83,5 +97,4 @@ TEST_CASE("HTSLIB doodles") {
 	}
 	std::cout << "Number saved: " << primaryRecords.size() << "; number considered: " << iRecord << "\n";
 	std::cout << "+++++++++++++++++\n";
-
 }
