@@ -17,12 +17,17 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <memory>
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
+#include <array>
+#include <unordered_map>
 
 #include <iostream>
 
@@ -35,14 +40,51 @@
 //#include "catch2/matchers/catch_matchers.hpp"
 //#include "catch2/matchers/catch_matchers_string.hpp"
 
-TEST_CASE("GFF parsing") {
+TEST_CASE("GFF parsing works") {
+	constexpr size_t nGFFfields{9};
+	constexpr char gffDelimiter{'\t'};
+	constexpr char attrDelimiter{';'};
+	const std::string parentToken("Parent=");
+	const auto parentTokenSize = std::distance( parentToken.cbegin(), parentToken.cend() );
+	std::unordered_map<std::string, std::string> mRNAtoGeneName;
 	const std::string goodGFFname("../tests/goodGFF.gff");
 	std::vector<isaSpace::ExonGroup> exonGroups;
 	std::string gffLine;
 	std::fstream goodGFF(goodGFFname, std::ios::in);
-	std::vector<std::stringstream> exons;
 	while ( std::getline(goodGFF, gffLine) ) {
-		;
+		std::array<std::string, nGFFfields> gffFields;
+		std::stringstream currLineStream(gffLine);
+		size_t iField{0};
+		while ( (iField < nGFFfields) && std::getline(currLineStream, gffFields.at(iField), gffDelimiter)) {
+			++iField;
+		}
+		if (iField < nGFFfields) {
+			// in the actual implementation, save the line number where there is an incorrect number of fields
+			continue;
+		}
+		if (gffFields.at(2) == "mRNA") {
+			std::stringstream attributeStream( gffFields.back() );
+			std::vector<std::string> attributes;
+			std::string attrField;
+			while ( std::getline(attributeStream, attrField, attrDelimiter) ) {
+				attributes.emplace_back(attrField);
+			}
+			auto parentIt = std::find_if(
+				attributes.cbegin(),
+				attributes.cend(),
+				[&parentToken](const std::string &eachAttr) {
+					return std::equal( parentToken.cbegin(), parentToken.cend(), eachAttr.cbegin() );
+				}
+			);
+			std::string parentName;
+			std::copy(
+				parentIt->cbegin() + parentTokenSize,
+				parentIt->cend(),
+				std::back_inserter(parentName)
+			);
+			std::cout << parentName << "\n";
+		}
+		break;
 	}
 	goodGFF.close();
 }
