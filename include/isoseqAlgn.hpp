@@ -41,6 +41,7 @@ namespace isaSpace {
 	struct CbamRecordDeleter;
 	class ExonGroup;
 	class SAMrecord;
+	class FirstExonRemap;
 
 	/** \brief Deleter of the C BAM record */
 	struct CbamRecordDeleter {
@@ -49,9 +50,9 @@ namespace isaSpace {
 		}
 	};
 
-	/** \brief Group of exons from the same mRNA
+	/** \brief Group of exons from the same gene
 	 *
-	 *
+	 * Gathers exons belonging to all transcripts of a gene.
 	 */
 	class ExonGroup {
 	public:

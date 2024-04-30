@@ -44,8 +44,11 @@ TEST_CASE("GFF parsing works") {
 	constexpr size_t nGFFfields{9};
 	constexpr char gffDelimiter{'\t'};
 	constexpr char attrDelimiter{';'};
+	constexpr char attrDelimEscape{'\\'};
 	const std::string parentToken("Parent=");
 	const auto parentTokenSize = std::distance( parentToken.cbegin(), parentToken.cend() );
+	const std::string idToken("ID=");
+	const auto idTokenSize = std::distance( idToken.cbegin(), idToken.cend() );
 	std::unordered_map<std::string, std::string> mRNAtoGeneName;
 	const std::string goodGFFname("../tests/goodGFF.gff");
 	std::vector<isaSpace::ExonGroup> exonGroups;
@@ -69,6 +72,33 @@ TEST_CASE("GFF parsing works") {
 			while ( std::getline(attributeStream, attrField, attrDelimiter) ) {
 				attributes.emplace_back(attrField);
 			}
+			auto mRNAidIt = std::find_if(
+				attributes.cbegin(),
+				attributes.cend(),
+				[&idToken](const std::string &eachAttr) {
+					return std::equal( idToken.cbegin(), idToken.cend(), eachAttr.cbegin() );
+				}
+			);
+			if ( mRNAidIt == attributes.cend() ) {
+				// also save the line where there is a missing ID for an mRNA
+				continue;
+			}
+			std::string mRNAid;
+			std::copy(
+				mRNAidIt->cbegin() + idTokenSize,
+				mRNAidIt->cend(),
+				std::back_inserter(mRNAid)
+			);
+			// deal with any escaped ';' delimiters
+			std::advance(mRNAidIt, 1);
+			while ( (mRNAid.back() == attrDelimEscape) && ( mRNAidIt != attributes.cend() ) ) {
+				mRNAid.push_back(attrDelimiter);
+				std::copy(
+					mRNAidIt->cbegin(),
+					mRNAidIt->cend(),
+					std::back_inserter(mRNAid)
+				);
+			}
 			auto parentIt = std::find_if(
 				attributes.cbegin(),
 				attributes.cend(),
@@ -76,17 +106,37 @@ TEST_CASE("GFF parsing works") {
 					return std::equal( parentToken.cbegin(), parentToken.cend(), eachAttr.cbegin() );
 				}
 			);
+			if ( parentIt == attributes.cend() ) {
+				// also save the line where there is a missing parent for an mRNA
+				continue;
+			}
 			std::string parentName;
 			std::copy(
 				parentIt->cbegin() + parentTokenSize,
 				parentIt->cend(),
 				std::back_inserter(parentName)
 			);
-			std::cout << parentName << "\n";
+			// deal with any escaped ';' delimiters
+			std::advance(parentIt, 1);
+			while ( (parentName.back() == attrDelimEscape) && ( parentIt != attributes.cend() ) ) {
+				parentName.push_back(attrDelimiter);
+				std::copy(
+					parentIt->cbegin(),
+					parentIt->cend(),
+					std::back_inserter(parentName)
+				);
+			}
+			std::cout << "mRNA ID: " << mRNAid << "; parnet ID: " << parentName << "\n";
+			mRNAtoGeneName[mRNAid] = parentName;
+			continue;
 		}
-		break;
+		//break;
 	}
 	goodGFF.close();
+	std::cout << "mRNA to gene ID:\n";
+	for (const auto &eachPair : mRNAtoGeneName) {
+		std::cout << eachPair.first << " <--> " << eachPair.second << "\n";
+	}
 }
 
 TEST_CASE("HTSLIB doodles") {
