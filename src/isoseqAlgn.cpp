@@ -19,7 +19,7 @@
 
 /// Read isoSeq alignments and save potential fusions
 /** \file
- * \author Anthony J. Greenberg
+ * \author Anthony J. Greenberg and Rebekah Rogers
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
  * \version 0.1
  *
@@ -29,20 +29,21 @@
 
 #include <cstdint>
 #include <memory>
-#include <algorithm>
 #include <vector>
 #include <array>
 #include <string>
 #include <sstream>
+#include <fstream>
 
 #include "sam.h"
 
 #include "isoseqAlgn.hpp"
+#include "helperFunctions.hpp"
 
 using namespace isaSpace;
 
 // ExonGroup methods
-constexpr std::string::difference_type parentTokenSize_{7};
+constexpr std::string::difference_type ExonGroup::parentTokenSize_{7};
 
 ExonGroup::ExonGroup(const std::string &geneName, std::vector< std::stringstream > &exonGFFlines) {
 	if ( exonGFFlines.empty() ) {
@@ -50,16 +51,6 @@ ExonGroup::ExonGroup(const std::string &geneName, std::vector< std::stringstream
 	}
 	geneName_ = geneName;
 
-	for (auto &eachLine : exonGFFlines) {
-		std::string field;
-		eachLine >> field;
-		const auto exonStart{static_cast<hts_pos_t>( std::stoi(field) )};
-		eachLine >> field;
-		const auto exonEnd{static_cast<hts_pos_t>( std::stoi(field) )};
-
-		// make sure the range is increasing as per GFF spec
-		exonRanges_.emplace_back( std::min(exonStart, exonEnd), std::max(exonStart, exonEnd) );
-	}
 }
 
 //SAMrecord methods
@@ -79,4 +70,43 @@ void SAMrecord::appendSecondary(const std::unique_ptr<bam1_t, CbamRecordDeleter>
 		return;
 	}
 	alignmentScore_.emplace_back( static_cast<uint16_t>( bam_aux2i(alignmentScoreRecord) ) );
+}
+
+// FirstExonRemap methods
+constexpr size_t FirstExonRemap::nGFFfields_{9};
+constexpr char   FirstExonRemap::gffDelimiter_{'\t'};
+constexpr char   FirstExonRemap::attrDelimiter_{';'};
+constexpr std::string::difference_type FirstExonRemap::parentTokenSize_{7};
+constexpr std::string::difference_type FirstExonRemap::idTokenSize_{3};
+
+FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
+	std::string gffLine;
+	std::fstream gffStream(bamGFFfilePairNames.gffFileName, std::ios::in);
+	while ( std::getline(gffStream, gffLine) ) {
+		std::array<std::string, nGFFfields_> gffFields;
+		std::stringstream currLineStream(gffLine);
+		size_t iField{0};
+		while ( (iField < nGFFfields_) && std::getline(currLineStream, gffFields.at(iField), gffDelimiter_)) {
+			++iField;
+		}
+		if (iField < nGFFfields_) {
+			// TODO: save the line number where there is an incorrect number of fields
+			continue;
+		}
+		if (gffFields.at(2) == "mRNA") {
+			std::stringstream attributeStream( gffFields.back() );
+			std::string attrField;
+			TokenAttibuteListPair tokenPair;
+			tokenPair.tokenName = idToken_;
+			while ( std::getline(attributeStream, attrField, attrDelimiter_) ) {
+				tokenPair.attributeList.emplace_back(attrField);
+			}
+
+			const std::string mRNAid{extractAttributeName(tokenPair)};
+			tokenPair.tokenName = parentToken_;
+			const std::string parentName{extractAttributeName(tokenPair)};
+			continue;
+		}
+		//break;
+	}
 }

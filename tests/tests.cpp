@@ -46,8 +46,8 @@ TEST_CASE("GFF parsing works") {
 	constexpr char attrDelimiter{';'};
 	constexpr char attrDelimEscape{'\\'};
 	const std::string parentToken("Parent=");
-	const auto parentTokenSize = std::distance( parentToken.cbegin(), parentToken.cend() );
 	const std::string idToken("ID=");
+	const auto parentTokenSize = std::distance( parentToken.cbegin(), parentToken.cend() );
 	const auto idTokenSize = std::distance( idToken.cbegin(), idToken.cend() );
 	std::unordered_map<std::string, std::string> mRNAtoGeneName;
 	const std::string goodGFFname("../tests/goodGFF.gff");

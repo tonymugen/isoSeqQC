@@ -19,7 +19,7 @@
 
 /// Read isoSeq alignments and save potential fusions
 /** \file
- * \author Anthony J. Greenberg
+ * \author Anthony J. Greenberg and Rebekah Rogers
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
  * \version 0.1
  *
@@ -33,12 +33,14 @@
 #include <memory>
 #include <utility>
 #include <vector>
-#include <sstream>
+#include <string>
 
 #include "sam.h"
 
 namespace isaSpace {
 	struct CbamRecordDeleter;
+	struct BamAndGffFiles;
+	struct TokenAttibuteListPair;
 	class ExonGroup;
 	class SAMrecord;
 	class FirstExonRemap;
@@ -48,6 +50,16 @@ namespace isaSpace {
 		void operator()(bam1_t *bamRecordPtr) const {
 			bam_destroy1(bamRecordPtr);
 		}
+	};
+	/** \brief BAM and GFF file name pair */
+	struct BamAndGffFiles {
+		std::string bamFileName;
+		std::string gffFileName;
+	};
+	/** \brief Token name and GFF attribute list pair */
+	struct TokenAttibuteListPair {
+		std::string tokenName;
+		std::vector<std::string> attributeList;
 	};
 
 	/** \brief Group of exons from the same gene
@@ -169,5 +181,60 @@ namespace isaSpace {
 		std::vector<uint16_t> alignmentScore_;
 		/** \brief CIGAR strings (one per alignment) */
 		std::vector< std::vector<uint32_t> > cigar_;
+	};
+	/** \brief Candidate first exon re-map alignments
+	 *
+	 * Collects alignments that are candidates for first exon re-mapping.
+	 *
+	 */
+	class FirstExonRemap {
+	public:
+		/** \brief Default constructor */
+		FirstExonRemap() = default;
+		/** \brief Constructor intersecting iso-Seq alignments and exons
+		 *
+		 * Uses exon positions from the provided GFF file to find iso-Seq alignments from the
+		 * provided BAM file that may have mis-mapped first exons.
+		 *
+		 * \param[in] BamAndGffFiles BAM and GFF file name pair
+		 *
+		 */
+		FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames);
+		/** \brief Copy constructor
+		 *
+		 * \param[in] toCopy object to copy
+		 */
+		FirstExonRemap(const FirstExonRemap &toCopy) = default;
+		/** \brief Copy assignment operator
+		 *
+		 * \param[in] toCopy object to copy
+		 * \return `FirstExonRemap` object
+		 */
+		FirstExonRemap& operator=(const FirstExonRemap &toCopy) = default;
+		/** \brief Move constructor
+		 *
+		 * \param[in] toMove object to move
+		 */
+		FirstExonRemap(FirstExonRemap &&toMove) noexcept = default;
+		/** \brief Move assignment operator
+		 *
+		 * \param[in] toMove object to move
+		 * \return `FirstExonRemap` object
+		 */
+		FirstExonRemap& operator=(FirstExonRemap &&toMove) noexcept = default;
+		/** \brief Destructor */
+		~FirstExonRemap() = default;
+	private:
+		static const size_t nGFFfields_;
+		static const char gffDelimiter_;
+		static const char attrDelimiter_;
+		static const std::string::difference_type parentTokenSize_;
+		static const std::string::difference_type idTokenSize_;
+
+		std::string parentToken_{"Parent="};
+		std::string idToken_{"ID="};
+
+		std::vector<ExonGroup> gffExonGroups_;
+		std::vector<SAMrecord> candidateAlignments_;
 	};
 }
