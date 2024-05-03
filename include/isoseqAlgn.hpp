@@ -225,16 +225,27 @@ namespace isaSpace {
 		/** \brief Destructor */
 		~FirstExonRemap() = default;
 	private:
+		/** \brief Number of fields in a GFF file */
 		static const size_t nGFFfields_;
+		/** \brief GFF file column delimiter */
 		static const char gffDelimiter_;
+		/** \brief GFF file attribute list delimiter */
 		static const char attrDelimiter_;
-		static const std::string::difference_type parentTokenSize_;
-		static const std::string::difference_type idTokenSize_;
 
+		/** \brief GFF file parent record identifier token */
 		std::string parentToken_{"Parent="};
+		/** \brief GFF file ID token */
 		std::string idToken_{"ID="};
 
+		/** \brief Records of failed GFF parsing events 
+		 *
+		 * Line number/failure description pairs.
+		 */
+		std::vector< std::pair<uint64_t, std::string> > failedGFFparsingRecords_;
+
+		/** \brief Vector of exon groups (one group per gene) */
 		std::vector<ExonGroup> gffExonGroups_;
+		/** \brief Vector of abridged SAM/BAM records */
 		std::vector<SAMrecord> candidateAlignments_;
 	};
 }

@@ -177,6 +177,7 @@ include(GNUInstallDirs)
 # library
 add_library(isoseqAln
 	${CMAKE_CURRENT_LIST_DIR}/src/isoseqAlgn.cpp
+	${CMAKE_CURRENT_LIST_DIR}/src/helperFunctions.cpp
 )
 add_dependencies(isoseqAln htslib)
 target_include_directories(isoseqAln

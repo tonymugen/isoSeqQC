@@ -35,6 +35,7 @@
 #include <sstream>
 #include <fstream>
 
+#include "hts.h"
 #include "sam.h"
 
 #include "isoseqAlgn.hpp"
@@ -76,13 +77,17 @@ void SAMrecord::appendSecondary(const std::unique_ptr<bam1_t, CbamRecordDeleter>
 constexpr size_t FirstExonRemap::nGFFfields_{9};
 constexpr char   FirstExonRemap::gffDelimiter_{'\t'};
 constexpr char   FirstExonRemap::attrDelimiter_{';'};
-constexpr std::string::difference_type FirstExonRemap::parentTokenSize_{7};
-constexpr std::string::difference_type FirstExonRemap::idTokenSize_{3};
 
 FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 	std::string gffLine;
 	std::fstream gffStream(bamGFFfilePairNames.gffFileName, std::ios::in);
+	std::string latestGeneName;
+	std::vector< std::pair<hts_pos_t, hts_pos_t> > exonSpans;
+	uint64_t gffFileLineNumber{1};
 	while ( std::getline(gffStream, gffLine) ) {
+		if ( gffLine.empty() || (gffLine.at(0) == '#') ) {
+			continue;
+		}
 		std::array<std::string, nGFFfields_> gffFields;
 		std::stringstream currLineStream(gffLine);
 		size_t iField{0};
@@ -90,22 +95,36 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 			++iField;
 		}
 		if (iField < nGFFfields_) {
-			// TODO: save the line number where there is an incorrect number of fields
+			failedGFFparsingRecords_.emplace_back( gffFileLineNumber, std::string("incorrect number of columns") );
+			++gffFileLineNumber;
 			continue;
 		}
 		if (gffFields.at(2) == "mRNA") {
 			std::stringstream attributeStream( gffFields.back() );
 			std::string attrField;
 			TokenAttibuteListPair tokenPair;
-			tokenPair.tokenName = idToken_;
 			while ( std::getline(attributeStream, attrField, attrDelimiter_) ) {
 				tokenPair.attributeList.emplace_back(attrField);
 			}
-
-			const std::string mRNAid{extractAttributeName(tokenPair)};
 			tokenPair.tokenName = parentToken_;
-			const std::string parentName{extractAttributeName(tokenPair)};
-			continue;
+
+			std::string parentName{extractAttributeName(tokenPair)};
+			if ( parentName.empty() ) {
+				failedGFFparsingRecords_.emplace_back( gffFileLineNumber, std::string("no parent name attribute for the mRNA") );
+			}
+			if (latestGeneName != parentName) {
+				std::swap(latestGeneName, parentName);
+				exonSpans.clear();
+			}
+			++gffFileLineNumber;
+		}
+		if (gffFields.at(2) == "exon") {
+			if ( latestGeneName.empty() ) {
+				failedGFFparsingRecords_.emplace_back( gffFileLineNumber, std::string("no gene name for the exon") );
+				++gffFileLineNumber;
+			} else {
+			}
+			++gffFileLineNumber;
 		}
 		//break;
 	}

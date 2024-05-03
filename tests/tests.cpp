@@ -19,11 +19,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <memory>
+#include <iterator>
 #include <algorithm>
 #include <fstream>
-#include <sstream>
 #include <string>
 #include <vector>
 #include <array>
@@ -35,25 +34,45 @@
 #include "sam.h"
 
 #include "isoseqAlgn.hpp"
+#include "helperFunctions.hpp"
 
 #include "catch2/catch_test_macros.hpp"
 //#include "catch2/matchers/catch_matchers.hpp"
 //#include "catch2/matchers/catch_matchers_string.hpp"
+
+TEST_CASE("Helper functions work") {
+	constexpr size_t nAttr{4};
+	std::array<std::string, nAttr> attributeArr{
+		"ID=rna-XM_043206943.1",
+		"Parent=gene-LOC6\\",
+		"526243",
+		"Dbxref=GeneID:6526243,Genbank:XM_043206943.1"
+	};
+	isaSpace::TokenAttibuteListPair testTokAttr;
+	std::copy(
+		attributeArr.cbegin(),
+		attributeArr.cend(),
+		std::back_inserter(testTokAttr.attributeList)
+	);
+	testTokAttr.tokenName = "Parent=";
+	const std::string parentResult{isaSpace::extractAttributeName(testTokAttr)};
+	REQUIRE(parentResult == "gene-LOC6\\;526243");
+	testTokAttr.tokenName = "Random=";
+	const std::string absentAttrResult{isaSpace::extractAttributeName(testTokAttr)};
+	REQUIRE( absentAttrResult.empty() );
+}
 
 TEST_CASE("GFF parsing works") {
 	constexpr size_t nGFFfields{9};
 	constexpr char gffDelimiter{'\t'};
 	constexpr char attrDelimiter{';'};
 	constexpr char attrDelimEscape{'\\'};
-	const std::string parentToken("Parent=");
-	const std::string idToken("ID=");
-	const auto parentTokenSize = std::distance( parentToken.cbegin(), parentToken.cend() );
-	const auto idTokenSize = std::distance( idToken.cbegin(), idToken.cend() );
 	std::unordered_map<std::string, std::string> mRNAtoGeneName;
 	const std::string goodGFFname("../tests/goodGFF.gff");
 	std::vector<isaSpace::ExonGroup> exonGroups;
 	std::string gffLine;
 	std::fstream goodGFF(goodGFFname, std::ios::in);
+	/*
 	while ( std::getline(goodGFF, gffLine) ) {
 		std::array<std::string, nGFFfields> gffFields;
 		std::stringstream currLineStream(gffLine);
@@ -65,78 +84,10 @@ TEST_CASE("GFF parsing works") {
 			// in the actual implementation, save the line number where there is an incorrect number of fields
 			continue;
 		}
-		if (gffFields.at(2) == "mRNA") {
-			std::stringstream attributeStream( gffFields.back() );
-			std::vector<std::string> attributes;
-			std::string attrField;
-			while ( std::getline(attributeStream, attrField, attrDelimiter) ) {
-				attributes.emplace_back(attrField);
-			}
-			auto mRNAidIt = std::find_if(
-				attributes.cbegin(),
-				attributes.cend(),
-				[&idToken](const std::string &eachAttr) {
-					return std::equal( idToken.cbegin(), idToken.cend(), eachAttr.cbegin() );
-				}
-			);
-			if ( mRNAidIt == attributes.cend() ) {
-				// also save the line where there is a missing ID for an mRNA
-				continue;
-			}
-			std::string mRNAid;
-			std::copy(
-				mRNAidIt->cbegin() + idTokenSize,
-				mRNAidIt->cend(),
-				std::back_inserter(mRNAid)
-			);
-			// deal with any escaped ';' delimiters
-			std::advance(mRNAidIt, 1);
-			while ( (mRNAid.back() == attrDelimEscape) && ( mRNAidIt != attributes.cend() ) ) {
-				mRNAid.push_back(attrDelimiter);
-				std::copy(
-					mRNAidIt->cbegin(),
-					mRNAidIt->cend(),
-					std::back_inserter(mRNAid)
-				);
-			}
-			auto parentIt = std::find_if(
-				attributes.cbegin(),
-				attributes.cend(),
-				[&parentToken](const std::string &eachAttr) {
-					return std::equal( parentToken.cbegin(), parentToken.cend(), eachAttr.cbegin() );
-				}
-			);
-			if ( parentIt == attributes.cend() ) {
-				// also save the line where there is a missing parent for an mRNA
-				continue;
-			}
-			std::string parentName;
-			std::copy(
-				parentIt->cbegin() + parentTokenSize,
-				parentIt->cend(),
-				std::back_inserter(parentName)
-			);
-			// deal with any escaped ';' delimiters
-			std::advance(parentIt, 1);
-			while ( (parentName.back() == attrDelimEscape) && ( parentIt != attributes.cend() ) ) {
-				parentName.push_back(attrDelimiter);
-				std::copy(
-					parentIt->cbegin(),
-					parentIt->cend(),
-					std::back_inserter(parentName)
-				);
-			}
-			std::cout << "mRNA ID: " << mRNAid << "; parnet ID: " << parentName << "\n";
-			mRNAtoGeneName[mRNAid] = parentName;
-			continue;
-		}
 		//break;
 	}
+	*/
 	goodGFF.close();
-	std::cout << "mRNA to gene ID:\n";
-	for (const auto &eachPair : mRNAtoGeneName) {
-		std::cout << eachPair.first << " <--> " << eachPair.second << "\n";
-	}
 }
 
 TEST_CASE("HTSLIB doodles") {
