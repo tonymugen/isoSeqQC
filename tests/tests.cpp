@@ -22,11 +22,11 @@
 #include <memory>
 #include <iterator>
 #include <algorithm>
-#include <fstream>
-#include <string>
+#include <utility>
 #include <vector>
+#include <set>
 #include <array>
-#include <unordered_map>
+#include <string>
 
 #include <iostream>
 
@@ -62,32 +62,29 @@ TEST_CASE("Helper functions work") {
 	REQUIRE( absentAttrResult.empty() );
 }
 
+TEST_CASE("Record classes work") {
+	constexpr size_t nExons{5};
+	constexpr std::array<std::pair<hts_pos_t, hts_pos_t>, nExons> testExonSpans{
+		std::pair<hts_pos_t, hts_pos_t>{50812, 50970},
+		std::pair<hts_pos_t, hts_pos_t>{52164, 52649},
+		std::pair<hts_pos_t, hts_pos_t>{52164, 52649},
+		std::pair<hts_pos_t, hts_pos_t>{55522, 56102},
+		std::pair<hts_pos_t, hts_pos_t>{56205, 56835}
+	};
+	const std::string testGeneName("testGene");
+	constexpr char strand{'-'};
+	std::set< std::pair<hts_pos_t, hts_pos_t> > testSet;
+	std::copy( testExonSpans.cbegin(), testExonSpans.cend(), std::inserter( testSet, testSet.end() ) );
+	isaSpace::ExonGroup testExonGroup(testGeneName, strand, testSet);
+}
+
 TEST_CASE("GFF parsing works") {
-	constexpr size_t nGFFfields{9};
-	constexpr char gffDelimiter{'\t'};
-	constexpr char attrDelimiter{';'};
-	constexpr char attrDelimEscape{'\\'};
-	std::unordered_map<std::string, std::string> mRNAtoGeneName;
 	const std::string goodGFFname("../tests/goodGFF.gff");
-	std::vector<isaSpace::ExonGroup> exonGroups;
-	std::string gffLine;
-	std::fstream goodGFF(goodGFFname, std::ios::in);
-	/*
-	while ( std::getline(goodGFF, gffLine) ) {
-		std::array<std::string, nGFFfields> gffFields;
-		std::stringstream currLineStream(gffLine);
-		size_t iField{0};
-		while ( (iField < nGFFfields) && std::getline(currLineStream, gffFields.at(iField), gffDelimiter)) {
-			++iField;
-		}
-		if (iField < nGFFfields) {
-			// in the actual implementation, save the line number where there is an incorrect number of fields
-			continue;
-		}
-		//break;
-	}
-	*/
-	goodGFF.close();
+	isaSpace::BamAndGffFiles goodGFFpair;
+	goodGFFpair.gffFileName = goodGFFname;
+
+	isaSpace::FirstExonRemap parsedGoodGFF(goodGFFpair);
+	std::cout << parsedGoodGFF.nExonSets() << "\n";
 }
 
 TEST_CASE("HTSLIB doodles") {

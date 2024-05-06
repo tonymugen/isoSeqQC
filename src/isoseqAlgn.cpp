@@ -28,8 +28,11 @@
  */
 
 #include <cstdint>
+#include <algorithm>
 #include <memory>
+#include <iterator>
 #include <vector>
+#include <set>
 #include <array>
 #include <string>
 #include <sstream>
@@ -43,15 +46,16 @@
 
 using namespace isaSpace;
 
-// ExonGroup methods
-constexpr std::string::difference_type ExonGroup::parentTokenSize_{7};
-
-ExonGroup::ExonGroup(const std::string &geneName, std::vector< std::stringstream > &exonGFFlines) {
-	if ( exonGFFlines.empty() ) {
-		throw std::string("ERROR: vector of exons is empty in ") + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSet) : geneName_{std::move(geneName)} {
+	if ( exonSet.empty() ) {
+		throw std::string("ERROR: set of exons is empty in ") + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
-	geneName_ = geneName;
-
+	std::copy(
+		exonSet.cbegin(),
+		exonSet.cend(),
+		std::back_inserter(exonRanges_)
+	);
+	firstExonIt_ = ( strand == '-' ? std::prev( exonRanges_.end() ) : exonRanges_.begin() );
 }
 
 //SAMrecord methods
@@ -77,12 +81,15 @@ void SAMrecord::appendSecondary(const std::unique_ptr<bam1_t, CbamRecordDeleter>
 constexpr size_t FirstExonRemap::nGFFfields_{9};
 constexpr char   FirstExonRemap::gffDelimiter_{'\t'};
 constexpr char   FirstExonRemap::attrDelimiter_{';'};
+constexpr size_t FirstExonRemap::strandIDidx_{6};
+constexpr size_t FirstExonRemap::spanStart_{3};
+constexpr size_t FirstExonRemap::spanEnd_{4};
 
 FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 	std::string gffLine;
 	std::fstream gffStream(bamGFFfilePairNames.gffFileName, std::ios::in);
 	std::string latestGeneName;
-	std::vector< std::pair<hts_pos_t, hts_pos_t> > exonSpans;
+	std::set< std::pair<hts_pos_t, hts_pos_t> > exonSpans;
 	uint64_t gffFileLineNumber{1};
 	while ( std::getline(gffStream, gffLine) ) {
 		if ( gffLine.empty() || (gffLine.at(0) == '#') ) {
@@ -112,20 +119,17 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 			if ( parentName.empty() ) {
 				failedGFFparsingRecords_.emplace_back( gffFileLineNumber, std::string("no parent name attribute for the mRNA") );
 			}
-			if (latestGeneName != parentName) {
+			if ( (latestGeneName != parentName) && ( !exonSpans.empty() ) ) {
+				gffExonGroups_.emplace_back(latestGeneName, gffFields.at(strandIDidx_).front(), exonSpans);
 				std::swap(latestGeneName, parentName);
 				exonSpans.clear();
 			}
-			++gffFileLineNumber;
 		}
-		if (gffFields.at(2) == "exon") {
-			if ( latestGeneName.empty() ) {
-				failedGFFparsingRecords_.emplace_back( gffFileLineNumber, std::string("no gene name for the exon") );
-				++gffFileLineNumber;
-			} else {
-			}
-			++gffFileLineNumber;
+		if ( (gffFields.at(2) == "exon") && ( !latestGeneName.empty() ) ) {
+			const auto exonStart = static_cast<hts_pos_t>( stol( gffFields.at(spanStart_) ) );
+			const auto exonEnd   = static_cast<hts_pos_t>( stol( gffFields.at(spanEnd_) ) );
+			exonSpans.insert({exonStart, exonEnd});
 		}
-		//break;
+		++gffFileLineNumber;
 	}
 }

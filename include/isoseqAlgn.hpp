@@ -33,6 +33,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
+#include <set>
 #include <string>
 
 #include "sam.h"
@@ -72,12 +73,15 @@ namespace isaSpace {
 		ExonGroup() = default;
 		/** \brief Constructor with lines from a GFF file 
 		 *
-		 * First three columns of each GFF line are processed and eliminated
-		 * before passing to the function.
+		 * The exon set is ordered by the exon starts.
+		 * The first exon can be the first of the last, depending on the strand.
+		 * The strand is assumed positive, unless explicitly specified as negative by passing the `-` character.
 		 *
-		 * \param[in] exonGFFlines vector of exon lines from a GFF file
+		 * \param[in] geneName gene name
+		 * \param[in] strand mRNA strand
+		 * \param[in] exonSet set of exons from the same gene
 		 */
-		ExonGroup(const std::string &geneName, std::vector< std::stringstream > &exonGFFlines);
+		ExonGroup(std::string geneName, const char strand, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSet);
 		/** \brief Copy constructor
 		 *
 		 * \param[in] toCopy object to copy
@@ -110,8 +114,8 @@ namespace isaSpace {
 		 * `hts_pos_t` is `int64_t`
 		 */
 		std::vector< std::pair<hts_pos_t, hts_pos_t> > exonRanges_;
-		/** \brief Parent (mRNA) ID field token size */
-		static const std::string::difference_type parentTokenSize_;
+		/** \brief iterator pointing to the first exon */
+		std::vector< std::pair<hts_pos_t, hts_pos_t> >::iterator firstExonIt_;
 	};
 
 	/** \brief Summary of a SAM record set
@@ -224,6 +228,12 @@ namespace isaSpace {
 		FirstExonRemap& operator=(FirstExonRemap &&toMove) noexcept = default;
 		/** \brief Destructor */
 		~FirstExonRemap() = default;
+
+		/** \brief Number of exon sets (genes with exons)
+		 *
+		 * \return number of exon sets
+		 */
+		[[gnu::warn_unused_result]] size_t nExonSets() const noexcept { return gffExonGroups_.size(); };
 	private:
 		/** \brief Number of fields in a GFF file */
 		static const size_t nGFFfields_;
@@ -231,6 +241,12 @@ namespace isaSpace {
 		static const char gffDelimiter_;
 		/** \brief GFF file attribute list delimiter */
 		static const char attrDelimiter_;
+		/** \brief Strand ID position */
+		static const size_t strandIDidx_;
+		/** \brief Span start position */
+		static const size_t spanStart_;
+		/** \brief Span end position */
+		static const size_t spanEnd_;
 
 		/** \brief GFF file parent record identifier token */
 		std::string parentToken_{"Parent="};
