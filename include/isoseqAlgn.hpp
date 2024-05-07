@@ -106,6 +106,30 @@ namespace isaSpace {
 		ExonGroup& operator=(ExonGroup &&toMove) noexcept = default;
 		/** \brief Destructor */
 		~ExonGroup() = default;
+
+		/** \brief Number of exons in the gene 
+		 *
+		 * \return number of exons
+		 */
+		[[gnu::warn_unused_result]] size_t nExons() const noexcept { return exonRanges_.size(); };
+		/** \brief Gene span 
+		 *
+		 * Returns the position span of the gene.
+		 * First element of the pair is always smaller than the last
+		 * regardless of the strand.
+		 *
+		 * \return first and last nucleotide position (1-based) of the gene
+		 */
+		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> geneSpan() const { return std::pair<hts_pos_t, hts_pos_t>{exonRanges_.front().first, exonRanges_.back().second}; };
+		/** \brief First exon span 
+		 *
+		 * Returns the position of the first exon, depends on the strand.
+		 * First position is always smaller than the second regardless of strand,
+		 * in keeping with the GFF3 specification.
+		 *
+		 * \return first exon nucleotide position pair (1-based)
+		 */
+		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> firsExonSpan() const { return *firstExonIt_; };
 	private:
 		/** \brief Gene name */
 		std::string geneName_;
@@ -252,12 +276,6 @@ namespace isaSpace {
 		std::string parentToken_{"Parent="};
 		/** \brief GFF file ID token */
 		std::string idToken_{"ID="};
-
-		/** \brief Records of failed GFF parsing events 
-		 *
-		 * Line number/failure description pairs.
-		 */
-		std::vector< std::pair<uint64_t, std::string> > failedGFFparsingRecords_;
 
 		/** \brief Vector of exon groups (one group per gene) */
 		std::vector<ExonGroup> gffExonGroups_;

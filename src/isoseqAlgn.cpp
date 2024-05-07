@@ -91,18 +91,18 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 	std::string latestGeneName;
 	std::set< std::pair<hts_pos_t, hts_pos_t> > exonSpans;
 	uint64_t gffFileLineNumber{1};
+	std::array<std::string, nGFFfields_> gffFields;
 	while ( std::getline(gffStream, gffLine) ) {
 		if ( gffLine.empty() || (gffLine.at(0) == '#') ) {
+			++gffFileLineNumber;
 			continue;
 		}
-		std::array<std::string, nGFFfields_> gffFields;
 		std::stringstream currLineStream(gffLine);
 		size_t iField{0};
-		while ( (iField < nGFFfields_) && std::getline(currLineStream, gffFields.at(iField), gffDelimiter_)) {
+		while ( (iField < nGFFfields_) && std::getline(currLineStream, gffFields.at(iField), gffDelimiter_) ) {
 			++iField;
 		}
 		if (iField < nGFFfields_) {
-			failedGFFparsingRecords_.emplace_back( gffFileLineNumber, std::string("incorrect number of columns") );
 			++gffFileLineNumber;
 			continue;
 		}
@@ -116,8 +116,10 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 			tokenPair.tokenName = parentToken_;
 
 			std::string parentName{extractAttributeName(tokenPair)};
-			if ( parentName.empty() ) {
-				failedGFFparsingRecords_.emplace_back( gffFileLineNumber, std::string("no parent name attribute for the mRNA") );
+			if ( latestGeneName.empty() || parentName.empty() ) {
+				std::swap(latestGeneName, parentName);
+				++gffFileLineNumber;
+				continue;
 			}
 			if ( (latestGeneName != parentName) && ( !exonSpans.empty() ) ) {
 				gffExonGroups_.emplace_back(latestGeneName, gffFields.at(strandIDidx_).front(), exonSpans);
@@ -131,5 +133,8 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 			exonSpans.insert({exonStart, exonEnd});
 		}
 		++gffFileLineNumber;
+	}
+	if ( !latestGeneName.empty() && !exonSpans.empty() ) {
+		gffExonGroups_.emplace_back(latestGeneName, gffFields.at(strandIDidx_).front(), exonSpans);
 	}
 }

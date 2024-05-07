@@ -37,8 +37,8 @@
 #include "helperFunctions.hpp"
 
 #include "catch2/catch_test_macros.hpp"
-//#include "catch2/matchers/catch_matchers.hpp"
-//#include "catch2/matchers/catch_matchers_string.hpp"
+#include "catch2/matchers/catch_matchers.hpp"
+#include "catch2/matchers/catch_matchers_string.hpp"
 
 TEST_CASE("Helper functions work") {
 	constexpr size_t nAttr{4};
@@ -72,19 +72,56 @@ TEST_CASE("Record classes work") {
 		std::pair<hts_pos_t, hts_pos_t>{56205, 56835}
 	};
 	const std::string testGeneName("testGene");
-	constexpr char strand{'-'};
+	// negative strand
+	char strand{'-'};
 	std::set< std::pair<hts_pos_t, hts_pos_t> > testSet;
 	std::copy( testExonSpans.cbegin(), testExonSpans.cend(), std::inserter( testSet, testSet.end() ) );
-	isaSpace::ExonGroup testExonGroup(testGeneName, strand, testSet);
+	isaSpace::ExonGroup testExonGroupNeg(testGeneName, strand, testSet);
+	constexpr size_t correctNexons{4};
+	REQUIRE(testExonGroupNeg.nExons() == correctNexons);
+	auto fullSpan{testExonGroupNeg.geneSpan()};
+	REQUIRE(fullSpan.first  == testExonSpans.front().first);
+	REQUIRE(fullSpan.second == testExonSpans.back().second);
+	auto firstExon{testExonGroupNeg.firsExonSpan()};
+	REQUIRE(firstExon.first  == testExonSpans.back().first);
+	REQUIRE(firstExon.second == testExonSpans.back().second);
+	// positive strand
+	strand = '+';
+	isaSpace::ExonGroup testExonGroupPos(testGeneName, strand, testSet);
+	REQUIRE(testExonGroupPos.nExons() == correctNexons);
+	fullSpan = testExonGroupPos.geneSpan();
+	REQUIRE(fullSpan.first  == testExonSpans.front().first);
+	REQUIRE(fullSpan.second == testExonSpans.back().second);
+	firstExon = testExonGroupPos.firsExonSpan();
+	REQUIRE(firstExon.first  == testExonSpans.front().first);
+	REQUIRE(firstExon.second == testExonSpans.front().second);
+	// undetermined strand, assumed positive
+	strand = '.';
+	isaSpace::ExonGroup testExonGroupUnd(testGeneName, strand, testSet);
+	REQUIRE(testExonGroupUnd.nExons() == correctNexons);
+	fullSpan = testExonGroupUnd.geneSpan();
+	REQUIRE(fullSpan.first  == testExonSpans.front().first);
+	REQUIRE(fullSpan.second == testExonSpans.back().second);
+	firstExon = testExonGroupUnd.firsExonSpan();
+	REQUIRE(firstExon.first  == testExonSpans.front().first);
+	REQUIRE(firstExon.second == testExonSpans.front().second);
+
+	// throwing on empty set
+	std::set< std::pair<hts_pos_t, hts_pos_t> > emptyExonSet;
+	REQUIRE_THROWS_WITH(
+		isaSpace::ExonGroup(testGeneName, strand, emptyExonSet),
+		Catch::Matchers::StartsWith("ERROR: set of exons is empty in")
+	);
 }
 
 TEST_CASE("GFF parsing works") {
 	const std::string goodGFFname("../tests/goodGFF.gff");
 	isaSpace::BamAndGffFiles goodGFFpair;
 	goodGFFpair.gffFileName = goodGFFname;
+	constexpr size_t correctNsets{3};
 
 	isaSpace::FirstExonRemap parsedGoodGFF(goodGFFpair);
-	std::cout << parsedGoodGFF.nExonSets() << "\n";
+	REQUIRE(parsedGoodGFF.nExonSets() == correctNsets);
 }
 
 TEST_CASE("HTSLIB doodles") {
