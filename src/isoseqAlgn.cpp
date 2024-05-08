@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <memory>
 #include <iterator>
+#include <numeric>
 #include <vector>
 #include <set>
 #include <array>
@@ -86,15 +87,28 @@ constexpr size_t FirstExonRemap::spanStart_{3};
 constexpr size_t FirstExonRemap::spanEnd_{4};
 
 FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
+	parseGFF_(bamGFFfilePairNames.gffFileName);
+}
+
+size_t FirstExonRemap::nExonSets() const noexcept {
+	return std::accumulate(
+		gffExonGroups_.cbegin(),
+		gffExonGroups_.cend(),
+		0UL,
+		[](const size_t &sum, const std::pair< std::string, std::vector<ExonGroup> > &eachLnkGrp) {
+			return sum + eachLnkGrp.second.size(); 
+		}
+	);
+}
+
+void FirstExonRemap::parseGFF_(const std::string &gffFileName) {
 	std::string gffLine;
-	std::fstream gffStream(bamGFFfilePairNames.gffFileName, std::ios::in);
+	std::fstream gffStream(gffFileName, std::ios::in);
 	std::string latestGeneName;
 	std::set< std::pair<hts_pos_t, hts_pos_t> > exonSpans;
-	uint64_t gffFileLineNumber{1};
 	std::array<std::string, nGFFfields_> gffFields;
 	while ( std::getline(gffStream, gffLine) ) {
 		if ( gffLine.empty() || (gffLine.at(0) == '#') ) {
-			++gffFileLineNumber;
 			continue;
 		}
 		std::stringstream currLineStream(gffLine);
@@ -103,38 +117,41 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 			++iField;
 		}
 		if (iField < nGFFfields_) {
-			++gffFileLineNumber;
 			continue;
 		}
 		if (gffFields.at(2) == "mRNA") {
-			std::stringstream attributeStream( gffFields.back() );
-			std::string attrField;
-			TokenAttibuteListPair tokenPair;
-			while ( std::getline(attributeStream, attrField, attrDelimiter_) ) {
-				tokenPair.attributeList.emplace_back(attrField);
-			}
-			tokenPair.tokenName = parentToken_;
-
-			std::string parentName{extractAttributeName(tokenPair)};
-			if ( latestGeneName.empty() || parentName.empty() ) {
-				std::swap(latestGeneName, parentName);
-				++gffFileLineNumber;
-				continue;
-			}
-			if ( (latestGeneName != parentName) && ( !exonSpans.empty() ) ) {
-				gffExonGroups_.emplace_back(latestGeneName, gffFields.at(strandIDidx_).front(), exonSpans);
-				std::swap(latestGeneName, parentName);
-				exonSpans.clear();
-			}
+			mRNAfromGFF_(gffFields.front(), gffFields.at(strandIDidx_).front(), gffFields.back(), latestGeneName, exonSpans);
+			continue;
 		}
 		if ( (gffFields.at(2) == "exon") && ( !latestGeneName.empty() ) ) {
 			const auto exonStart = static_cast<hts_pos_t>( stol( gffFields.at(spanStart_) ) );
 			const auto exonEnd   = static_cast<hts_pos_t>( stol( gffFields.at(spanEnd_) ) );
 			exonSpans.insert({exonStart, exonEnd});
 		}
-		++gffFileLineNumber;
 	}
 	if ( !latestGeneName.empty() && !exonSpans.empty() ) {
-		gffExonGroups_.emplace_back(latestGeneName, gffFields.at(strandIDidx_).front(), exonSpans);
+		gffExonGroups_[gffFields.front()].emplace_back(latestGeneName, gffFields.at(strandIDidx_).front(), exonSpans);
 	}
 }
+
+void FirstExonRemap::mRNAfromGFF_(const std::string &lgField, char strandID, const std::string &attributeField, std::string &latestGeneName, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet) {
+	std::stringstream attributeStream(attributeField);
+	std::string attrField;
+	TokenAttibuteListPair tokenPair;
+	while ( std::getline(attributeStream, attrField, attrDelimiter_) ) {
+		tokenPair.attributeList.emplace_back(attrField);
+	}
+	tokenPair.tokenName = parentToken_;
+
+	std::string parentName{extractAttributeName(tokenPair)};
+	if ( latestGeneName.empty() || parentName.empty() ) {
+		std::swap(latestGeneName, parentName);
+		return;
+	}
+	if ( (latestGeneName != parentName) && ( !exonSpanSet.empty() ) ) {
+		gffExonGroups_[lgField].emplace_back(latestGeneName, strandID, exonSpanSet);
+		std::swap(latestGeneName, parentName);
+		exonSpanSet.clear();
+	}
+}
+

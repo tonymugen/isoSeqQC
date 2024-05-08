@@ -34,6 +34,7 @@
 #include <utility>
 #include <vector>
 #include <set>
+#include <unordered_map>
 #include <string>
 
 #include "sam.h"
@@ -257,7 +258,7 @@ namespace isaSpace {
 		 *
 		 * \return number of exon sets
 		 */
-		[[gnu::warn_unused_result]] size_t nExonSets() const noexcept { return gffExonGroups_.size(); };
+		[[gnu::warn_unused_result]] size_t nExonSets() const noexcept;
 	private:
 		/** \brief Number of fields in a GFF file */
 		static const size_t nGFFfields_;
@@ -274,12 +275,33 @@ namespace isaSpace {
 
 		/** \brief GFF file parent record identifier token */
 		std::string parentToken_{"Parent="};
-		/** \brief GFF file ID token */
-		std::string idToken_{"ID="};
 
-		/** \brief Vector of exon groups (one group per gene) */
-		std::vector<ExonGroup> gffExonGroups_;
+		/** \brief Vector of exon groups (one group per gene)
+		 *
+		 * The map keys are linkage groups, scaffolds, or chromosomes.
+		 */
+		std::unordered_map< std::string, std::vector<ExonGroup> > gffExonGroups_;
 		/** \brief Vector of abridged SAM/BAM records */
 		std::vector<SAMrecord> candidateAlignments_;
+
+		/** \brief Parse a GFF file
+		 *
+		 * Extract exons from a GFF file and group them by gene.
+		 *
+		 * \param[in] gffFileName GFF file name
+		 */
+		void parseGFF_(const std::string &gffFileName);
+		/** \brief Extract mRNA information from GFF 
+		 *
+		 * Extract information from a GFF line that has mRNA data.
+		 * Changes the latest gene name if the parent of the current mRNA is different and updates the exon groups vector if necessary.
+		 *
+		 * \param[in] lgField linkage group field
+		 * \param[in] strandID strand marker ('-' for negative, everything else taken as positive)
+		 * \param[in] attributeField GFF attributes field
+		 * \param[in,out] latestGeneName name of the latest gene
+		 * \param[in,out] exonSpanSet set of unique exon start/end pairs
+		 */
+		void mRNAfromGFF_(const std::string &lgField, char strandID, const std::string &attributeField, std::string &latestGeneName, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet);
 	};
 }

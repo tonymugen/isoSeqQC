@@ -18,20 +18,20 @@
  */
 
 #include <cstddef>
-#include <cstdint>
-#include <memory>
+//#include <cstdint>
+//#include <memory>
 #include <iterator>
 #include <algorithm>
 #include <utility>
-#include <vector>
+//#include <vector>
 #include <set>
 #include <array>
 #include <string>
 
-#include <iostream>
+//#include <iostream>
 
-#include "bgzf.h"
-#include "sam.h"
+//#include "bgzf.h"
+//#include "sam.h"
 
 #include "isoseqAlgn.hpp"
 #include "helperFunctions.hpp"
@@ -113,7 +113,6 @@ TEST_CASE("Record classes work") {
 		Catch::Matchers::StartsWith("ERROR: set of exons is empty in")
 	);
 }
-
 TEST_CASE("GFF parsing works") {
 	const std::string goodGFFname("../tests/goodGFF.gff");
 	isaSpace::BamAndGffFiles goodGFFpair;
@@ -123,7 +122,7 @@ TEST_CASE("GFF parsing works") {
 	isaSpace::FirstExonRemap parsedGoodGFF(goodGFFpair);
 	REQUIRE(parsedGoodGFF.nExonSets() == correctNsets);
 }
-
+/*
 TEST_CASE("HTSLIB doodles") {
 	const std::string testBAMname("../tests/testAlgn.bam");
 	const char openMode{'r'};
@@ -174,4 +173,6 @@ TEST_CASE("HTSLIB doodles") {
 	}
 	std::cout << "Number saved: " << primaryRecords.size() << "; number considered: " << iRecord << "\n";
 	std::cout << "+++++++++++++++++\n";
+
 }
+*/
