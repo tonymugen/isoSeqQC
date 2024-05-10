@@ -33,6 +33,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
+#include <array>
 #include <set>
 #include <unordered_map>
 #include <string>
@@ -40,6 +41,8 @@
 #include "sam.h"
 
 namespace isaSpace {
+	constexpr size_t nGFFfields{9UL};
+
 	struct CbamRecordDeleter;
 	struct BamAndGffFiles;
 	struct TokenAttibuteListPair;
@@ -69,6 +72,7 @@ namespace isaSpace {
 	 * Gathers exons belonging to all transcripts of a gene.
 	 */
 	class ExonGroup {
+		friend class FirstExonRemap;
 	public:
 		/** \brief Default constructor */
 		ExonGroup() = default;
@@ -108,6 +112,11 @@ namespace isaSpace {
 		/** \brief Destructor */
 		~ExonGroup() = default;
 
+		/** \brief Report the gene name 
+		 *
+		 * \return gene name
+		 */
+		[[gnu::warn_unused_result]] std::string geneName() const { return geneName_; };
 		/** \brief Number of exons in the gene 
 		 *
 		 * \return number of exons
@@ -254,14 +263,14 @@ namespace isaSpace {
 		/** \brief Destructor */
 		~FirstExonRemap() = default;
 
+		/** \brief Number of chromosomes/scaffolds/linkage groups */
+		[[gnu::warn_unused_result]] size_t nChromosomes() const noexcept { return gffExonGroups_.size(); };
 		/** \brief Number of exon sets (genes with exons)
 		 *
 		 * \return number of exon sets
 		 */
 		[[gnu::warn_unused_result]] size_t nExonSets() const noexcept;
 	private:
-		/** \brief Number of fields in a GFF file */
-		static const size_t nGFFfields_;
 		/** \brief GFF file column delimiter */
 		static const char gffDelimiter_;
 		/** \brief GFF file attribute list delimiter */
@@ -296,12 +305,10 @@ namespace isaSpace {
 		 * Extract information from a GFF line that has mRNA data.
 		 * Changes the latest gene name if the parent of the current mRNA is different and updates the exon groups vector if necessary.
 		 *
-		 * \param[in] lgField linkage group field
-		 * \param[in] strandID strand marker ('-' for negative, everything else taken as positive)
-		 * \param[in] attributeField GFF attributes field
-		 * \param[in,out] latestGeneName name of the latest gene
+		 * \param[in,out] currentGFFline fields from the GFF file line just read
+		 * \param[in,out] previousGFFfields GFF fields from previous lines; the attribute field only has the current gene ID
 		 * \param[in,out] exonSpanSet set of unique exon start/end pairs
 		 */
-		void mRNAfromGFF_(const std::string &lgField, char strandID, const std::string &attributeField, std::string &latestGeneName, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet);
+		void mRNAfromGFF_(std::array<std::string, nGFFfields> &currentGFFline, std::array<std::string, nGFFfields> &previousGFFfields, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet);
 	};
 }

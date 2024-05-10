@@ -18,17 +18,14 @@
  */
 
 #include <cstddef>
-//#include <cstdint>
-//#include <memory>
 #include <iterator>
 #include <algorithm>
 #include <utility>
-//#include <vector>
 #include <set>
 #include <array>
 #include <string>
 
-//#include <iostream>
+#include <iostream>
 
 //#include "bgzf.h"
 //#include "sam.h"
@@ -115,12 +112,20 @@ TEST_CASE("Record classes work") {
 }
 TEST_CASE("GFF parsing works") {
 	const std::string goodGFFname("../tests/goodGFF.gff");
-	isaSpace::BamAndGffFiles goodGFFpair;
-	goodGFFpair.gffFileName = goodGFFname;
-	constexpr size_t correctNsets{3};
+	isaSpace::BamAndGffFiles gffPair;
+	gffPair.gffFileName = goodGFFname;
+	constexpr size_t correctNsets{4};
+	constexpr size_t correctNchrom{2};
 
-	isaSpace::FirstExonRemap parsedGoodGFF(goodGFFpair);
-	REQUIRE(parsedGoodGFF.nExonSets() == correctNsets);
+	isaSpace::FirstExonRemap parsedGoodGFF(gffPair);
+	REQUIRE(parsedGoodGFF.nChromosomes() == correctNchrom);
+	REQUIRE(parsedGoodGFF.nExonSets()    == correctNsets);
+
+	std::cout << "\n:::::::::::::::::::::::::::::::::::::::\n";
+
+	const std::string messyGFFname("../tests/messyGFF.gff");
+	gffPair.gffFileName = messyGFFname;
+	isaSpace::FirstExonRemap parsedMessyGFF(gffPair);
 }
 /*
 TEST_CASE("HTSLIB doodles") {
