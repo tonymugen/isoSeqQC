@@ -39,8 +39,6 @@
 #include <sstream>
 #include <fstream>
 
-#include <iostream>
-
 #include "hts.h"
 #include "sam.h"
 
@@ -89,15 +87,6 @@ constexpr size_t FirstExonRemap::spanEnd_{4UL};
 
 FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 	parseGFF_(bamGFFfilePairNames.gffFileName);
-	for (const auto &eachChr : gffExonGroups_) {
-		std::cout << "chromosome " << eachChr.first << ":\n";
-		for (const auto &eachExGrp : eachChr.second) {
-			std::cout << "\tgene " << eachExGrp.geneName() << ":\n";
-			for (const auto &eachPosPair : eachExGrp.exonRanges_) {
-				std::cout << "\t\t" << eachPosPair.first << " <--> " << eachPosPair.second << "\n";
-			}
-		}
-	}
 }
 
 size_t FirstExonRemap::nExonSets() const noexcept {
@@ -140,7 +129,7 @@ void FirstExonRemap::parseGFF_(const std::string &gffFileName) {
 		}
 	}
 	if ( !activeGFFfields.back().empty() && !exonSpans.empty() ) {
-		gffExonGroups_[activeGFFfields.front()].emplace_back(activeGFFfields.back(), newGFFfields.at(strandIDidx_).front(), exonSpans);
+		gffExonGroups_[activeGFFfields.front()].emplace_back(activeGFFfields.back(), activeGFFfields.at(strandIDidx_).front(), exonSpans);
 	}
 }
 
@@ -155,14 +144,24 @@ void FirstExonRemap::mRNAfromGFF_(std::array<std::string, nGFFfields> &currentGF
 
 	std::string parentName{extractAttributeName(tokenPair)};
 	std::swap(currentGFFline.back(), parentName);
-	if ( previousGFFfields.back().empty() || currentGFFline.back().empty() ) {
-		std::swap( previousGFFfields.back(), currentGFFline.back() );
+	if ( currentGFFline.back() == previousGFFfields.back() ) { // both could be empty
 		return;
 	}
-	if ( ( previousGFFfields.back() != currentGFFline.back() ) && ( !exonSpanSet.empty() ) ) {
+	if ( currentGFFline.back().empty() ) {
+		if ( !exonSpanSet.empty() ) {
+			gffExonGroups_[previousGFFfields.front()].emplace_back(previousGFFfields.back(), previousGFFfields.at(strandIDidx_).front(), exonSpanSet);
+			exonSpanSet.clear();
+		}
+		previousGFFfields.back().clear();
+		previousGFFfields.front().clear();
+		return;
+	}
+	// neither is empty and are not the same
+	if ( !exonSpanSet.empty() ) {
 		gffExonGroups_[previousGFFfields.front()].emplace_back(previousGFFfields.back(), previousGFFfields.at(strandIDidx_).front(), exonSpanSet);
-		std::swap( previousGFFfields.back(), currentGFFline.back() );
 		exonSpanSet.clear();
 	}
+	std::swap( previousGFFfields.back(), currentGFFline.back() );
+	std::swap( previousGFFfields.front(), currentGFFline.front() );
 }
 

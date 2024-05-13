@@ -25,8 +25,6 @@
 #include <array>
 #include <string>
 
-#include <iostream>
-
 //#include "bgzf.h"
 //#include "sam.h"
 
@@ -121,11 +119,11 @@ TEST_CASE("GFF parsing works") {
 	REQUIRE(parsedGoodGFF.nChromosomes() == correctNchrom);
 	REQUIRE(parsedGoodGFF.nExonSets()    == correctNsets);
 
-	std::cout << "\n:::::::::::::::::::::::::::::::::::::::\n";
-
 	const std::string messyGFFname("../tests/messyGFF.gff");
 	gffPair.gffFileName = messyGFFname;
 	isaSpace::FirstExonRemap parsedMessyGFF(gffPair);
+	REQUIRE(parsedMessyGFF.nChromosomes() == correctNchrom);
+	REQUIRE(parsedMessyGFF.nExonSets()    == correctNsets);
 }
 /*
 TEST_CASE("HTSLIB doodles") {
