@@ -290,8 +290,11 @@ namespace isaSpace {
 		 * The map keys are linkage groups, scaffolds, or chromosomes.
 		 */
 		std::unordered_map< std::string, std::vector<ExonGroup> > gffExonGroups_;
-		/** \brief Vector of abridged SAM/BAM records */
-		std::vector<SAMrecord> candidateAlignments_;
+		/** \brief Vector of abridged SAM/BAM records
+		 *
+		 * The map keys are linkage groups, scaffolds, or chromosomes.
+		 */
+		std::unordered_map< std::string, std::vector<SAMrecord> > candidateAlignments_;
 
 		/** \brief Parse a GFF file
 		 *

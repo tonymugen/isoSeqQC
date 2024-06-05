@@ -41,6 +41,7 @@
 
 #include "hts.h"
 #include "sam.h"
+#include "bgzf.h"
 
 #include "isoseqAlgn.hpp"
 #include "helperFunctions.hpp"
@@ -87,6 +88,38 @@ constexpr size_t FirstExonRemap::spanEnd_{4UL};
 
 FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 	parseGFF_(bamGFFfilePairNames.gffFileName);
+
+	if ( gffExonGroups_.empty() ) {
+		throw std::string("ERROR: no mRNAs with exons found in the ")
+			+ bamGFFfilePairNames.gffFileName + std::string(" GFF file in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+
+	constexpr char openMode{'r'};
+	std::unique_ptr<BGZF, void(*)(BGZF *)> bamFile(
+		bgzf_open(bamGFFfilePairNames.bamFileName.c_str(), &openMode),
+		[](BGZF *bamFile) {
+			bgzf_close(bamFile);
+		}
+	);
+	if (bamFile == nullptr) {
+		throw std::string("ERROR: failed to open the BAM file ")
+			+ bamGFFfilePairNames.bamFileName + std::string(" in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+
+	// must read the header first to get to the alignments
+	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> bamHeader(
+		bam_hdr_read( bamFile.get() ),
+		[](sam_hdr_t *samHeader) {
+			sam_hdr_destroy(samHeader);
+		}
+	);
+	if (bamHeader == nullptr) {
+		throw std::string("ERROR: failed to read the header from the BAM file ")
+			+ bamGFFfilePairNames.bamFileName + std::string(" in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
 }
 
 size_t FirstExonRemap::nExonSets() const noexcept {

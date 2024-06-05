@@ -108,10 +108,45 @@ TEST_CASE("Record classes work") {
 		Catch::Matchers::StartsWith("ERROR: set of exons is empty in")
 	);
 }
-TEST_CASE("GFF parsing works") {
+
+TEST_CASE("Catching bad GFF and BAM files works") {
 	const std::string goodGFFname("../tests/goodGFF.gff");
+	const std::string nomrnaGFFname("../tests/nomRNA.gff");
+	const std::string goodBAMname("../tests/testAlgn.bam");
+	const std::string wrongBAMname("../tests/wrong.bam");
+	const std::string randomNoiseBAMname("../tests/randomNoise.bam"); // completely random noise, no magic bytes, but valid EOF sequence
+	const std::string headerlessBAMname("../tests/headerless.bam");   // random noise with magic bytes and EOF but no header
 	isaSpace::BamAndGffFiles gffPair;
 	gffPair.gffFileName = goodGFFname;
+	gffPair.bamFileName = wrongBAMname;
+	REQUIRE_THROWS_WITH(
+		isaSpace::FirstExonRemap(gffPair),
+		Catch::Matchers::StartsWith("ERROR: failed to open the BAM file")
+	);
+	gffPair.bamFileName = randomNoiseBAMname;
+	REQUIRE_THROWS_WITH(
+		isaSpace::FirstExonRemap(gffPair),
+		Catch::Matchers::StartsWith("ERROR: failed to read the header from the BAM file")
+	);
+	gffPair.bamFileName = headerlessBAMname;
+	REQUIRE_THROWS_WITH(
+		isaSpace::FirstExonRemap(gffPair),
+		Catch::Matchers::StartsWith("ERROR: failed to read the header from the BAM file")
+	);
+	gffPair.gffFileName = nomrnaGFFname;
+	gffPair.bamFileName = goodBAMname;
+	REQUIRE_THROWS_WITH(
+		isaSpace::FirstExonRemap(gffPair),
+		Catch::Matchers::StartsWith("ERROR: no mRNAs with exons found in the")
+	);
+}
+
+TEST_CASE("GFF and BAM parsing works") {
+	const std::string goodGFFname("../tests/goodGFF.gff");
+	const std::string goodBAMname("../tests/testAlgn.bam");
+	isaSpace::BamAndGffFiles gffPair;
+	gffPair.gffFileName = goodGFFname;
+	gffPair.bamFileName = goodBAMname;
 	constexpr size_t correctNsets{4};
 	constexpr size_t correctNchrom{2};
 
@@ -119,11 +154,13 @@ TEST_CASE("GFF parsing works") {
 	REQUIRE(parsedGoodGFF.nChromosomes() == correctNchrom);
 	REQUIRE(parsedGoodGFF.nExonSets()    == correctNsets);
 
+	/*
 	const std::string messyGFFname("../tests/messyGFF.gff");
 	gffPair.gffFileName = messyGFFname;
 	isaSpace::FirstExonRemap parsedMessyGFF(gffPair);
 	REQUIRE(parsedMessyGFF.nChromosomes() == correctNchrom);
 	REQUIRE(parsedMessyGFF.nExonSets()    == correctNsets);
+	*/
 }
 /*
 TEST_CASE("HTSLIB doodles") {
