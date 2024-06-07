@@ -29,7 +29,6 @@
 
 #pragma once
 
-#include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -47,7 +46,7 @@ namespace isaSpace {
 	struct BamAndGffFiles;
 	struct TokenAttibuteListPair;
 	class ExonGroup;
-	class SAMrecord;
+	class BAMrecord;
 	class FirstExonRemap;
 
 	/** \brief Deleter of the C BAM record */
@@ -152,73 +151,65 @@ namespace isaSpace {
 		std::vector< std::pair<hts_pos_t, hts_pos_t> >::iterator firstExonIt_;
 	};
 
-	/** \brief Summary of a SAM record set
+	/** \brief Summary of a BAM record set
 	 *
-	 * Stores relevant information from SAM format alignment records.
-	 * Includes primary and secondary alignments of a read.
-	 *
+	 * Stores relevant information from BAM format alignment records.
 	 */
-	class SAMrecord {
+	class BAMrecord {
 	public:
 		/** \brief Default constructor */
-		SAMrecord() = default;
+		BAMrecord() = default;
 		/** \brief Constructor with data 
 		 *
-		 * Constructs an object from an alignment record.
-		 * This should be the first record of a read encountered in a `.bam` file,
-		 * typically the primary alignment.
+		 * Constructs an object from an HTSLIB alignment record.
 		 *
-		 * \param[in] alignmentRecord alignment record of a read
+		 * \param[in] alignmentRecordPointer pointer to a read alignment record
 		 */
-		SAMrecord(const std::unique_ptr<bam1_t, CbamRecordDeleter> &alignmentRecord);
+		BAMrecord(std::unique_ptr<bam1_t, CbamRecordDeleter> &&alignmentRecordPointer);
 		/** \brief Copy constructor
 		 *
 		 * \param[in] toCopy object to copy
 		 */
-		SAMrecord(const SAMrecord &toCopy) = default;
+		BAMrecord(const BAMrecord &toCopy) = delete;
 		/** \brief Copy assignment operator
 		 *
 		 * \param[in] toCopy object to copy
-		 * \return `SAMrecord` object
+		 * \return `BAMrecord` object
 		 */
-		SAMrecord& operator=(const SAMrecord &toCopy) = default;
+		BAMrecord& operator=(const BAMrecord &toCopy) = delete;
 		/** \brief Move constructor
 		 *
 		 * \param[in] toMove object to move
 		 */
-		SAMrecord(SAMrecord &&toMove) noexcept = default;
+		BAMrecord(BAMrecord &&toMove) noexcept = default;
 		/** \brief Move assignment operator
 		 *
 		 * \param[in] toMove object to move
-		 * \return `SAMrecord` object
+		 * \return `BAMrecord` object
 		 */
-		SAMrecord& operator=(SAMrecord &&toMove) noexcept = default;
+		BAMrecord& operator=(BAMrecord &&toMove) noexcept = default;
 		/** \brief Destructor */
-		~SAMrecord() = default;
+		~BAMrecord() = default;
 
 		/** \brief Output read name 
 		 *
 		 * \return read name
 		 */
-		[[gnu::warn_unused_result]] std::string getReadName() const {return readName_; };
-		/** \brief Append a secondary read
+		[[gnu::warn_unused_result]] std::string getReadName() const;
+		/** \brief Is this a remap candidate?
 		 *
-		 * Append a secondary alignment record to the current.
-		 *
-		 * \param[in] alignmentRecord alignment record of a read
+		 * return remap candidate status
 		 */
-		void appendSecondary(const std::unique_ptr<bam1_t, CbamRecordDeleter> &alignmentRecord);
+		[[gnu::warn_unused_result]] bool isRemapCandidate() const noexcept {return remapCandidate_; };
 	private:
-		/** \brief Read (i.e. query) name */
-		std::string readName_;
-		/** \brief Mapping quality (one for all alignments) */
-		uint8_t mappingQuality_ = 0;
-		/** \brief Start of the alignment position on the reference (one per alignment) */
-		std::vector<uint32_t> positionOnReference_;
-		/** \brief `minimap2` alignment scores (one per alignment) */
-		std::vector<uint16_t> alignmentScore_;
-		/** \brief CIGAR strings (one per alignment) */
-		std::vector< std::vector<uint32_t> > cigar_;
+		/** \brief Pointer to the BAM record */
+		std::unique_ptr<bam1_t, CbamRecordDeleter> alignmentRecord_;
+		/** \brief Is this a re-map candidate ? */
+		bool remapCandidate_{false};
+		/** \brief Candidate unmapped portion of the read, undoing reverse-complement if necessary */
+		std::string unMappedSequence_;
+		/** \brief Quality of the unmapped sequence */
+		std::string unMappedQuality_;
 	};
 	/** \brief Candidate first exon re-map alignments
 	 *
@@ -294,7 +285,7 @@ namespace isaSpace {
 		 *
 		 * The map keys are linkage groups, scaffolds, or chromosomes.
 		 */
-		std::unordered_map< std::string, std::vector<SAMrecord> > candidateAlignments_;
+		std::unordered_map< std::string, std::vector<BAMrecord> > candidateAlignments_;
 
 		/** \brief Parse a GFF file
 		 *

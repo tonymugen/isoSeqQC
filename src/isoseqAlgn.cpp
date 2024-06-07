@@ -27,7 +27,6 @@
  *
  */
 
-#include <cstdint>
 #include <algorithm>
 #include <memory>
 #include <iterator>
@@ -60,23 +59,29 @@ ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pai
 	firstExonIt_ = ( strand == '-' ? std::prev( exonRanges_.end() ) : exonRanges_.begin() );
 }
 
-//SAMrecord methods
-SAMrecord::SAMrecord(const std::unique_ptr<bam1_t, CbamRecordDeleter> &alignmentRecord) : 
-			readName_{bam_get_qname( alignmentRecord.get() )}, // NOLINT
-			mappingQuality_{alignmentRecord->core.qual} {
-	this->appendSecondary(alignmentRecord);
-}
-
-void SAMrecord::appendSecondary(const std::unique_ptr<bam1_t, CbamRecordDeleter> &alignmentRecord) {
-	constexpr std::array<char, 2> alignmentScoreToken{'A', 'S'};
-	cigar_.emplace_back(bam_get_cigar(alignmentRecord), bam_get_cigar(alignmentRecord) + alignmentRecord->core.n_cigar); // NOLINT
-	positionOnReference_.emplace_back(alignmentRecord->core.pos);
-	auto *const alignmentScoreRecord{bam_aux_get( alignmentRecord.get(), alignmentScoreToken.data() )};
-	if (alignmentScoreRecord == nullptr) {
-		alignmentScore_.emplace_back(0);
+//BAMrecord methods
+BAMrecord::BAMrecord(std::unique_ptr<bam1_t, CbamRecordDeleter> &&alignmentRecordPointer) : alignmentRecord_{std::move(alignmentRecordPointer)} {
+	constexpr uint32_t softCLipLengthCutOff{10};
+	constexpr uint16_t isNotPrimary{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
+	remapCandidate_ = (alignmentRecord_->core.flag & isNotPrimary) == 0;
+	if (!remapCandidate_) {
 		return;
 	}
-	alignmentScore_.emplace_back( static_cast<uint16_t>( bam_aux2i(alignmentScoreRecord) ) );
+
+	const std::vector<uint32_t> cigar(
+		bam_get_cigar( alignmentRecord_.get() ),                                    // NOLINT
+		bam_get_cigar( alignmentRecord_.get() ) +  alignmentRecord_->core.n_cigar   // NOLINT
+	);
+	const auto firstCIGAR = ( 
+		(alignmentRecord_->core.flag & BAM_FREVERSE) == BAM_FREVERSE ?
+			cigar.front() :
+			cigar.back()
+	);
+	if ( (bam_cigar_oplen(firstCIGAR) < softCLipLengthCutOff) && ( bam_cigar_opchr(firstCIGAR) == 'S' ) ) { // NOLINT
+		remapCandidate_ = false;
+		return;
+	}
+
 }
 
 // FirstExonRemap methods

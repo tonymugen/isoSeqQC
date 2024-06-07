@@ -57,7 +57,7 @@ TEST_CASE("Helper functions work") {
 	REQUIRE( absentAttrResult.empty() );
 }
 
-TEST_CASE("Record classes work") {
+TEST_CASE("Exon range extraction works") {
 	constexpr size_t nExons{5};
 	constexpr std::array<std::pair<hts_pos_t, hts_pos_t>, nExons> testExonSpans{
 		std::pair<hts_pos_t, hts_pos_t>{50812, 50970},
@@ -154,13 +154,11 @@ TEST_CASE("GFF and BAM parsing works") {
 	REQUIRE(parsedGoodGFF.nChromosomes() == correctNchrom);
 	REQUIRE(parsedGoodGFF.nExonSets()    == correctNsets);
 
-	/*
 	const std::string messyGFFname("../tests/messyGFF.gff");
 	gffPair.gffFileName = messyGFFname;
 	isaSpace::FirstExonRemap parsedMessyGFF(gffPair);
 	REQUIRE(parsedMessyGFF.nChromosomes() == correctNchrom);
 	REQUIRE(parsedMessyGFF.nExonSets()    == correctNsets);
-	*/
 }
 /*
 TEST_CASE("HTSLIB doodles") {
