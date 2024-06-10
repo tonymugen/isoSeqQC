@@ -165,7 +165,7 @@ namespace isaSpace {
 		 *
 		 * \param[in] alignmentRecordPointer pointer to a read alignment record
 		 */
-		BAMrecord(std::unique_ptr<bam1_t, CbamRecordDeleter> &&alignmentRecordPointer);
+		BAMrecord(std::unique_ptr<bam1_t, CbamRecordDeleter> &&alignmentRecordPointer) : alignmentRecord_{std::move(alignmentRecordPointer)} {};
 		/** \brief Copy constructor
 		 *
 		 * \param[in] toCopy object to copy
@@ -195,17 +195,19 @@ namespace isaSpace {
 		 *
 		 * \return read name
 		 */
-		[[gnu::warn_unused_result]] std::string getReadName() const;
-		/** \brief Is this a remap candidate?
+		[[gnu::warn_unused_result]] std::string getReadName() const {return std::string{bam_get_qname( alignmentRecord_.get() )}; }; // NOLINT
+		/** \brief Map start position
 		 *
-		 * return remap candidate status
+		 * Position of the first mapped nucleotide, taking into account possible reverse-complement.
+		 *
+		 * \return 1-based read map start position
 		 */
-		[[gnu::warn_unused_result]] bool isRemapCandidate() const noexcept {return remapCandidate_; };
+		[[gnu::warn_unused_result]] hts_pos_t getMapStart() const noexcept {
+			return bam_is_rev( alignmentRecord_.get() ) ? bam_endpos( alignmentRecord_.get() ) + 1 : alignmentRecord_->core.pos + 1 ;
+		};
 	private:
 		/** \brief Pointer to the BAM record */
 		std::unique_ptr<bam1_t, CbamRecordDeleter> alignmentRecord_;
-		/** \brief Is this a re-map candidate ? */
-		bool remapCandidate_{false};
 		/** \brief Candidate unmapped portion of the read, undoing reverse-complement if necessary */
 		std::string unMappedSequence_;
 		/** \brief Quality of the unmapped sequence */

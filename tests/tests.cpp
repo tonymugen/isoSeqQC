@@ -25,8 +25,8 @@
 #include <array>
 #include <string>
 
-//#include "bgzf.h"
-//#include "sam.h"
+#include "bgzf.h"
+#include "sam.h"
 
 #include "isoseqAlgn.hpp"
 #include "helperFunctions.hpp"
@@ -107,6 +107,35 @@ TEST_CASE("Exon range extraction works") {
 		isaSpace::ExonGroup(testGeneName, strand, emptyExonSet),
 		Catch::Matchers::StartsWith("ERROR: set of exons is empty in")
 	);
+}
+
+TEST_CASE("Saving individual BAM records works") {
+	const std::string oneRecordBAMname("../tests/oneRecord.bam");
+	const std::string correctReadName("m54312U_201215_225530/657093/ccs");
+	constexpr hts_pos_t correctMapPosition{2468434};
+	// read one record from the BAM file
+	constexpr char openMode{'r'};
+	std::unique_ptr<BGZF, void(*)(BGZF *)> orBAMfile(
+		bgzf_open(oneRecordBAMname.c_str(), &openMode),
+		[](BGZF *bamFile) {
+			bgzf_close(bamFile);
+		}
+	);
+
+	// must read the header first to get to the alignments
+	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> orBAMheader(
+		bam_hdr_read( orBAMfile.get() ),
+		[](sam_hdr_t *samHeader) {
+			sam_hdr_destroy(samHeader);
+		}
+	);
+	isaSpace::CbamRecordDeleter localDeleter;
+	std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRecordPtr(bam_init1(), localDeleter);
+	const auto nBytes = bam_read1( orBAMfile.get(), bamRecordPtr.get() );
+	isaSpace::BAMrecord bamRecord( std::move(bamRecordPtr) );
+	REQUIRE(nBytes > 0);
+	REQUIRE(bamRecord.getReadName() == correctReadName);
+	REQUIRE(bamRecord.getMapStart() == correctMapPosition);
 }
 
 TEST_CASE("Catching bad GFF and BAM files works") {

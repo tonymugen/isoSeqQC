@@ -60,29 +60,6 @@ ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pai
 }
 
 //BAMrecord methods
-BAMrecord::BAMrecord(std::unique_ptr<bam1_t, CbamRecordDeleter> &&alignmentRecordPointer) : alignmentRecord_{std::move(alignmentRecordPointer)} {
-	constexpr uint32_t softCLipLengthCutOff{10};
-	constexpr uint16_t isNotPrimary{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
-	remapCandidate_ = (alignmentRecord_->core.flag & isNotPrimary) == 0;
-	if (!remapCandidate_) {
-		return;
-	}
-
-	const std::vector<uint32_t> cigar(
-		bam_get_cigar( alignmentRecord_.get() ),                                    // NOLINT
-		bam_get_cigar( alignmentRecord_.get() ) +  alignmentRecord_->core.n_cigar   // NOLINT
-	);
-	const auto firstCIGAR = ( 
-		(alignmentRecord_->core.flag & BAM_FREVERSE) == BAM_FREVERSE ?
-			cigar.front() :
-			cigar.back()
-	);
-	if ( (bam_cigar_oplen(firstCIGAR) < softCLipLengthCutOff) && ( bam_cigar_opchr(firstCIGAR) == 'S' ) ) { // NOLINT
-		remapCandidate_ = false;
-		return;
-	}
-
-}
 
 // FirstExonRemap methods
 constexpr char   FirstExonRemap::gffDelimiter_{'\t'};
