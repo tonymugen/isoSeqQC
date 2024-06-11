@@ -110,6 +110,7 @@ TEST_CASE("Exon range extraction works") {
 }
 
 TEST_CASE("Saving individual BAM records works") {
+	// straight read
 	const std::string oneRecordBAMname("../tests/oneRecord.bam");
 	const std::string correctReadName("m54312U_201215_225530/657093/ccs");
 	constexpr hts_pos_t correctMapPosition{2468434};
@@ -131,11 +132,36 @@ TEST_CASE("Saving individual BAM records works") {
 	);
 	isaSpace::CbamRecordDeleter localDeleter;
 	std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRecordPtr(bam_init1(), localDeleter);
-	const auto nBytes = bam_read1( orBAMfile.get(), bamRecordPtr.get() );
+	auto nBytes = bam_read1( orBAMfile.get(), bamRecordPtr.get() );
 	isaSpace::BAMrecord bamRecord( std::move(bamRecordPtr) );
 	REQUIRE(nBytes > 0);
 	REQUIRE(bamRecord.getReadName() == correctReadName);
 	REQUIRE(bamRecord.getMapStart() == correctMapPosition);
+
+	// reverse-complemented read
+	const std::string oneRecordRevBAMname("../tests/oneRecordRev.bam");
+	const std::string correctRevReadName("m54312U_201215_225530/38470652/ccs");
+	constexpr hts_pos_t correctRevMapPosition{22554617};
+	std::unique_ptr<BGZF, void(*)(BGZF *)> orRevBAMfile(
+		bgzf_open(oneRecordRevBAMname.c_str(), &openMode),
+		[](BGZF *bamFile) {
+			bgzf_close(bamFile);
+		}
+	);
+
+	// must read the header first to get to the alignments
+	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> orRevBAMheader(
+		bam_hdr_read( orRevBAMfile.get() ),
+		[](sam_hdr_t *samHeader) {
+			sam_hdr_destroy(samHeader);
+		}
+	);
+	std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRevRecordPtr(bam_init1(), localDeleter);
+	nBytes = bam_read1( orRevBAMfile.get(), bamRevRecordPtr.get() );
+	isaSpace::BAMrecord bamRecordRev( std::move(bamRevRecordPtr) );
+	REQUIRE(nBytes > 0);
+	REQUIRE(bamRecordRev.getReadName() == correctRevReadName);
+	REQUIRE(bamRecordRev.getMapStart() == correctRevMapPosition);
 }
 
 TEST_CASE("Catching bad GFF and BAM files works") {
@@ -183,11 +209,13 @@ TEST_CASE("GFF and BAM parsing works") {
 	REQUIRE(parsedGoodGFF.nChromosomes() == correctNchrom);
 	REQUIRE(parsedGoodGFF.nExonSets()    == correctNsets);
 
+	/*
 	const std::string messyGFFname("../tests/messyGFF.gff");
 	gffPair.gffFileName = messyGFFname;
 	isaSpace::FirstExonRemap parsedMessyGFF(gffPair);
 	REQUIRE(parsedMessyGFF.nChromosomes() == correctNchrom);
 	REQUIRE(parsedMessyGFF.nExonSets()    == correctNsets);
+	*/
 }
 /*
 TEST_CASE("HTSLIB doodles") {

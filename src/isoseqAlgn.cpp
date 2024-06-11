@@ -102,6 +102,23 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 			+ bamGFFfilePairNames.bamFileName + std::string(" in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
+	while (true) {
+		CbamRecordDeleter localDeleter;
+		std::unique_ptr<bam1_t, CbamRecordDeleter> bamRecordPtr(bam_init1(), localDeleter);
+		const auto nBytes = bam_read1( bamFile.get(), bamRecordPtr.get() );
+		if (nBytes == -1) {
+			break;
+		}
+		if (nBytes < -1) {
+			continue;
+		}
+		std::string referenceName( sam_hdr_tid2name(bamHeader.get(), bamRecordPtr->core.tid) );
+		const auto refNameIt = gffExonGroups_.find(referenceName);
+		if ( refNameIt == gffExonGroups_.cend() ) {  // ignore of the chromosome not in the GFF
+			continue;
+		}
+
+	}
 }
 
 size_t FirstExonRemap::nExonSets() const noexcept {
