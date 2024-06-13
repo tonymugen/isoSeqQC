@@ -31,6 +31,7 @@
 #include <memory>
 #include <iterator>
 #include <numeric>
+#include <utility>
 #include <vector>
 #include <set>
 #include <array>
@@ -102,6 +103,9 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 			+ bamGFFfilePairNames.bamFileName + std::string(" in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
+
+	// keeping track of the latest iterators pointing to identified exon groups, one per chromosome/reference sequence
+	std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> latestExonGroupIts;
 	while (true) {
 		CbamRecordDeleter localDeleter;
 		std::unique_ptr<bam1_t, CbamRecordDeleter> bamRecordPtr(bam_init1(), localDeleter);
@@ -116,6 +120,14 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 		const auto refNameIt = gffExonGroups_.find(referenceName);
 		if ( refNameIt == gffExonGroups_.cend() ) {  // ignore of the chromosome not in the GFF
 			continue;
+		}
+		BAMrecord currentBAM( std::move(bamRecordPtr) );
+		const auto alignmentStart = currentBAM.getMapStart();
+		if ( latestExonGroupIts.find(referenceName) == latestExonGroupIts.cend() ) {
+			latestExonGroupIts[referenceName] = gffExonGroups_[referenceName].cbegin();
+		}
+		if (alignmentStart > latestExonGroupIts[referenceName]->firsExonSpan().first) {
+			;
 		}
 
 	}

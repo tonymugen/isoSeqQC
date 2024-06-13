@@ -147,7 +147,7 @@ namespace isaSpace {
 		 * `hts_pos_t` is `int64_t`
 		 */
 		std::vector< std::pair<hts_pos_t, hts_pos_t> > exonRanges_;
-		/** \brief iterator pointing to the first exon */
+		/** \brief Iterator pointing to the first exon */
 		std::vector< std::pair<hts_pos_t, hts_pos_t> >::iterator firstExonIt_;
 	};
 
@@ -191,6 +191,11 @@ namespace isaSpace {
 		/** \brief Destructor */
 		~BAMrecord() = default;
 
+		/** \brief Set index into the vector of `ExonGroup` instances 
+		 *
+		 * \param[in] egIdx index of the overlapping exon group
+		 */
+		void setExonGroupIdx(const size_t &egIdx) noexcept { exonGroupIdx_ = egIdx; };
 		/** \brief Output read name 
 		 *
 		 * \return read name
@@ -205,13 +210,16 @@ namespace isaSpace {
 		[[gnu::warn_unused_result]] hts_pos_t getMapStart() const noexcept {
 			return bam_is_rev( alignmentRecord_.get() ) ? bam_endpos( alignmentRecord_.get() ) + 1 : alignmentRecord_->core.pos + 1 ;
 		};
+		/** \brief Is the read reverse-complemented?
+		 *
+		 * \return true if the read is reverse-complemented
+		 */
+		[[gnu::warn_unused_result]] bool isRevComp() const noexcept { return bam_is_rev( alignmentRecord_.get() ); };
 	private:
 		/** \brief Pointer to the BAM record */
 		std::unique_ptr<bam1_t, CbamRecordDeleter> alignmentRecord_;
-		/** \brief Candidate unmapped portion of the read, undoing reverse-complement if necessary */
-		std::string unMappedSequence_;
-		/** \brief Quality of the unmapped sequence */
-		std::string unMappedQuality_;
+		/** \brief Index of the `ExonGroup` overlapping this read */
+		size_t exonGroupIdx_{0};
 	};
 	/** \brief Candidate first exon re-map alignments
 	 *
