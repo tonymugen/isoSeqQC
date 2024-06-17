@@ -126,8 +126,21 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 		if ( latestExonGroupIts.find(referenceName) == latestExonGroupIts.cend() ) {
 			latestExonGroupIts[referenceName] = gffExonGroups_[referenceName].cbegin();
 		}
-		if (alignmentStart > latestExonGroupIts[referenceName]->firsExonSpan().first) {
-			;
+		// if the BAM file is not sorted, we may have to backtrack
+		if (alignmentStart < latestExonGroupIts[referenceName]->firsExonSpan().first) {
+			continue;
+		}
+		latestExonGroupIts[referenceName] = std::lower_bound(
+			latestExonGroupIts[referenceName],
+			gffExonGroups_[referenceName].cend(),
+			alignmentStart,
+			[](const ExonGroup &currGroup, const hts_pos_t bamStart) {
+				return currGroup.geneSpan().first < bamStart; 
+			}
+		);
+		if ( latestExonGroupIts[referenceName] == gffExonGroups_[referenceName].cend() ) {
+			// not break because other chromosomes may still be in play
+			continue;
 		}
 
 	}
