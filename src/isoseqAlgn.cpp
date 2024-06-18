@@ -48,7 +48,8 @@
 
 using namespace isaSpace;
 
-ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSet) : geneName_{std::move(geneName)} {
+ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSet) :
+												geneName_{std::move(geneName)}, isPositiveStrand_{strand != '-'} { // only affirmatively negative strand is marked as such
 	if ( exonSet.empty() ) {
 		throw std::string("ERROR: set of exons is empty in ") + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
@@ -62,14 +63,14 @@ ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pai
 
 //BAMrecord methods
 
-// FirstExonRemap methods
-constexpr char   FirstExonRemap::gffDelimiter_{'\t'};
-constexpr char   FirstExonRemap::attrDelimiter_{';'};
-constexpr size_t FirstExonRemap::strandIDidx_{6UL};
-constexpr size_t FirstExonRemap::spanStart_{3UL};
-constexpr size_t FirstExonRemap::spanEnd_{4UL};
+// BAMtoGenome methods
+constexpr char   BAMtoGenome::gffDelimiter_{'\t'};
+constexpr char   BAMtoGenome::attrDelimiter_{';'};
+constexpr size_t BAMtoGenome::strandIDidx_{6UL};
+constexpr size_t BAMtoGenome::spanStart_{3UL};
+constexpr size_t BAMtoGenome::spanEnd_{4UL};
 
-FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
+BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 	parseGFF_(bamGFFfilePairNames.gffFileName);
 
 	if ( gffExonGroups_.empty() ) {
@@ -104,6 +105,7 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
 
+	std::vector<std::string> outputLines; // gene information, if any, for each alignment to save
 	// keeping track of the latest iterators pointing to identified exon groups, one per chromosome/reference sequence
 	std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> latestExonGroupIts;
 	while (true) {
@@ -128,6 +130,7 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 		}
 		// if the BAM file is not sorted, we may have to backtrack
 		if (alignmentStart < latestExonGroupIts[referenceName]->firsExonSpan().first) {
+			// TODO: fill in the actual treatment of this case
 			continue;
 		}
 		latestExonGroupIts[referenceName] = std::lower_bound(
@@ -146,7 +149,7 @@ FirstExonRemap::FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames) {
 	}
 }
 
-size_t FirstExonRemap::nExonSets() const noexcept {
+size_t BAMtoGenome::nExonSets() const noexcept {
 	return std::accumulate(
 		gffExonGroups_.cbegin(),
 		gffExonGroups_.cend(),
@@ -157,7 +160,7 @@ size_t FirstExonRemap::nExonSets() const noexcept {
 	);
 }
 
-void FirstExonRemap::parseGFF_(const std::string &gffFileName) {
+void BAMtoGenome::parseGFF_(const std::string &gffFileName) {
 	std::string gffLine;
 	std::fstream gffStream(gffFileName, std::ios::in);
 	std::set< std::pair<hts_pos_t, hts_pos_t> > exonSpans;
@@ -190,7 +193,7 @@ void FirstExonRemap::parseGFF_(const std::string &gffFileName) {
 	}
 }
 
-void FirstExonRemap::mRNAfromGFF_(std::array<std::string, nGFFfields> &currentGFFline, std::array<std::string, nGFFfields> &previousGFFfields, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet) {
+void BAMtoGenome::mRNAfromGFF_(std::array<std::string, nGFFfields> &currentGFFline, std::array<std::string, nGFFfields> &previousGFFfields, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet) {
 	std::stringstream attributeStream( currentGFFline.back() );
 	std::string attrField;
 	TokenAttibuteListPair tokenPair;

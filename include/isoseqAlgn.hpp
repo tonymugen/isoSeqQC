@@ -47,7 +47,7 @@ namespace isaSpace {
 	struct TokenAttibuteListPair;
 	class ExonGroup;
 	class BAMrecord;
-	class FirstExonRemap;
+	class BAMtoGenome;
 
 	/** \brief Deleter of the C BAM record */
 	struct CbamRecordDeleter {
@@ -71,7 +71,7 @@ namespace isaSpace {
 	 * Gathers exons belonging to all transcripts of a gene.
 	 */
 	class ExonGroup {
-		friend class FirstExonRemap;
+		friend class BAMtoGenome;
 	public:
 		/** \brief Default constructor */
 		ExonGroup() = default;
@@ -121,6 +121,11 @@ namespace isaSpace {
 		 * \return number of exons
 		 */
 		[[gnu::warn_unused_result]] size_t nExons() const noexcept { return exonRanges_.size(); };
+		/** \brief Are the exons on the positive strand?
+		 *
+		 * \return `true` if the exons are on the positive strand
+		 */
+		[[gnu::warn_unused_result]] bool isPositiveStrand() const noexcept { return isPositiveStrand_; };
 		/** \brief Gene span 
 		 *
 		 * Returns the position span of the gene.
@@ -129,7 +134,9 @@ namespace isaSpace {
 		 *
 		 * \return first and last nucleotide position (1-based) of the gene
 		 */
-		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> geneSpan() const { return std::pair<hts_pos_t, hts_pos_t>{exonRanges_.front().first, exonRanges_.back().second}; };
+		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> geneSpan() const {
+			return std::pair<hts_pos_t, hts_pos_t>{exonRanges_.front().first, exonRanges_.back().second};
+		};
 		/** \brief First exon span 
 		 *
 		 * Returns the position of the first exon, depends on the strand.
@@ -142,6 +149,8 @@ namespace isaSpace {
 	private:
 		/** \brief Gene name */
 		std::string geneName_;
+		/** \brief Is the mRNA on the positive strand */
+		bool isPositiveStrand_{true};
 		/** \brief Start and end positions of each exon in order
 		 *
 		 * `hts_pos_t` is `int64_t`
@@ -203,11 +212,18 @@ namespace isaSpace {
 		[[gnu::warn_unused_result]] std::string getReadName() const {return std::string{bam_get_qname( alignmentRecord_.get() )}; }; // NOLINT
 		/** \brief Map start position
 		 *
-		 * Position of the first mapped nucleotide, taking into account possible reverse-complement.
+		 * Position of the first mapped nucleotide.
 		 *
 		 * \return 1-based read map start position
 		 */
-		[[gnu::warn_unused_result]] hts_pos_t getMapStart() const noexcept {
+		[[gnu::warn_unused_result]] hts_pos_t getMapStart() const noexcept { return alignmentRecord_->core.pos + 1; };
+		/** \brief mRNA start position
+		 *
+		 * Position of the first mRNA read nucleotide, taking into account possible reverse-complement.
+		 *
+		 * \return 1-based read nRNA start position
+		 */
+		[[gnu::warn_unused_result]] hts_pos_t getmRNAstart() const noexcept {
 			return bam_is_rev( alignmentRecord_.get() ) ? bam_endpos( alignmentRecord_.get() ) + 1 : alignmentRecord_->core.pos + 1 ;
 		};
 		/** \brief Is the read reverse-complemented?
@@ -221,15 +237,16 @@ namespace isaSpace {
 		/** \brief Index of the `ExonGroup` overlapping this read */
 		size_t exonGroupIdx_{0};
 	};
-	/** \brief Candidate first exon re-map alignments
+
+	/** \brief Relate BAM alignments to exons
 	 *
-	 * Collects alignments that are candidates for first exon re-mapping.
+	 * Relates each BAM alignment to a gene and check which exons are covered by the read.
 	 *
 	 */
-	class FirstExonRemap {
+	class BAMtoGenome {
 	public:
 		/** \brief Default constructor */
-		FirstExonRemap() = default;
+		BAMtoGenome() = default;
 		/** \brief Constructor intersecting iso-Seq alignments and exons
 		 *
 		 * Uses exon positions from the provided GFF file to find iso-Seq alignments from the
@@ -238,31 +255,31 @@ namespace isaSpace {
 		 * \param[in] BamAndGffFiles BAM and GFF file name pair
 		 *
 		 */
-		FirstExonRemap(const BamAndGffFiles &bamGFFfilePairNames);
+		BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames);
 		/** \brief Copy constructor
 		 *
 		 * \param[in] toCopy object to copy
 		 */
-		FirstExonRemap(const FirstExonRemap &toCopy) = default;
+		BAMtoGenome(const BAMtoGenome &toCopy) = default;
 		/** \brief Copy assignment operator
 		 *
 		 * \param[in] toCopy object to copy
-		 * \return `FirstExonRemap` object
+		 * \return `BAMtoGenome` object
 		 */
-		FirstExonRemap& operator=(const FirstExonRemap &toCopy) = default;
+		BAMtoGenome& operator=(const BAMtoGenome &toCopy) = default;
 		/** \brief Move constructor
 		 *
 		 * \param[in] toMove object to move
 		 */
-		FirstExonRemap(FirstExonRemap &&toMove) noexcept = default;
+		BAMtoGenome(BAMtoGenome &&toMove) noexcept = default;
 		/** \brief Move assignment operator
 		 *
 		 * \param[in] toMove object to move
-		 * \return `FirstExonRemap` object
+		 * \return `BAMtoGenome` object
 		 */
-		FirstExonRemap& operator=(FirstExonRemap &&toMove) noexcept = default;
+		BAMtoGenome& operator=(BAMtoGenome &&toMove) noexcept = default;
 		/** \brief Destructor */
-		~FirstExonRemap() = default;
+		~BAMtoGenome() = default;
 
 		/** \brief Number of chromosomes/scaffolds/linkage groups */
 		[[gnu::warn_unused_result]] size_t nChromosomes() const noexcept { return gffExonGroups_.size(); };

@@ -74,6 +74,7 @@ TEST_CASE("Exon range extraction works") {
 	isaSpace::ExonGroup testExonGroupNeg(testGeneName, strand, testSet);
 	constexpr size_t correctNexons{4};
 	REQUIRE(testExonGroupNeg.nExons() == correctNexons);
+	REQUIRE( !testExonGroupNeg.isPositiveStrand() );
 	auto fullSpan{testExonGroupNeg.geneSpan()};
 	REQUIRE(fullSpan.first  == testExonSpans.front().first);
 	REQUIRE(fullSpan.second == testExonSpans.back().second);
@@ -84,6 +85,7 @@ TEST_CASE("Exon range extraction works") {
 	strand = '+';
 	isaSpace::ExonGroup testExonGroupPos(testGeneName, strand, testSet);
 	REQUIRE(testExonGroupPos.nExons() == correctNexons);
+	REQUIRE( testExonGroupPos.isPositiveStrand() );
 	fullSpan = testExonGroupPos.geneSpan();
 	REQUIRE(fullSpan.first  == testExonSpans.front().first);
 	REQUIRE(fullSpan.second == testExonSpans.back().second);
@@ -94,6 +96,7 @@ TEST_CASE("Exon range extraction works") {
 	strand = '.';
 	isaSpace::ExonGroup testExonGroupUnd(testGeneName, strand, testSet);
 	REQUIRE(testExonGroupUnd.nExons() == correctNexons);
+	REQUIRE( testExonGroupUnd.isPositiveStrand() );
 	fullSpan = testExonGroupUnd.geneSpan();
 	REQUIRE(fullSpan.first  == testExonSpans.front().first);
 	REQUIRE(fullSpan.second == testExonSpans.back().second);
@@ -135,13 +138,16 @@ TEST_CASE("Saving individual BAM records works") {
 	auto nBytes = bam_read1( orBAMfile.get(), bamRecordPtr.get() );
 	isaSpace::BAMrecord bamRecord( std::move(bamRecordPtr) );
 	REQUIRE(nBytes > 0);
-	REQUIRE(bamRecord.getReadName() == correctReadName);
-	REQUIRE(bamRecord.getMapStart() == correctMapPosition);
+	REQUIRE( !bamRecord.isRevComp() );
+	REQUIRE(bamRecord.getReadName()  == correctReadName);
+	REQUIRE(bamRecord.getmRNAstart() == correctMapPosition);
+	REQUIRE(bamRecord.getMapStart()  == correctMapPosition);
 
 	// reverse-complemented read
 	const std::string oneRecordRevBAMname("../tests/oneRecordRev.bam");
 	const std::string correctRevReadName("m54312U_201215_225530/38470652/ccs");
-	constexpr hts_pos_t correctRevMapPosition{22554617};
+	constexpr hts_pos_t correctRevMapPosition{22550967};
+	constexpr hts_pos_t correctRevmRNAposition{22554617};
 	std::unique_ptr<BGZF, void(*)(BGZF *)> orRevBAMfile(
 		bgzf_open(oneRecordRevBAMname.c_str(), &openMode),
 		[](BGZF *bamFile) {
@@ -160,8 +166,10 @@ TEST_CASE("Saving individual BAM records works") {
 	nBytes = bam_read1( orRevBAMfile.get(), bamRevRecordPtr.get() );
 	isaSpace::BAMrecord bamRecordRev( std::move(bamRevRecordPtr) );
 	REQUIRE(nBytes > 0);
-	REQUIRE(bamRecordRev.getReadName() == correctRevReadName);
-	REQUIRE(bamRecordRev.getMapStart() == correctRevMapPosition);
+	REQUIRE( bamRecordRev.isRevComp() );
+	REQUIRE(bamRecordRev.getReadName()  == correctRevReadName);
+	REQUIRE(bamRecordRev.getmRNAstart() == correctRevmRNAposition);
+	REQUIRE(bamRecordRev.getMapStart()  == correctRevMapPosition);
 }
 
 TEST_CASE("Catching bad GFF and BAM files works") {
@@ -175,28 +183,36 @@ TEST_CASE("Catching bad GFF and BAM files works") {
 	gffPair.gffFileName = goodGFFname;
 	gffPair.bamFileName = wrongBAMname;
 	REQUIRE_THROWS_WITH(
-		isaSpace::FirstExonRemap(gffPair),
+		isaSpace::BAMtoGenome(gffPair),
 		Catch::Matchers::StartsWith("ERROR: failed to open the BAM file")
 	);
 	gffPair.bamFileName = randomNoiseBAMname;
 	REQUIRE_THROWS_WITH(
-		isaSpace::FirstExonRemap(gffPair),
+		isaSpace::BAMtoGenome(gffPair),
 		Catch::Matchers::StartsWith("ERROR: failed to read the header from the BAM file")
 	);
 	gffPair.bamFileName = headerlessBAMname;
 	REQUIRE_THROWS_WITH(
-		isaSpace::FirstExonRemap(gffPair),
+		isaSpace::BAMtoGenome(gffPair),
 		Catch::Matchers::StartsWith("ERROR: failed to read the header from the BAM file")
 	);
 	gffPair.gffFileName = nomrnaGFFname;
 	gffPair.bamFileName = goodBAMname;
 	REQUIRE_THROWS_WITH(
-		isaSpace::FirstExonRemap(gffPair),
+		isaSpace::BAMtoGenome(gffPair),
 		Catch::Matchers::StartsWith("ERROR: no mRNAs with exons found in the")
 	);
 }
 
 TEST_CASE("GFF and BAM parsing works") {
+	const std::string gffName("../tests/posNegYak.gff");
+	const std::string posStrandBAMname("../tests/posStrand.bam");
+	isaSpace::BamAndGffFiles gffPair;
+	gffPair.gffFileName = gffName;
+	gffPair.bamFileName = posStrandBAMname;
+	isaSpace::BAMtoGenome parsedPosStrandBAM(gffPair);
+
+	/*
 	const std::string goodGFFname("../tests/goodGFF.gff");
 	const std::string goodBAMname("../tests/testAlgn.bam");
 	isaSpace::BamAndGffFiles gffPair;
@@ -205,14 +221,13 @@ TEST_CASE("GFF and BAM parsing works") {
 	constexpr size_t correctNsets{4};
 	constexpr size_t correctNchrom{2};
 
-	isaSpace::FirstExonRemap parsedGoodGFF(gffPair);
+	isaSpace::BAMtoGenome parsedGoodGFF(gffPair);
 	REQUIRE(parsedGoodGFF.nChromosomes() == correctNchrom);
 	REQUIRE(parsedGoodGFF.nExonSets()    == correctNsets);
 
-	/*
 	const std::string messyGFFname("../tests/messyGFF.gff");
 	gffPair.gffFileName = messyGFFname;
-	isaSpace::FirstExonRemap parsedMessyGFF(gffPair);
+	isaSpace::BAMtoGenome parsedMessyGFF(gffPair);
 	REQUIRE(parsedMessyGFF.nChromosomes() == correctNchrom);
 	REQUIRE(parsedMessyGFF.nExonSets()    == correctNsets);
 	*/
