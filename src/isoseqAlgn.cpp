@@ -39,6 +39,8 @@
 #include <sstream>
 #include <fstream>
 
+#include <iostream>
+
 #include "hts.h"
 #include "sam.h"
 #include "bgzf.h"
@@ -62,6 +64,36 @@ ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pai
 }
 
 //BAMrecord methods
+
+std::string BAMrecord::getCIGARstring() const {
+	std::vector<uint32_t> cigarVec(
+		bam_get_cigar( alignmentRecord_.get() ),                                    // NOLINT
+		bam_get_cigar( alignmentRecord_.get() ) + alignmentRecord_->core.n_cigar    // NOLINT
+	);
+
+	auto stringify = [](std::string currString, uint32_t cigarElement){
+		return std::move(currString)
+			+ std::to_string( bam_cigar_oplen(cigarElement) )
+			+ bam_cigar_opchr(cigarElement);
+	};
+	if ( bam_is_rev( alignmentRecord_.get() ) ) {
+		std::string cigar = std::accumulate(
+			cigarVec.crbegin(),
+			cigarVec.crend(),
+			std::string(),
+			stringify
+		);
+		return cigar;
+	}
+	std::string cigar = std::accumulate(
+		cigarVec.cbegin(),
+		cigarVec.cend(),
+		std::string(),
+		stringify
+	);
+
+	return cigar;
+}
 
 // BAMtoGenome methods
 constexpr char   BAMtoGenome::gffDelimiter_{'\t'};
@@ -129,6 +161,7 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			latestExonGroupIts[referenceName] = gffExonGroups_[referenceName].cbegin();
 		}
 		// if the BAM file is not sorted, we may have to backtrack
+		// looking for the first gene end that is after the read map start
 		if (alignmentStart < latestExonGroupIts[referenceName]->firsExonSpan().first) {
 			// TODO: fill in the actual treatment of this case
 			continue;
@@ -138,12 +171,26 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			gffExonGroups_[referenceName].cend(),
 			alignmentStart,
 			[](const ExonGroup &currGroup, const hts_pos_t bamStart) {
-				return currGroup.geneSpan().first < bamStart; 
+				return currGroup.geneSpan().second < bamStart; 
 			}
 		);
 		if ( latestExonGroupIts[referenceName] == gffExonGroups_[referenceName].cend() ) {
 			// not break because other chromosomes may still be in play
 			continue;
+		}
+		ReadExonCoverage currentAlignmentInfo;
+		if (alignmentStart < latestExonGroupIts[referenceName]->geneSpan().first) { // no overlap with a known gene
+			currentAlignmentInfo.readName       = currentBAM.getReadName();
+			currentAlignmentInfo.chromosomeName = referenceName;
+			currentAlignmentInfo.strand         = (currentBAM.isRevComp() ? '-' : '+');
+			currentAlignmentInfo.cigarString    = currentBAM.getCIGARstring();
+			currentAlignmentInfo.alignmentSart  = currentBAM.getMapStart();
+			currentAlignmentInfo.alignmentEnd   = currentBAM.getMapEnd();
+			currentAlignmentInfo.geneName       = "NA";
+			currentAlignmentInfo.nExons         = 0;
+			currentAlignmentInfo.nExonsCovered  = 0;
+			currentAlignmentInfo.firstExonStart = -1;
+			currentAlignmentInfo.lastExonEnd    = -1;
 		}
 
 	}

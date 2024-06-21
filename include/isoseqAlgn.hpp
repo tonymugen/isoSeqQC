@@ -45,9 +45,10 @@ namespace isaSpace {
 	struct CbamRecordDeleter;
 	struct BamAndGffFiles;
 	struct TokenAttibuteListPair;
-	class ExonGroup;
-	class BAMrecord;
-	class BAMtoGenome;
+	struct ReadExonCoverage;
+	class  ExonGroup;
+	class  BAMrecord;
+	class  BAMtoGenome;
 
 	/** \brief Deleter of the C BAM record */
 	struct CbamRecordDeleter {
@@ -64,6 +65,24 @@ namespace isaSpace {
 	struct TokenAttibuteListPair {
 		std::string tokenName;
 		std::vector<std::string> attributeList;
+	};
+	/** \brief Exons covered by a read
+	 *
+	 * For a given alignment, stores information on exons covered by the read.
+	 */
+	struct ReadExonCoverage {
+		std::string chromosomeName;
+		std::string readName;
+		std::string cigarString;
+		std::string geneName;       // NA if no known gene
+		char        strand;         // '+' or '-'
+		uint16_t    nExons;
+		uint16_t    nExonsCovered;
+		// larger value first for the negative strand
+		hts_pos_t   alignmentSart;
+		hts_pos_t   alignmentEnd;
+		hts_pos_t   firstExonStart;
+		hts_pos_t   lastExonEnd;
 	};
 
 	/** \brief Group of exons from the same gene
@@ -200,11 +219,6 @@ namespace isaSpace {
 		/** \brief Destructor */
 		~BAMrecord() = default;
 
-		/** \brief Set index into the vector of `ExonGroup` instances 
-		 *
-		 * \param[in] egIdx index of the overlapping exon group
-		 */
-		void setExonGroupIdx(const size_t &egIdx) noexcept { exonGroupIdx_ = egIdx; };
 		/** \brief Output read name 
 		 *
 		 * \return read name
@@ -217,6 +231,13 @@ namespace isaSpace {
 		 * \return 1-based read map start position
 		 */
 		[[gnu::warn_unused_result]] hts_pos_t getMapStart() const noexcept { return alignmentRecord_->core.pos + 1; };
+		/** \brief Map end position
+		 *
+		 * Position of the first past the mapped region of the reference.
+		 *
+		 * \return 1-based read map end position
+		 */
+		[[gnu::warn_unused_result]] hts_pos_t getMapEnd() const noexcept { return bam_endpos( alignmentRecord_.get() ) + 1; };
 		/** \brief mRNA start position
 		 *
 		 * Position of the first mRNA read nucleotide, taking into account possible reverse-complement.
@@ -231,11 +252,16 @@ namespace isaSpace {
 		 * \return true if the read is reverse-complemented
 		 */
 		[[gnu::warn_unused_result]] bool isRevComp() const noexcept { return bam_is_rev( alignmentRecord_.get() ); };
+		/** \brief CIGAR string 
+		 *
+		 * Reversed if the read is reverse-complemented.
+		 *
+		 * \return CIGAR string
+		 */
+		[[gnu::warn_unused_result]] std::string getCIGARstring() const;
 	private:
 		/** \brief Pointer to the BAM record */
 		std::unique_ptr<bam1_t, CbamRecordDeleter> alignmentRecord_;
-		/** \brief Index of the `ExonGroup` overlapping this read */
-		size_t exonGroupIdx_{0};
 	};
 
 	/** \brief Relate BAM alignments to exons
@@ -312,7 +338,7 @@ namespace isaSpace {
 		 *
 		 * The map keys are linkage groups, scaffolds, or chromosomes.
 		 */
-		std::unordered_map< std::string, std::vector<BAMrecord> > candidateAlignments_;
+		std::unordered_map< std::string, std::vector<ReadExonCoverage> > candidateAlignments_;
 
 		/** \brief Parse a GFF file
 		 *

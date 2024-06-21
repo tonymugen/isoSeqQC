@@ -116,7 +116,9 @@ TEST_CASE("Saving individual BAM records works") {
 	// straight read
 	const std::string oneRecordBAMname("../tests/oneRecord.bam");
 	const std::string correctReadName("m54312U_201215_225530/657093/ccs");
+	const std::string correctCIGAR("22M1D667M1552N264M485N193M361N75M81N196M53N1706M62N126M236N170M");
 	constexpr hts_pos_t correctMapPosition{2468434};
+	constexpr hts_pos_t correctMapEndPosition{2474684};
 	// read one record from the BAM file
 	constexpr char openMode{'r'};
 	std::unique_ptr<BGZF, void(*)(BGZF *)> orBAMfile(
@@ -139,15 +141,19 @@ TEST_CASE("Saving individual BAM records works") {
 	isaSpace::BAMrecord bamRecord( std::move(bamRecordPtr) );
 	REQUIRE(nBytes > 0);
 	REQUIRE( !bamRecord.isRevComp() );
-	REQUIRE(bamRecord.getReadName()  == correctReadName);
-	REQUIRE(bamRecord.getmRNAstart() == correctMapPosition);
-	REQUIRE(bamRecord.getMapStart()  == correctMapPosition);
+	REQUIRE(bamRecord.getReadName()    == correctReadName);
+	REQUIRE(bamRecord.getmRNAstart()   == correctMapPosition);
+	REQUIRE(bamRecord.getMapStart()    == correctMapPosition);
+	REQUIRE(bamRecord.getMapEnd()      == correctMapEndPosition);
+	REQUIRE(bamRecord.getCIGARstring() == correctCIGAR);
 
 	// reverse-complemented read
 	const std::string oneRecordRevBAMname("../tests/oneRecordRev.bam");
 	const std::string correctRevReadName("m54312U_201215_225530/38470652/ccs");
+	const std::string correctCIGARrev("454M68N701M61N133M61N1652M78N106M56N280M");
 	constexpr hts_pos_t correctRevMapPosition{22550967};
 	constexpr hts_pos_t correctRevmRNAposition{22554617};
+	constexpr hts_pos_t correctRevMapEndPosition = correctRevmRNAposition;
 	std::unique_ptr<BGZF, void(*)(BGZF *)> orRevBAMfile(
 		bgzf_open(oneRecordRevBAMname.c_str(), &openMode),
 		[](BGZF *bamFile) {
@@ -167,9 +173,11 @@ TEST_CASE("Saving individual BAM records works") {
 	isaSpace::BAMrecord bamRecordRev( std::move(bamRevRecordPtr) );
 	REQUIRE(nBytes > 0);
 	REQUIRE( bamRecordRev.isRevComp() );
-	REQUIRE(bamRecordRev.getReadName()  == correctRevReadName);
-	REQUIRE(bamRecordRev.getmRNAstart() == correctRevmRNAposition);
-	REQUIRE(bamRecordRev.getMapStart()  == correctRevMapPosition);
+	REQUIRE(bamRecordRev.getReadName()    == correctRevReadName);
+	REQUIRE(bamRecordRev.getmRNAstart()   == correctRevmRNAposition);
+	REQUIRE(bamRecordRev.getMapStart()    == correctRevMapPosition);
+	REQUIRE(bamRecordRev.getMapEnd()      == correctRevMapEndPosition);
+	REQUIRE(bamRecordRev.getCIGARstring() == correctCIGARrev);
 }
 
 TEST_CASE("Catching bad GFF and BAM files works") {
