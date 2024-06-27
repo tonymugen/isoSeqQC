@@ -79,7 +79,7 @@ namespace isaSpace {
 		uint16_t    nExons;
 		uint16_t    nExonsCovered;
 		// larger value first for the negative strand
-		hts_pos_t   alignmentSart;
+		hts_pos_t   alignmentStart;
 		hts_pos_t   alignmentEnd;
 		hts_pos_t   firstExonStart;
 		hts_pos_t   lastExonEnd;
@@ -140,11 +140,11 @@ namespace isaSpace {
 		 * \return number of exons
 		 */
 		[[gnu::warn_unused_result]] size_t nExons() const noexcept { return exonRanges_.size(); };
-		/** \brief Are the exons on the positive strand?
+		/** \brief Are the exons on the negative strand?
 		 *
-		 * \return `true` if the exons are on the positive strand
+		 * \return `true` if the exons are on the negative strand
 		 */
-		[[gnu::warn_unused_result]] bool isPositiveStrand() const noexcept { return isPositiveStrand_; };
+		[[gnu::warn_unused_result]] bool isNegativeStrand() const noexcept { return isNegativeStrand_; };
 		/** \brief Gene span 
 		 *
 		 * Returns the position span of the gene.
@@ -164,12 +164,12 @@ namespace isaSpace {
 		 *
 		 * \return first exon nucleotide position pair (1-based)
 		 */
-		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> firsExonSpan() const { return *firstExonIt_; };
+		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> firstExonSpan() const { return *firstExonIt_; };
 	private:
 		/** \brief Gene name */
 		std::string geneName_;
-		/** \brief Is the mRNA on the positive strand */
-		bool isPositiveStrand_{true};
+		/** \brief Is the mRNA on the negative strand? */
+		bool isNegativeStrand_{false};
 		/** \brief Start and end positions of each exon in order
 		 *
 		 * `hts_pos_t` is `int64_t`

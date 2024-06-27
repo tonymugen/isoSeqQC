@@ -41,5 +41,11 @@ namespace isaSpace {
 	 * \param[in] tokenAndAttrList field token and the list of attributes
 	 */
 	[[gnu::warn_unused_result]] std::string extractAttributeName(const TokenAttibuteListPair &tokenAndAttrList);
-
+	/** \brief Convert `ReadExonCoverage` to string
+	 *
+	 * \param[in] readRecord individual read record
+	 * \param[in] separator field separator
+	 * \return `std::string` with the read record elements, without a new line at the end
+	 */
+	[[gnu::warn_unused_result]] std::string stringify(const ReadExonCoverage &readRecord, char separator = '\t');
 }

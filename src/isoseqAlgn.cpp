@@ -51,7 +51,7 @@
 using namespace isaSpace;
 
 ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSet) :
-												geneName_{std::move(geneName)}, isPositiveStrand_{strand != '-'} { // only affirmatively negative strand is marked as such
+												geneName_{std::move(geneName)}, isNegativeStrand_{strand == '-'} { // only affirmatively negative strand is marked as such
 	if ( exonSet.empty() ) {
 		throw std::string("ERROR: set of exons is empty in ") + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
@@ -60,7 +60,7 @@ ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pai
 		exonSet.cend(),
 		std::back_inserter(exonRanges_)
 	);
-	firstExonIt_ = ( strand == '-' ? std::prev( exonRanges_.end() ) : exonRanges_.begin() );
+	firstExonIt_ = ( isNegativeStrand_ ? std::prev( exonRanges_.end() ) : exonRanges_.begin() );
 }
 
 //BAMrecord methods
@@ -156,20 +156,28 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			continue;
 		}
 		BAMrecord currentBAM( std::move(bamRecordPtr) );
-		const auto alignmentStart = currentBAM.getMapStart();
+
+		ReadExonCoverage currentAlignmentInfo;
+		currentAlignmentInfo.readName       = currentBAM.getReadName();
+		currentAlignmentInfo.chromosomeName = referenceName;
+		currentAlignmentInfo.strand         = (currentBAM.isRevComp() ? '-' : '+');
+		currentAlignmentInfo.cigarString    = currentBAM.getCIGARstring();
+		currentAlignmentInfo.alignmentStart = currentBAM.getMapStart();
+		currentAlignmentInfo.alignmentEnd   = currentBAM.getMapEnd();
+
 		if ( latestExonGroupIts.find(referenceName) == latestExonGroupIts.cend() ) {
 			latestExonGroupIts[referenceName] = gffExonGroups_[referenceName].cbegin();
 		}
 		// if the BAM file is not sorted, we may have to backtrack
 		// looking for the first gene end that is after the read map start
-		if (alignmentStart < latestExonGroupIts[referenceName]->firsExonSpan().first) {
+		if (currentAlignmentInfo.alignmentStart < latestExonGroupIts[referenceName]->firstExonSpan().first) {
 			// TODO: fill in the actual treatment of this case
 			continue;
 		}
 		latestExonGroupIts[referenceName] = std::lower_bound(
 			latestExonGroupIts[referenceName],
 			gffExonGroups_[referenceName].cend(),
-			alignmentStart,
+			currentAlignmentInfo.alignmentStart,
 			[](const ExonGroup &currGroup, const hts_pos_t bamStart) {
 				return currGroup.geneSpan().second < bamStart; 
 			}
@@ -178,21 +186,31 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			// not break because other chromosomes may still be in play
 			continue;
 		}
-		ReadExonCoverage currentAlignmentInfo;
-		if (alignmentStart < latestExonGroupIts[referenceName]->geneSpan().first) { // no overlap with a known gene
-			currentAlignmentInfo.readName       = currentBAM.getReadName();
-			currentAlignmentInfo.chromosomeName = referenceName;
-			currentAlignmentInfo.strand         = (currentBAM.isRevComp() ? '-' : '+');
-			currentAlignmentInfo.cigarString    = currentBAM.getCIGARstring();
-			currentAlignmentInfo.alignmentSart  = currentBAM.getMapStart();
-			currentAlignmentInfo.alignmentEnd   = currentBAM.getMapEnd();
-			currentAlignmentInfo.geneName       = "NA";
+		std::cout << ">>>>Got here -- " << currentAlignmentInfo.readName << "\n";
+		if (currentAlignmentInfo.alignmentStart < latestExonGroupIts[referenceName]->geneSpan().first) { // no overlap with a known gene
+			currentAlignmentInfo.geneName       = "no_overlap";
 			currentAlignmentInfo.nExons         = 0;
 			currentAlignmentInfo.nExonsCovered  = 0;
 			currentAlignmentInfo.firstExonStart = -1;
 			currentAlignmentInfo.lastExonEnd    = -1;
+			std::cout << stringify(currentAlignmentInfo) << "\n";
+			continue;
 		}
-
+		if ( currentBAM.isRevComp() != latestExonGroupIts[referenceName]->isNegativeStrand() ) { // no overlap with a known gene
+			currentAlignmentInfo.geneName       = "wrong_strand";
+			currentAlignmentInfo.nExons         = 0;
+			currentAlignmentInfo.nExonsCovered  = 0;
+			currentAlignmentInfo.firstExonStart = -1;
+			currentAlignmentInfo.lastExonEnd    = -1;
+			std::cout << stringify(currentAlignmentInfo) << "\n";
+			continue;
+		}
+		currentAlignmentInfo.geneName       = latestExonGroupIts[referenceName]->geneName();
+		currentAlignmentInfo.nExons         = latestExonGroupIts[referenceName]->nExons();
+		currentAlignmentInfo.nExonsCovered  = 0;
+		currentAlignmentInfo.firstExonStart = latestExonGroupIts[referenceName]->geneSpan().first;
+		currentAlignmentInfo.lastExonEnd    = latestExonGroupIts[referenceName]->geneSpan().second;
+		std::cout << stringify(currentAlignmentInfo) << "\n";
 	}
 }
 

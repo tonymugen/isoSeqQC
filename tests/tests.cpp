@@ -55,6 +55,8 @@ TEST_CASE("Helper functions work") {
 	testTokAttr.tokenName = "Random=";
 	const std::string absentAttrResult{isaSpace::extractAttributeName(testTokAttr)};
 	REQUIRE( absentAttrResult.empty() );
+
+	// TODO: add stringify function test
 }
 
 TEST_CASE("Exon range extraction works") {
@@ -74,33 +76,33 @@ TEST_CASE("Exon range extraction works") {
 	isaSpace::ExonGroup testExonGroupNeg(testGeneName, strand, testSet);
 	constexpr size_t correctNexons{4};
 	REQUIRE(testExonGroupNeg.nExons() == correctNexons);
-	REQUIRE( !testExonGroupNeg.isPositiveStrand() );
+	REQUIRE( testExonGroupNeg.isNegativeStrand() );
 	auto fullSpan{testExonGroupNeg.geneSpan()};
 	REQUIRE(fullSpan.first  == testExonSpans.front().first);
 	REQUIRE(fullSpan.second == testExonSpans.back().second);
-	auto firstExon{testExonGroupNeg.firsExonSpan()};
+	auto firstExon{testExonGroupNeg.firstExonSpan()};
 	REQUIRE(firstExon.first  == testExonSpans.back().first);
 	REQUIRE(firstExon.second == testExonSpans.back().second);
 	// positive strand
 	strand = '+';
 	isaSpace::ExonGroup testExonGroupPos(testGeneName, strand, testSet);
 	REQUIRE(testExonGroupPos.nExons() == correctNexons);
-	REQUIRE( testExonGroupPos.isPositiveStrand() );
+	REQUIRE( !testExonGroupPos.isNegativeStrand() );
 	fullSpan = testExonGroupPos.geneSpan();
 	REQUIRE(fullSpan.first  == testExonSpans.front().first);
 	REQUIRE(fullSpan.second == testExonSpans.back().second);
-	firstExon = testExonGroupPos.firsExonSpan();
+	firstExon = testExonGroupPos.firstExonSpan();
 	REQUIRE(firstExon.first  == testExonSpans.front().first);
 	REQUIRE(firstExon.second == testExonSpans.front().second);
 	// undetermined strand, assumed positive
 	strand = '.';
 	isaSpace::ExonGroup testExonGroupUnd(testGeneName, strand, testSet);
 	REQUIRE(testExonGroupUnd.nExons() == correctNexons);
-	REQUIRE( testExonGroupUnd.isPositiveStrand() );
+	REQUIRE( !testExonGroupUnd.isNegativeStrand() );
 	fullSpan = testExonGroupUnd.geneSpan();
 	REQUIRE(fullSpan.first  == testExonSpans.front().first);
 	REQUIRE(fullSpan.second == testExonSpans.back().second);
-	firstExon = testExonGroupUnd.firsExonSpan();
+	firstExon = testExonGroupUnd.firstExonSpan();
 	REQUIRE(firstExon.first  == testExonSpans.front().first);
 	REQUIRE(firstExon.second == testExonSpans.front().second);
 
