@@ -69,20 +69,23 @@ namespace isaSpace {
 	/** \brief Exons covered by a read
 	 *
 	 * For a given alignment, stores information on exons covered by the read.
+	 * All positions are 1-based, indexes are 0-based.
 	 */
 	struct ReadExonCoverage {
 		std::string chromosomeName;
 		std::string readName;
 		std::string cigarString;
+		// smaller value first for the negative and positive strand
+		hts_pos_t   alignmentStart;
+		hts_pos_t   alignmentEnd;
 		std::string geneName;       // NA if no known gene
 		char        strand;         // '+' or '-'
 		uint16_t    nExons;
-		uint16_t    nExonsCovered;
-		// larger value first for the negative strand
-		hts_pos_t   alignmentStart;
-		hts_pos_t   alignmentEnd;
 		hts_pos_t   firstExonStart;
 		hts_pos_t   lastExonEnd;
+		// completely covered exons
+		uint16_t    firstCoveredExonIdx;
+		uint16_t    lastCoveredExonIdx;
 	};
 
 	/** \brief Group of exons from the same gene
@@ -165,6 +168,24 @@ namespace isaSpace {
 		 * \return first exon nucleotide position pair (1-based)
 		 */
 		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> firstExonSpan() const { return *firstExonIt_; };
+		/** \brief Index of the first exon after a given position
+		 * 
+		 * 0-based index of the first exon found entirely after the given position.
+		 * Equal to the total number of exons if the position is after the last exon.
+		 *
+		 * \param[in] position genome position to test
+		 * \return index of the first exon after the given position
+		 */
+		[[gnu::warn_unused_result]] uint32_t firstExonAfter(const hts_pos_t &position) const noexcept;
+		/** \brief Index of the last exon before a given position
+		 * 
+		 * 0-based index of the last exon found entirely before the given position.
+		 * Equal to the total number of exons if the position is after the last exon.
+		 *
+		 * \param[in] position genome position to test
+		 * \return index of the last exon before the given position
+		 */
+		[[gnu::warn_unused_result]] uint32_t lastExonBefore(const hts_pos_t &position) const noexcept;
 	private:
 		/** \brief Gene name */
 		std::string geneName_;

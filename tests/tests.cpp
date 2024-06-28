@@ -106,6 +106,21 @@ TEST_CASE("Exon range extraction works") {
 	REQUIRE(firstExon.first  == testExonSpans.front().first);
 	REQUIRE(firstExon.second == testExonSpans.front().second);
 
+	// exon index functions only tested once: they do not depend on strand
+	constexpr hts_pos_t positionBefore{49000};
+	constexpr hts_pos_t positionInMiddle{52500};
+	constexpr hts_pos_t positionAfter{59000};
+	constexpr uint16_t  correctPosBefore{0};
+	constexpr uint16_t  correctPosMidF{2};
+	constexpr uint16_t  correctPosMidL{1};
+	constexpr uint16_t  correctPosAfter{4};
+	REQUIRE(testExonGroupPos.firstExonAfter(positionBefore)   == correctPosBefore);
+	REQUIRE(testExonGroupPos.firstExonAfter(positionInMiddle) == correctPosMidF);
+	REQUIRE(testExonGroupPos.firstExonAfter(positionAfter)    == correctPosAfter);
+	REQUIRE(testExonGroupPos.lastExonBefore(positionBefore)   == correctPosBefore);
+	REQUIRE(testExonGroupPos.lastExonBefore(positionInMiddle) == correctPosMidL);
+	REQUIRE(testExonGroupPos.lastExonBefore(positionAfter)    == correctPosAfter);
+
 	// throwing on empty set
 	std::set< std::pair<hts_pos_t, hts_pos_t> > emptyExonSet;
 	REQUIRE_THROWS_WITH(
@@ -217,9 +232,11 @@ TEST_CASE("Catching bad GFF and BAM files works") {
 TEST_CASE("GFF and BAM parsing works") {
 	const std::string gffName("../tests/posNegYak.gff");
 	const std::string posStrandBAMname("../tests/posStrand.bam");
+	const std::string negStrandBAMname("../tests/negStrand.bam");
 	isaSpace::BamAndGffFiles gffPair;
 	gffPair.gffFileName = gffName;
-	gffPair.bamFileName = posStrandBAMname;
+	//gffPair.bamFileName = posStrandBAMname;
+	gffPair.bamFileName = negStrandBAMname;
 	isaSpace::BAMtoGenome parsedPosStrandBAM(gffPair);
 
 	/*

@@ -70,17 +70,18 @@ std::string isaSpace::extractAttributeName(const TokenAttibuteListPair &tokenAnd
 }
 
 std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separator) {
-	std::string result =  readRecord.readName                       + separator
-						+ readRecord.chromosomeName                 + separator
-						+ readRecord.cigarString                    + separator
-						+ readRecord.strand                         + separator
-						+ std::to_string(readRecord.alignmentStart) + separator
-						+ std::to_string(readRecord.alignmentEnd)   + separator
-						+ readRecord.geneName                       + separator
-						+ std::to_string(readRecord.nExons)         + separator
-						+ std::to_string(readRecord.nExonsCovered)  + separator
-						+ std::to_string(readRecord.firstExonStart) + separator
-						+ std::to_string(readRecord.lastExonEnd);
+	std::string result =  readRecord.readName                                + separator
+						+ readRecord.chromosomeName                          + separator
+						+ readRecord.cigarString                             + separator
+						+ readRecord.strand                                  + separator
+						+ std::to_string(readRecord.alignmentStart)          + separator
+						+ std::to_string(readRecord.alignmentEnd)            + separator
+						+ readRecord.geneName                                + separator
+						+ std::to_string(readRecord.nExons)                  + separator
+						+ std::to_string(readRecord.firstExonStart)          + separator
+						+ std::to_string(readRecord.lastExonEnd)             + separator
+						+ std::to_string(readRecord.firstCoveredExonIdx + 1) + separator
+						+ std::to_string(readRecord.lastCoveredExonIdx + 1);
 
 	return result;
 }

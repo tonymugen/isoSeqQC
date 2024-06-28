@@ -63,6 +63,30 @@ ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pai
 	firstExonIt_ = ( isNegativeStrand_ ? std::prev( exonRanges_.end() ) : exonRanges_.begin() );
 }
 
+uint32_t ExonGroup::firstExonAfter(const hts_pos_t &position) const noexcept {
+	const auto feaIt = std::lower_bound(
+		exonRanges_.cbegin(),
+		exonRanges_.cend(),
+		position,
+		[](const std::pair<hts_pos_t, hts_pos_t> &currExonRange, const hts_pos_t &position) {
+			return currExonRange.first < position;
+		}
+	);
+	return static_cast<uint32_t>( std::distance(exonRanges_.cbegin(), feaIt) );
+}
+
+uint32_t ExonGroup::lastExonBefore(const hts_pos_t &position) const noexcept {
+	const auto lebIt = std::lower_bound(
+		exonRanges_.crbegin(),
+		exonRanges_.crend(),
+		position,
+		[](const std::pair<hts_pos_t, hts_pos_t> &currExonRange, const hts_pos_t &position) {
+			return currExonRange.second > position;
+		}
+	);
+	return static_cast<uint32_t>( std::distance( lebIt, exonRanges_.crend() ) );
+}
+
 //BAMrecord methods
 
 std::string BAMrecord::getCIGARstring() const {
@@ -188,28 +212,37 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 		}
 		std::cout << ">>>>Got here -- " << currentAlignmentInfo.readName << "\n";
 		if (currentAlignmentInfo.alignmentStart < latestExonGroupIts[referenceName]->geneSpan().first) { // no overlap with a known gene
-			currentAlignmentInfo.geneName       = "no_overlap";
-			currentAlignmentInfo.nExons         = 0;
-			currentAlignmentInfo.nExonsCovered  = 0;
-			currentAlignmentInfo.firstExonStart = -1;
-			currentAlignmentInfo.lastExonEnd    = -1;
+			currentAlignmentInfo.geneName            = "no_overlap";
+			currentAlignmentInfo.nExons              =  0;
+			currentAlignmentInfo.firstExonStart      = -1;
+			currentAlignmentInfo.lastExonEnd         = -1;
+			currentAlignmentInfo.firstCoveredExonIdx =  0;
+			currentAlignmentInfo.lastCoveredExonIdx  =  0;
 			std::cout << stringify(currentAlignmentInfo) << "\n";
 			continue;
 		}
 		if ( currentBAM.isRevComp() != latestExonGroupIts[referenceName]->isNegativeStrand() ) { // no overlap with a known gene
-			currentAlignmentInfo.geneName       = "wrong_strand";
-			currentAlignmentInfo.nExons         = 0;
-			currentAlignmentInfo.nExonsCovered  = 0;
-			currentAlignmentInfo.firstExonStart = -1;
-			currentAlignmentInfo.lastExonEnd    = -1;
+			std::cout << std::boolalpha << "strand: " << currentBAM.isRevComp() << "; " << latestExonGroupIts[referenceName]->isNegativeStrand() << "\n";
+			currentAlignmentInfo.geneName            = "wrong_strand";
+			currentAlignmentInfo.nExons              =  0;
+			currentAlignmentInfo.firstExonStart      = latestExonGroupIts[referenceName]->geneSpan().first;
+			currentAlignmentInfo.lastExonEnd         = latestExonGroupIts[referenceName]->geneSpan().second;
+			//currentAlignmentInfo.firstExonStart      = -1;
+			//currentAlignmentInfo.lastExonEnd         = -1;
+			currentAlignmentInfo.firstCoveredExonIdx =  0;
+			currentAlignmentInfo.lastCoveredExonIdx  =  0;
 			std::cout << stringify(currentAlignmentInfo) << "\n";
 			continue;
 		}
-		currentAlignmentInfo.geneName       = latestExonGroupIts[referenceName]->geneName();
-		currentAlignmentInfo.nExons         = latestExonGroupIts[referenceName]->nExons();
-		currentAlignmentInfo.nExonsCovered  = 0;
-		currentAlignmentInfo.firstExonStart = latestExonGroupIts[referenceName]->geneSpan().first;
-		currentAlignmentInfo.lastExonEnd    = latestExonGroupIts[referenceName]->geneSpan().second;
+		currentAlignmentInfo.geneName            = latestExonGroupIts[referenceName]->geneName();
+		currentAlignmentInfo.nExons              = latestExonGroupIts[referenceName]->nExons();
+		currentAlignmentInfo.firstExonStart      = latestExonGroupIts[referenceName]->geneSpan().first;
+		currentAlignmentInfo.lastExonEnd         = latestExonGroupIts[referenceName]->geneSpan().second;
+		currentAlignmentInfo.firstCoveredExonIdx = latestExonGroupIts[referenceName]->firstExonAfter(currentAlignmentInfo.alignmentStart);
+		currentAlignmentInfo.lastCoveredExonIdx  = std::min(
+			static_cast<uint32_t>(currentAlignmentInfo.nExons - 1),
+			latestExonGroupIts[referenceName]->lastExonBefore(currentAlignmentInfo.alignmentEnd)
+		);
 		std::cout << stringify(currentAlignmentInfo) << "\n";
 	}
 }
