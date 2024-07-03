@@ -359,7 +359,7 @@ namespace isaSpace {
 		 *
 		 * The map keys are linkage groups, scaffolds, or chromosomes.
 		 */
-		std::unordered_map< std::string, std::vector<ReadExonCoverage> > candidateAlignments_;
+		std::unordered_map< std::string, std::vector<ReadExonCoverage> > readCoverageStats_;
 
 		/** \brief Parse a GFF file
 		 *

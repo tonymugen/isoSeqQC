@@ -174,6 +174,11 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 		if (nBytes < -1) {
 			continue;
 		}
+		// I want reads only with reverse-complement flag possibly set
+		const bool isUselessMapping = (bamRecordPtr->core.flag & ~BAM_FREVERSE) != 0;
+		if (isUselessMapping) {
+			continue;
+		}
 		std::string referenceName( sam_hdr_tid2name(bamHeader.get(), bamRecordPtr->core.tid) );
 		const auto refNameIt = gffExonGroups_.find(referenceName);
 		if ( refNameIt == gffExonGroups_.cend() ) {  // ignore of the chromosome not in the GFF
@@ -202,36 +207,24 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			latestExonGroupIts[referenceName],
 			gffExonGroups_[referenceName].cend(),
 			currentAlignmentInfo.alignmentStart,
-			[](const ExonGroup &currGroup, const hts_pos_t bamStart) {
-				return currGroup.geneSpan().second < bamStart; 
+			[&currentBAM](const ExonGroup &currGroup, const hts_pos_t bamStart) {
+				// must be the same strand as well as closest
+				return ( currentBAM.isRevComp() != currGroup.isNegativeStrand() ) && (currGroup.geneSpan().second < bamStart);
 			}
 		);
 		if ( latestExonGroupIts[referenceName] == gffExonGroups_[referenceName].cend() ) {
 			// not break because other chromosomes may still be in play
 			continue;
 		}
-		std::cout << ">>>>Got here -- " << currentAlignmentInfo.readName << "\n";
 		if (currentAlignmentInfo.alignmentStart < latestExonGroupIts[referenceName]->geneSpan().first) { // no overlap with a known gene
-			currentAlignmentInfo.geneName            = "no_overlap";
+			currentAlignmentInfo.geneName            = "NA";
 			currentAlignmentInfo.nExons              =  0;
 			currentAlignmentInfo.firstExonStart      = -1;
 			currentAlignmentInfo.lastExonEnd         = -1;
 			currentAlignmentInfo.firstCoveredExonIdx =  0;
 			currentAlignmentInfo.lastCoveredExonIdx  =  0;
 			std::cout << stringify(currentAlignmentInfo) << "\n";
-			continue;
-		}
-		if ( currentBAM.isRevComp() != latestExonGroupIts[referenceName]->isNegativeStrand() ) { // no overlap with a known gene
-			std::cout << std::boolalpha << "strand: " << currentBAM.isRevComp() << "; " << latestExonGroupIts[referenceName]->isNegativeStrand() << "\n";
-			currentAlignmentInfo.geneName            = "wrong_strand";
-			currentAlignmentInfo.nExons              =  0;
-			currentAlignmentInfo.firstExonStart      = latestExonGroupIts[referenceName]->geneSpan().first;
-			currentAlignmentInfo.lastExonEnd         = latestExonGroupIts[referenceName]->geneSpan().second;
-			//currentAlignmentInfo.firstExonStart      = -1;
-			//currentAlignmentInfo.lastExonEnd         = -1;
-			currentAlignmentInfo.firstCoveredExonIdx =  0;
-			currentAlignmentInfo.lastCoveredExonIdx  =  0;
-			std::cout << stringify(currentAlignmentInfo) << "\n";
+			readCoverageStats_[referenceName].emplace_back( std::move(currentAlignmentInfo) );
 			continue;
 		}
 		currentAlignmentInfo.geneName            = latestExonGroupIts[referenceName]->geneName();
@@ -244,6 +237,7 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			latestExonGroupIts[referenceName]->lastExonBefore(currentAlignmentInfo.alignmentEnd)
 		);
 		std::cout << stringify(currentAlignmentInfo) << "\n";
+		readCoverageStats_[referenceName].emplace_back( std::move(currentAlignmentInfo) );
 	}
 }
 
@@ -273,6 +267,7 @@ void BAMtoGenome::parseGFF_(const std::string &gffFileName) {
 		while ( (iField < nGFFfields) && std::getline(currLineStream, newGFFfields.at(iField), gffDelimiter_) ) {
 			++iField;
 		}
+		// skip incomplete lines
 		if (iField < nGFFfields) {
 			continue;
 		}
@@ -319,7 +314,6 @@ void BAMtoGenome::mRNAfromGFF_(std::array<std::string, nGFFfields> &currentGFFli
 		gffExonGroups_[previousGFFfields.front()].emplace_back(previousGFFfields.back(), previousGFFfields.at(strandIDidx_).front(), exonSpanSet);
 		exonSpanSet.clear();
 	}
-	std::swap( previousGFFfields.back(), currentGFFline.back() );
-	std::swap( previousGFFfields.front(), currentGFFline.front() );
+	std::copy( currentGFFline.cbegin(), currentGFFline.cend(), previousGFFfields.begin() );
 }
 
