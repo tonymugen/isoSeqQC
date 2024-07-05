@@ -93,14 +93,14 @@ namespace isaSpace {
 	 * Gathers exons belonging to all transcripts of a gene.
 	 */
 	class ExonGroup {
-		friend class BAMtoGenome;
+		//friend class BAMtoGenome;
 	public:
 		/** \brief Default constructor */
 		ExonGroup() = default;
 		/** \brief Constructor with lines from a GFF file 
 		 *
 		 * The exon set is ordered by the exon starts.
-		 * The first exon can be the first of the last, depending on the strand.
+		 * The first exon can be the first or the last, depending on the strand.
 		 * The strand is assumed positive, unless explicitly specified as negative by passing the `-` character.
 		 *
 		 * \param[in] geneName gene name
@@ -143,11 +143,11 @@ namespace isaSpace {
 		 * \return number of exons
 		 */
 		[[gnu::warn_unused_result]] size_t nExons() const noexcept { return exonRanges_.size(); };
-		/** \brief Are the exons on the negative strand?
+		/** \brief Strand ID
 		 *
-		 * \return `true` if the exons are on the negative strand
+		 * \return strand ID (`+` or `-`)
 		 */
-		[[gnu::warn_unused_result]] bool isNegativeStrand() const noexcept { return isNegativeStrand_; };
+		[[gnu::warn_unused_result]] char strand() const noexcept { return isNegativeStrand_ ? '-' : '+'; };
 		/** \brief Gene span 
 		 *
 		 * Returns the position span of the gene.

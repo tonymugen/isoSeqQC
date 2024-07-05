@@ -39,8 +39,6 @@
 #include <sstream>
 #include <fstream>
 
-#include <iostream>
-
 #include "hts.h"
 #include "sam.h"
 #include "bgzf.h"
@@ -127,6 +125,7 @@ constexpr size_t BAMtoGenome::spanStart_{3UL};
 constexpr size_t BAMtoGenome::spanEnd_{4UL};
 
 BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
+	// TODO: append strand info to reference names to search only correct strands
 	parseGFF_(bamGFFfilePairNames.gffFileName);
 
 	if ( gffExonGroups_.empty() ) {
@@ -180,6 +179,8 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			continue;
 		}
 		std::string referenceName( sam_hdr_tid2name(bamHeader.get(), bamRecordPtr->core.tid) );
+		const char strandID  = (bam_is_rev( bamRecordPtr.get() ) ? '-' : '+' );
+		referenceName       += strandID;
 		const auto refNameIt = gffExonGroups_.find(referenceName);
 		if ( refNameIt == gffExonGroups_.cend() ) {  // ignore of the chromosome not in the GFF
 			continue;
@@ -189,7 +190,8 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 		ReadExonCoverage currentAlignmentInfo;
 		currentAlignmentInfo.readName       = currentBAM.getReadName();
 		currentAlignmentInfo.chromosomeName = referenceName;
-		currentAlignmentInfo.strand         = (currentBAM.isRevComp() ? '-' : '+');
+		currentAlignmentInfo.chromosomeName.pop_back();
+		currentAlignmentInfo.strand         = strandID;
 		currentAlignmentInfo.cigarString    = currentBAM.getCIGARstring();
 		currentAlignmentInfo.alignmentStart = currentBAM.getMapStart();
 		currentAlignmentInfo.alignmentEnd   = currentBAM.getMapEnd();
@@ -208,8 +210,7 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			gffExonGroups_[referenceName].cend(),
 			currentAlignmentInfo.alignmentStart,
 			[&currentBAM](const ExonGroup &currGroup, const hts_pos_t bamStart) {
-				// must be the same strand as well as closest
-				return ( currentBAM.isRevComp() != currGroup.isNegativeStrand() ) && (currGroup.geneSpan().second < bamStart);
+				return  (currGroup.geneSpan().second < bamStart);
 			}
 		);
 		if ( latestExonGroupIts[referenceName] == gffExonGroups_[referenceName].cend() ) {
@@ -223,7 +224,6 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			currentAlignmentInfo.lastExonEnd         = -1;
 			currentAlignmentInfo.firstCoveredExonIdx =  0;
 			currentAlignmentInfo.lastCoveredExonIdx  =  0;
-			std::cout << stringify(currentAlignmentInfo) << "\n";
 			readCoverageStats_[referenceName].emplace_back( std::move(currentAlignmentInfo) );
 			continue;
 		}
@@ -236,7 +236,6 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			static_cast<uint32_t>(currentAlignmentInfo.nExons - 1),
 			latestExonGroupIts[referenceName]->lastExonBefore(currentAlignmentInfo.alignmentEnd)
 		);
-		std::cout << stringify(currentAlignmentInfo) << "\n";
 		readCoverageStats_[referenceName].emplace_back( std::move(currentAlignmentInfo) );
 	}
 }
@@ -282,7 +281,9 @@ void BAMtoGenome::parseGFF_(const std::string &gffFileName) {
 		}
 	}
 	if ( !activeGFFfields.back().empty() && !exonSpans.empty() ) {
-		gffExonGroups_[activeGFFfields.front()].emplace_back(activeGFFfields.back(), activeGFFfields.at(strandIDidx_).front(), exonSpans);
+		const char strandID                  = (activeGFFfields.at(strandIDidx_) == "-" ? '-' : '+');
+		const std::string strandedChromosome = activeGFFfields.front() + strandID;
+		gffExonGroups_[strandedChromosome].emplace_back(activeGFFfields.back(), activeGFFfields.at(strandIDidx_).front(), exonSpans);
 	}
 }
 
@@ -302,7 +303,9 @@ void BAMtoGenome::mRNAfromGFF_(std::array<std::string, nGFFfields> &currentGFFli
 	}
 	if ( currentGFFline.back().empty() ) {
 		if ( !exonSpanSet.empty() ) {
-			gffExonGroups_[previousGFFfields.front()].emplace_back(previousGFFfields.back(), previousGFFfields.at(strandIDidx_).front(), exonSpanSet);
+			const char strandID                  = (previousGFFfields.at(strandIDidx_) == "-" ? '-' : '+');
+			const std::string strandedChromosome = previousGFFfields.front() + strandID;
+			gffExonGroups_[strandedChromosome].emplace_back(previousGFFfields.back(), previousGFFfields.at(strandIDidx_).front(), exonSpanSet);
 			exonSpanSet.clear();
 		}
 		previousGFFfields.back().clear();
@@ -311,7 +314,9 @@ void BAMtoGenome::mRNAfromGFF_(std::array<std::string, nGFFfields> &currentGFFli
 	}
 	// neither is empty and are not the same
 	if ( !exonSpanSet.empty() ) {
-		gffExonGroups_[previousGFFfields.front()].emplace_back(previousGFFfields.back(), previousGFFfields.at(strandIDidx_).front(), exonSpanSet);
+		const char strandID                  = (previousGFFfields.at(strandIDidx_) == "-" ? '-' : '+');
+		const std::string strandedChromosome = previousGFFfields.front() + strandID;
+		gffExonGroups_[strandedChromosome].emplace_back(previousGFFfields.back(), previousGFFfields.at(strandIDidx_).front(), exonSpanSet);
 		exonSpanSet.clear();
 	}
 	std::copy( currentGFFline.cbegin(), currentGFFline.cend(), previousGFFfields.begin() );
