@@ -30,6 +30,8 @@
 #pragma once
 
 #include <string>
+#include <utility> // for std::pair
+#include <vector>
 
 #include "isoseqAlgn.hpp"
 
@@ -48,4 +50,15 @@ namespace isaSpace {
 	 * \return `std::string` with the read record elements, without a new line at the end
 	 */
 	[[gnu::warn_unused_result]] std::string stringify(const ReadExonCoverage &readRecord, char separator = '\t');
+	/** \brief Make per-thread `ReadExonCoverage` vector ranges
+	 *
+	 * Constructs a vector of iterator pairs bracketing chunks of a vector to be processed in parallel.
+	 *
+	 * \param[in] targetVector the vector to be processed
+	 * \param[in] threadCount number of threads
+	 *
+	 * \return vector of iterator pairs for each thread
+	 */
+	[[gnu::warn_unused_result]] std::vector< std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vector<ReadExonCoverage>::const_iterator> > 
+		makeThreadRanges(const std::vector<ReadExonCoverage> &targetVector, const size_t &threadCount);
 }

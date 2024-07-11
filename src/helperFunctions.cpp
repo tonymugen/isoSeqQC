@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <iterator>
 #include <string>
+#include <utility>
 
 #include "helperFunctions.hpp"
 #include "isoseqAlgn.hpp"
@@ -84,4 +85,40 @@ std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separat
 						+ std::to_string(readRecord.lastCoveredExonIdx + 1);
 
 	return result;
+}
+
+std::vector< std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vector<ReadExonCoverage>::const_iterator> > 
+											isaSpace::makeThreadRanges(const std::vector<ReadExonCoverage> &targetVector, const size_t &threadCount) {
+	std::vector<std::vector<ReadExonCoverage>::difference_type> chunkSizes(
+		threadCount,
+		static_cast<std::vector<ReadExonCoverage>::difference_type>(targetVector.size() / threadCount)
+	);
+	// spread the left over elements among chunks
+	std::for_each(
+		chunkSizes.begin(),
+		chunkSizes.begin() +
+			static_cast<std::vector<ReadExonCoverage>::difference_type >(targetVector.size() % threadCount),
+		[](std::vector<ReadExonCoverage>::difference_type &currSize) {return ++currSize;}
+	);
+	std::vector<
+		std::pair<
+			std::vector<ReadExonCoverage>::const_iterator,
+			std::vector<ReadExonCoverage>::const_iterator
+		>
+	> threadRanges;
+	auto chunkBeginIt = targetVector.cbegin();
+
+	std::for_each(
+		chunkSizes.cbegin(),
+		chunkSizes.cend(),
+		[&chunkBeginIt, &threadRanges](std::vector<ReadExonCoverage>::difference_type currDiff) {
+			std::pair<
+				std::vector<ReadExonCoverage>::const_iterator,
+				std::vector<ReadExonCoverage>::const_iterator
+			> currItPair{chunkBeginIt, chunkBeginIt + currDiff};
+			chunkBeginIt = currItPair.second;
+			threadRanges.emplace_back( std::move(currItPair) );
+		}
+	);
+	return threadRanges;
 }

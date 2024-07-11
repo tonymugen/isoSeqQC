@@ -25,6 +25,8 @@
 #include <array>
 #include <string>
 
+#include <iostream>
+
 #include "bgzf.h"
 #include "sam.h"
 
@@ -57,6 +59,36 @@ TEST_CASE("Helper functions work") {
 	REQUIRE( absentAttrResult.empty() );
 
 	// TODO: add stringify function test
+
+	// thread ranges function
+	constexpr size_t nThreads{4};
+	const std::vector<isaSpace::ReadExonCoverage> testRECvec(11);
+	const auto threadRanges{isaSpace::makeThreadRanges(testRECvec, nThreads)};
+	REQUIRE(threadRanges.size() == nThreads);
+	REQUIRE(
+		std::all_of(
+			threadRanges.cbegin(),
+			threadRanges.cend(),
+			[](const std::pair<std::vector<isaSpace::ReadExonCoverage>::const_iterator, std::vector<isaSpace::ReadExonCoverage>::const_iterator> &currPair) {
+				return std::distance(currPair.first, currPair.second) >= 0;
+			}
+		)
+	);
+	REQUIRE(
+		std::all_of(
+			threadRanges.cbegin(),
+			threadRanges.cend(),
+			[&testRECvec, &nThreads](const std::pair<std::vector<isaSpace::ReadExonCoverage>::const_iterator, std::vector<isaSpace::ReadExonCoverage>::const_iterator> &currPair) {
+				return std::distance(currPair.first, currPair.second) >= testRECvec.size() / nThreads;
+			}
+		)
+	);
+	REQUIRE(
+		std::distance(threadRanges.front().first, threadRanges.front().second) >
+		std::distance(threadRanges.back().first, threadRanges.back().second)
+	);
+	REQUIRE( threadRanges.front().first == testRECvec.cbegin() );
+	REQUIRE( threadRanges.back().second == testRECvec.cend() );
 }
 
 TEST_CASE("Exon range extraction works") {
@@ -129,7 +161,7 @@ TEST_CASE("Exon range extraction works") {
 	);
 }
 
-TEST_CASE("Saving individual BAM records works") {
+TEST_CASE("Reading individual BAM records works") {
 	// straight read
 	const std::string oneRecordBAMname("../tests/oneRecord.bam");
 	const std::string correctReadName("m54312U_201215_225530/657093/ccs");
@@ -233,10 +265,12 @@ TEST_CASE("GFF and BAM parsing works") {
 	const std::string gffName("../tests/posNegYak.gff");
 	const std::string posStrandBAMname("../tests/posStrand.bam");
 	const std::string negStrandBAMname("../tests/negStrand.bam");
+	const std::string unSortedBAMname("../tests/unSorted.bam");
 	isaSpace::BamAndGffFiles gffPair;
 	gffPair.gffFileName = gffName;
 	//gffPair.bamFileName = posStrandBAMname;
-	gffPair.bamFileName = negStrandBAMname;
+	//gffPair.bamFileName = negStrandBAMname;
+	gffPair.bamFileName = unSortedBAMname;
 	isaSpace::BAMtoGenome parsedPosStrandBAM(gffPair);
 
 	/*

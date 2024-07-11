@@ -378,5 +378,15 @@ namespace isaSpace {
 		 * \param[in,out] exonSpanSet set of unique exon start/end pairs
 		 */
 		void mRNAfromGFF_(std::array<std::string, nGFFfields> &currentGFFline, std::array<std::string, nGFFfields> &previousGFFfields, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet);
+		/** \brief Find the gene overlapping the read
+		 *
+		 * Finds the collection of exons belonging to a gene that is covered by the current isoSeq read.
+		 * Updates the GFF iterator and the coverage statistics object.
+		 *
+		 * \param[in] referenceName the name of the reference sequence (chromosome, linkage group, or contig)
+		 * \param[in,out] gffExonGroupStart the iterator to start the search
+		 * \param[in,out] readCoverageInfo the object with read coverage information
+		 */
+		void findOverlappingGene_(const std::string &referenceName, std::vector<ExonGroup>::const_iterator &gffExonGroupStart, ReadExonCoverage &readCoverageInfo);
 	};
 }
