@@ -34,10 +34,13 @@
 #include <utility>
 #include <vector>
 #include <set>
+#include <unordered_set>
 #include <array>
 #include <string>
 #include <sstream>
 #include <fstream>
+#include <future>
+#include <thread>
 
 #include "hts.h"
 #include "sam.h"
@@ -199,8 +202,23 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			latestExonGroupIts[referenceName] = gffExonGroups_[referenceName].cbegin();
 		}
 		findOverlappingGene_(referenceName, latestExonGroupIts[referenceName], currentAlignmentInfo);
-		readCoverageStats_[referenceName].emplace_back( std::move(currentAlignmentInfo) );
+		readCoverageStats_.emplace_back( std::move(currentAlignmentInfo) );
 	}
+}
+
+size_t BAMtoGenome::nChromosomes() const noexcept {
+	std::unordered_set<std::string> chromosomes;
+	std::for_each(
+		gffExonGroups_.cbegin(),
+		gffExonGroups_.cend(),
+		[&chromosomes](const std::pair< std::string, std::vector<ExonGroup> > &currStrandedChromosome) {
+			std::string chrName = currStrandedChromosome.first;
+			chrName.pop_back();
+			chromosomes.insert(chrName);
+		}
+	);
+
+	return chromosomes.size();
 }
 
 size_t BAMtoGenome::nExonSets() const noexcept {
@@ -213,6 +231,42 @@ size_t BAMtoGenome::nExonSets() const noexcept {
 		}
 	);
 }
+
+void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const size_t &nThreads) const {
+	size_t actualNthreads = std::min( nThreads, static_cast<size_t>( std::thread::hardware_concurrency() ) );
+	actualNthreads        = std::min( actualNthreads, readCoverageStats_.size() );
+	actualNthreads        = std::max(actualNthreads, 1UL);
+
+	const auto threadRanges{makeThreadRanges(readCoverageStats_, actualNthreads)};
+	std::vector<std::string> threadOutStrings(actualNthreads);
+	std::vector< std::future<void> > tasks;
+	tasks.reserve(actualNthreads);
+	size_t iThread{0};
+	std::for_each(
+		threadRanges.cbegin(),
+		threadRanges.cend(),
+		[&iThread, &tasks, &threadOutStrings](const std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vector<ReadExonCoverage>::const_iterator> &eachRange) {
+			tasks.emplace_back(
+				std::async(
+					[iThread, eachRange, &threadOutStrings] {
+						threadOutStrings.at(iThread) = stringifyRCSrange(eachRange.first, eachRange.second);
+					}
+				)
+			);
+			++iThread;
+		}
+	);
+	for (const auto &eachThread : tasks) {
+		eachThread.wait();
+	}
+
+	std::fstream outStream;
+	outStream.open(outFileName, std::ios::out | std::ios::binary | std::ios::app);
+	for (const auto &eachThreadString : threadOutStrings) {
+		outStream.write( eachThreadString.c_str(), static_cast<std::streamsize>( eachThreadString.size() ) );
+	}
+	outStream.close();
+};
 
 void BAMtoGenome::parseGFF_(const std::string &gffFileName) {
 	std::string gffLine;

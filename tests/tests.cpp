@@ -25,8 +25,6 @@
 #include <array>
 #include <string>
 
-#include <iostream>
-
 #include "bgzf.h"
 #include "sam.h"
 
@@ -59,6 +57,7 @@ TEST_CASE("Helper functions work") {
 	REQUIRE( absentAttrResult.empty() );
 
 	// TODO: add stringify function test
+	// TODO: add vector stringify tests
 
 	// thread ranges function
 	constexpr size_t nThreads{4};

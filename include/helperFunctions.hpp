@@ -50,6 +50,13 @@ namespace isaSpace {
 	 * \return `std::string` with the read record elements, without a new line at the end
 	 */
 	[[gnu::warn_unused_result]] std::string stringify(const ReadExonCoverage &readRecord, char separator = '\t');
+	/** \brief Produce a string from a range of `ReadExonCoverage` elements
+	 *
+	 * \param[in] begin start iterator
+	 * \param[in] end end iterator
+	 * \return string with coverage information
+	 */
+	[[gnu::warn_unused_result]] std::string stringifyRCSrange(const std::vector<ReadExonCoverage>::const_iterator &begin, const std::vector<ReadExonCoverage>::const_iterator &end);
 	/** \brief Make per-thread `ReadExonCoverage` vector ranges
 	 *
 	 * Constructs a vector of iterator pairs bracketing chunks of a vector to be processed in parallel.

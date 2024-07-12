@@ -329,12 +329,17 @@ namespace isaSpace {
 		~BAMtoGenome() = default;
 
 		/** \brief Number of chromosomes/scaffolds/linkage groups */
-		[[gnu::warn_unused_result]] size_t nChromosomes() const noexcept { return gffExonGroups_.size(); };
+		[[gnu::warn_unused_result]] size_t nChromosomes() const noexcept;
 		/** \brief Number of exon sets (genes with exons)
 		 *
 		 * \return number of exon sets
 		 */
 		[[gnu::warn_unused_result]] size_t nExonSets() const noexcept;
+		/** \brief Save read coverage to file
+		 *
+		 * Saves the read coverage statistics to a file.
+		 */
+		void saveReadCoverageStats(const std::string &outFileName, const size_t &nThreads) const;
 	private:
 		/** \brief GFF file column delimiter */
 		static const char gffDelimiter_;
@@ -352,14 +357,11 @@ namespace isaSpace {
 
 		/** \brief Vector of exon groups (one group per gene)
 		 *
-		 * The map keys are linkage groups, scaffolds, or chromosomes.
+		 * The map keys are linkage groups, scaffolds, or chromosomes plus strand ID.
 		 */
 		std::unordered_map< std::string, std::vector<ExonGroup> > gffExonGroups_;
-		/** \brief Vector of abridged SAM/BAM records
-		 *
-		 * The map keys are linkage groups, scaffolds, or chromosomes.
-		 */
-		std::unordered_map< std::string, std::vector<ReadExonCoverage> > readCoverageStats_;
+		/** \brief Vector of abridged SAM/BAM records */
+		std::vector<ReadExonCoverage> readCoverageStats_;
 
 		/** \brief Parse a GFF file
 		 *

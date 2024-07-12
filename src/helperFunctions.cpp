@@ -87,6 +87,18 @@ std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separat
 	return result;
 }
 
+std::string isaSpace::stringifyRCSrange(const std::vector<ReadExonCoverage>::const_iterator &begin, const std::vector<ReadExonCoverage>::const_iterator &end) {
+	std::string outString;
+	std::for_each(
+		begin,
+		end,
+		[&outString](const ReadExonCoverage &currStat) {
+			outString += stringify(currStat) + "\n";
+		}
+	);
+	return outString;
+}
+
 std::vector< std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vector<ReadExonCoverage>::const_iterator> > 
 											isaSpace::makeThreadRanges(const std::vector<ReadExonCoverage> &targetVector, const size_t &threadCount) {
 	std::vector<std::vector<ReadExonCoverage>::difference_type> chunkSizes(
