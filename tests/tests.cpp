@@ -24,6 +24,8 @@
 #include <set>
 #include <array>
 #include <string>
+#include <fstream>
+#include <sstream>
 
 #include "bgzf.h"
 #include "sam.h"
@@ -56,8 +58,36 @@ TEST_CASE("Helper functions work") {
 	const std::string absentAttrResult{isaSpace::extractAttributeName(testTokAttr)};
 	REQUIRE( absentAttrResult.empty() );
 
-	// TODO: add stringify function test
-	// TODO: add vector stringify tests
+	// stringify tests
+	const std::string correctStatsLine("m54312U_201215_225530/460252/ccs	NC_052529.2	2265M62N589M913N1007M	+	2983523	2988359	gene-LOC6532627	7	2980697	2988366	5	7");
+	isaSpace::ReadExonCoverage coverageStats;
+	coverageStats.readName            = "m54312U_201215_225530/460252/ccs";
+	coverageStats.chromosomeName      = "NC_052529.2";
+	coverageStats.cigarString         = "2265M62N589M913N1007M";
+	coverageStats.strand              = '+';
+	coverageStats.alignmentStart      = 2983523; // NOLINT
+	coverageStats.alignmentEnd        = 2988359; // NOLINT
+	coverageStats.geneName            = "gene-LOC6532627";
+	coverageStats.nExons              = 7;       // NOLINT
+	coverageStats.firstExonStart      = 2980697; // NOLINT
+	coverageStats.lastExonEnd         = 2988366; // NOLINT
+	// stored values are base-0, saved as base-1
+	coverageStats.firstCoveredExonIdx = 4;       // NOLINT
+	coverageStats.lastCoveredExonIdx  = 6;       // NOLINT
+	REQUIRE(isaSpace::stringify(coverageStats) == correctStatsLine);
+
+	constexpr size_t recVecSize{7};
+	const std::vector<isaSpace::ReadExonCoverage> recVec(recVecSize, coverageStats);
+	const auto testVecResult{isaSpace::stringifyRCSrange(recVec.cbegin() + 1, recVec.cbegin() + 4)};
+	REQUIRE(testVecResult.size() == 3 * correctStatsLine.size() + 3); // the newlines are the extra three characters
+	REQUIRE(
+		std::includes(
+			testVecResult.cbegin(),
+			testVecResult.cend(),
+			correctStatsLine.cbegin(),
+			correctStatsLine.cend()
+		)
+	);
 
 	// thread ranges function
 	constexpr size_t nThreads{4};
@@ -227,21 +257,19 @@ TEST_CASE("Reading individual BAM records works") {
 	REQUIRE(bamRecordRev.getMapEnd()      == correctRevMapEndPosition);
 	REQUIRE(bamRecordRev.getCIGARstring() == correctCIGARrev);
 }
-/*
+
 TEST_CASE("Catching bad GFF and BAM files works") {
+	// Since HTSLIB is not in my control, I cannot test everything
+	// For example, testing the throw on wrong file name is iffy
+	// because sometimes HTSLIB seems to create the file if there is none,
+	// but not consistently
 	const std::string goodGFFname("../tests/goodGFF.gff");
 	const std::string nomrnaGFFname("../tests/nomRNA.gff");
 	const std::string goodBAMname("../tests/testAlgn.bam");
-	const std::string wrongBAMname("../tests/wrong.bam");
 	const std::string randomNoiseBAMname("../tests/randomNoise.bam"); // completely random noise, no magic bytes, but valid EOF sequence
 	const std::string headerlessBAMname("../tests/headerless.bam");   // random noise with magic bytes and EOF but no header
 	isaSpace::BamAndGffFiles gffPair;
 	gffPair.gffFileName = goodGFFname;
-	gffPair.bamFileName = wrongBAMname;
-	REQUIRE_THROWS_WITH(
-		isaSpace::BAMtoGenome(gffPair),
-		Catch::Matchers::StartsWith("ERROR: failed to open the BAM file")
-	);
 	gffPair.bamFileName = randomNoiseBAMname;
 	REQUIRE_THROWS_WITH(
 		isaSpace::BAMtoGenome(gffPair),
@@ -259,90 +287,91 @@ TEST_CASE("Catching bad GFF and BAM files works") {
 		Catch::Matchers::StartsWith("ERROR: no mRNAs with exons found in the")
 	);
 }
-*/
+
 TEST_CASE("GFF and BAM parsing works") {
 	const std::string gffName("../tests/posNegYak.gff");
-	const std::string posStrandBAMname("../tests/posStrand.bam");
-	const std::string negStrandBAMname("../tests/negStrand.bam");
-	const std::string unSortedBAMname("../tests/unSorted.bam");
+	const std::string testAlignmentBAMname("../tests/testAlignment.bam");
+	const std::string outFileName("../tests/testResults.tsv");
+	constexpr size_t nThreads{2};
 	isaSpace::BamAndGffFiles gffPair;
 	gffPair.gffFileName = gffName;
-	//gffPair.bamFileName = posStrandBAMname;
-	//gffPair.bamFileName = negStrandBAMname;
-	gffPair.bamFileName = unSortedBAMname;
-	isaSpace::BAMtoGenome parsedPosStrandBAM(gffPair);
+	gffPair.bamFileName = testAlignmentBAMname;
+	isaSpace::BAMtoGenome testBAM(gffPair);
+	testBAM.saveReadCoverageStats(outFileName, nThreads);
 
-	/*
-	const std::string goodGFFname("../tests/goodGFF.gff");
-	const std::string goodBAMname("../tests/testAlgn.bam");
-	isaSpace::BamAndGffFiles gffPair;
-	gffPair.gffFileName = goodGFFname;
-	gffPair.bamFileName = goodBAMname;
-	constexpr size_t correctNsets{4};
-	constexpr size_t correctNchrom{2};
-
-	isaSpace::BAMtoGenome parsedGoodGFF(gffPair);
-	REQUIRE(parsedGoodGFF.nChromosomes() == correctNchrom);
-	REQUIRE(parsedGoodGFF.nExonSets()    == correctNsets);
-
-	const std::string messyGFFname("../tests/messyGFF.gff");
-	gffPair.gffFileName = messyGFFname;
-	isaSpace::BAMtoGenome parsedMessyGFF(gffPair);
-	REQUIRE(parsedMessyGFF.nChromosomes() == correctNchrom);
-	REQUIRE(parsedMessyGFF.nExonSets()    == correctNsets);
-	*/
-}
-/*
-TEST_CASE("HTSLIB doodles") {
-	const std::string testBAMname("../tests/testAlgn.bam");
-	const char openMode{'r'};
-	std::unique_ptr<BGZF, void(*)(BGZF *)> testBAMfile(
-		bgzf_open(testBAMname.c_str(), &openMode),
-		[](BGZF *bamFile) {
-			bgzf_close(bamFile);
-		}
-	);
-
-	// must read the header first to get to the alignments
-	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> testBAMheader(
-		bam_hdr_read( testBAMfile.get() ),
-		[](sam_hdr_t *samHeader) {
-			sam_hdr_destroy(samHeader);
-		}
-	);
-
-	const std::string testHeaderText{sam_hdr_str( testBAMheader.get() )};
-	std::cout << "=================\n";
-	constexpr uint16_t isNotPrimary{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
-	std::vector<isaSpace::SAMrecord> primaryRecords;
-	uint32_t iRecord{1};
-	while (true) {
-		isaSpace::CbamRecordDeleter localDeleter;
-		std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRecordPtr(bam_init1(), localDeleter);
-		int32_t nBytes = bam_read1( testBAMfile.get(), bamRecordPtr.get() );
-		if (nBytes == -1) {
-			break;
-		}
-		if (nBytes < -1) {
-			continue;
-		}
-		++iRecord;
-		const std::string currQname( bam_get_qname( bamRecordPtr.get() ) ); // NOLINT
-		auto *const currCIGARptr = bam_get_cigar( bamRecordPtr.get() );     // NOLINT
-		// is it a primary alignment with a soft clip?
-		if ( (bam_cigar_opchr(*currCIGARptr) == 'S') && ( (bamRecordPtr->core.flag & isNotPrimary) == 0 ) ) { // NOLINT
-			primaryRecords.emplace_back(bamRecordPtr);
-			continue;
-		}
-		if ( ( !primaryRecords.empty() ) && ( currQname == primaryRecords.back().getReadName() ) ) {
-			primaryRecords.back().appendSecondary(bamRecordPtr);
-		}
-		//std::vector<uint32_t> cigar(bam_get_cigar( bamRecords.back().get() ), bam_get_cigar( bamRecords.back().get() ) +  bamRecords.back()->core.n_cigar); // NOLINT
-		//std::cout << "first CIGAR: " << bam_cigar_oplen( cigar.front() ) << bam_cigar_opchr( cigar.front() ) << "\n"; // NOLINT
-		//std::cout << std::bitset<16>(0x900) << "\n" << std::bitset<16>(bamRecordPtr->core.flag) << "\n\n";//NOLINT
+	std::fstream saveResultFile(outFileName, std::ios::in);
+	std::string line;
+	std::vector<char> strands;
+	std::vector<std::string> geneNames;
+	std::vector<int32_t> nExons;
+	std::vector<int32_t> fesValues;                 // first exon starts
+	std::getline(saveResultFile, line);             // get rid of the header
+	while ( std::getline(saveResultFile, line) ) {
+		std::stringstream lineStream;
+		lineStream.str(line);
+		std::string field;
+		lineStream >> field;
+		lineStream >> field;
+		lineStream >> field;
+		lineStream >> field;
+		strands.push_back( field.at(0) );
+		lineStream >> field;
+		lineStream >> field;
+		lineStream >> field;
+		geneNames.emplace_back(field);
+		lineStream >> field;
+		nExons.push_back( stoi(field) );
+		lineStream >> field;
+		fesValues.push_back( stoi(field) );
 	}
-	std::cout << "Number saved: " << primaryRecords.size() << "; number considered: " << iRecord << "\n";
-	std::cout << "+++++++++++++++++\n";
+	saveResultFile.close();
+	constexpr size_t correctResSize{9};
+	constexpr int32_t correctNpos{5};
+	constexpr int32_t correctNneg{4};
+	constexpr int32_t correctNgenes{6};
+	constexpr int32_t correctNfailed{3};
 
+	REQUIRE(strands.size() == correctResSize);
+	REQUIRE(std::count(strands.cbegin(), strands.cend(), '+') == correctNpos);
+	REQUIRE(std::count(strands.cbegin(), strands.cend(), '-') == correctNneg);
+
+	REQUIRE(
+		std::count_if(
+			geneNames.cbegin(),
+			geneNames.cend(),
+			[](const std::string &name) {
+				return name == "backtracked_to_start";
+			}
+		) == 1
+	);
+	REQUIRE(
+		std::count_if(
+			geneNames.cbegin(),
+			geneNames.cend(),
+			[](const std::string &name) {
+				return name == "past_last_mRNA";
+			}
+		) == 1
+	);
+	REQUIRE(
+		std::count_if(
+			geneNames.cbegin(),
+			geneNames.cend(),
+			[](const std::string &name) {
+				return name == "no_overlap";
+			}
+		) == 1
+	);
+	REQUIRE(
+		std::count_if(
+			geneNames.cbegin(),
+			geneNames.cend(),
+			[](const std::string &name) {
+				return name.substr(0, 4) == "gene";
+			}
+		) == correctNgenes
+	);
+
+	REQUIRE(std::count(nExons.cbegin(), nExons.cend(), 0) == correctNfailed);
+	REQUIRE(std::count(fesValues.cbegin(), fesValues.cend(), -1) == correctNfailed);
 }
-*/

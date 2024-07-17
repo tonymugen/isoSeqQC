@@ -149,6 +149,7 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
 
+	//throw std::string("GOT HERE");
 	// must read the header first to get to the alignments
 	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> bamHeader(
 		bam_hdr_read( bamFile.get() ),
@@ -260,8 +261,12 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 		eachThread.wait();
 	}
 
+	const std::string headerLine = "read_name\tchromosome\tCIGAR\tstrand\talignment_start\t" 
+									"alignment_end\tgene_name\tn_exons\tfirst_exon_start\t" 
+									"last_exon_end\tfirst_covered_exon_idx\tlast_covered_exon_idx\n";
 	std::fstream outStream;
-	outStream.open(outFileName, std::ios::out | std::ios::binary | std::ios::app);
+	outStream.open(outFileName, std::ios::out | std::ios::binary | std::ios::trunc);
+	outStream.write( headerLine.c_str(), static_cast<std::streamsize>( headerLine.size() ) );
 	for (const auto &eachThreadString : threadOutStrings) {
 		outStream.write( eachThreadString.c_str(), static_cast<std::streamsize>( eachThreadString.size() ) );
 	}
@@ -343,8 +348,6 @@ void BAMtoGenome::findOverlappingGene_(const std::string &referenceName, std::ve
 	// if the BAM file is not sorted, we may have to backtrack
 	// looking for the first gene end that is after the read map start
 	if (readCoverageInfo.alignmentStart < gffExonGroupStart->firstExonSpan().first) {
-		//const auto toEnd = std::distance( latestExonGroupIts[referenceName], gffExonGroups_[referenceName].cend() );
-		//auto reverseLEGI = std::next(gffExonGroups_[referenceName].crbegin(), toEnd);
 		auto reverseLEGI = std::make_reverse_iterator(gffExonGroupStart);
 		reverseLEGI      = std::lower_bound(
 			reverseLEGI,
@@ -384,6 +387,8 @@ void BAMtoGenome::findOverlappingGene_(const std::string &referenceName, std::ve
 		readCoverageInfo.lastExonEnd         = -1;
 		readCoverageInfo.firstCoveredExonIdx =  0;
 		readCoverageInfo.lastCoveredExonIdx  =  0;
+		// return the iterator to a valid record
+		std::advance(gffExonGroupStart, -1);
 		return;
 	}
 	if (readCoverageInfo.alignmentStart < gffExonGroupStart->geneSpan().first) { // no overlap with a known gene

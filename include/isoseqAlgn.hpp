@@ -328,7 +328,13 @@ namespace isaSpace {
 		/** \brief Destructor */
 		~BAMtoGenome() = default;
 
-		/** \brief Number of chromosomes/scaffolds/linkage groups */
+		/** \brief Number of chromosomes/scaffolds/linkage groups
+		 *
+		 * Counts the number of unique GFF `seqid` elements.
+		 * These are typically chromosomes, scaffolds, or linkage groups.
+		 *
+		 * \return number of chromosomes
+		 */
 		[[gnu::warn_unused_result]] size_t nChromosomes() const noexcept;
 		/** \brief Number of exon sets (genes with exons)
 		 *
@@ -338,6 +344,10 @@ namespace isaSpace {
 		/** \brief Save read coverage to file
 		 *
 		 * Saves the read coverage statistics to a file.
+		 * If a file with the same name exists it is overwritten.
+		 *
+		 * \param[in] outFileName output file name
+		 * \param[in] nThreads number of concurrent threads
 		 */
 		void saveReadCoverageStats(const std::string &outFileName, const size_t &nThreads) const;
 	private:
