@@ -134,3 +134,57 @@ std::vector< std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vecto
 	);
 	return threadRanges;
 }
+
+std::unordered_map<std::string, std::string> isaSpace::parseCL(int &argc, char **argv) {
+	std::unordered_map<std::string, std::string> cliResult;
+	// set to true after encountering a flag token (the characters after the dash)
+	bool val = false;
+	// store the token value here
+	std::string curFlag;
+
+	for (int iArg = 1; iArg < argc; iArg++) {
+		const char *pchar = argv[iArg];
+		if ( (pchar[0] == '-') && (pchar[1] == '-') ) { // encountered the double dash, look for the token after it
+			if (val) { // A previous flag had no value
+				cliResult[curFlag] = "set";
+			}
+			// what follows the dash?
+			val     = true;
+			curFlag = pchar + 2;
+			continue;
+		}
+		if (val) {
+			val                = false;
+			cliResult[curFlag] = pchar;
+		}
+	}
+	return cliResult;
+}
+
+void isaSpace::extractCLinfo(const std::unordered_map<std::string, std::string> &parsedCLI,
+		std::unordered_map<std::string, int> &intVariables, std::unordered_map<std::string, std::string> &stringVariables) {
+	intVariables.clear();
+	stringVariables.clear();
+	const std::array<std::string, 3> requiredStringVariables{"input-bam", "input-gff", "out"};
+	const std::array<std::string, 1> optionalIntVariables{"threads"};
+
+	const std::unordered_map<std::string, int> defaultIntValues{ {"threads", -1} };
+
+	if ( parsedCLI.empty() ) {
+		throw std::string("No command line flags specified;");
+	}
+	for (const auto &eachFlag : optionalIntVariables) {
+		try {
+			intVariables[eachFlag] = stoi( parsedCLI.at(eachFlag));
+		} catch(const std::exception &problem) {
+			intVariables[eachFlag] = defaultIntValues.at(eachFlag);
+		}
+	}
+	for (const auto &eachFlag : requiredStringVariables) {
+		try {
+			stringVariables[eachFlag] = parsedCLI.at(eachFlag);
+		} catch(const std::exception &problem) {
+			throw std::string("ERROR: ") + eachFlag + std::string(" specification is required");
+		}
+	}
+}

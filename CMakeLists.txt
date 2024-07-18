@@ -149,30 +149,29 @@ set(CMAKE_CXX_FLAGS_TEST
 
 include(GNUInstallDirs)
 # executable
-#add_executable(ldblocks
-#	${CMAKE_CURRENT_LIST_DIR}/apps/ldblocks.cpp
-#)
-#target_include_directories(ldblocks
-#	PRIVATE ${brutilities_SOURCE_DIR}/include
-#	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
-#)
-#target_link_libraries(ldblocks
-#	PRIVATE vash
-#)
-#target_compile_options(ldblocks
-#	PRIVATE ${PROJECT_WARNINGS_CXX}
-#)
-#if(BUILD_TESTS)
-#	target_compile_options(ldblocks
-#		PRIVATE -fsanitize=${SANITIZER_LIST}
-#	)
-#endif()
-#set_target_properties(ldblocks PROPERTIES
-#	CXX_STANDARD_REQUIRED ON
-#)
-#install(TARGETS ldblocks
-#	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-#)
+add_executable(exoncoverage
+	${CMAKE_CURRENT_LIST_DIR}/apps/exoncoverage.cpp
+)
+target_include_directories(exoncoverage
+	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
+)
+target_link_libraries(exoncoverage
+	PRIVATE isoseqAln
+)
+target_compile_options(exoncoverage
+	PRIVATE ${PROJECT_WARNINGS_CXX}
+)
+if(BUILD_TESTS)
+	target_compile_options(exoncoverage
+		PRIVATE -fsanitize=${SANITIZER_LIST}
+	)
+endif()
+set_target_properties(exoncoverage PROPERTIES
+	CXX_STANDARD_REQUIRED ON
+)
+install(TARGETS exoncoverage
+	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
 
 # library
 add_library(isoseqAln
@@ -180,6 +179,9 @@ add_library(isoseqAln
 	${CMAKE_CURRENT_LIST_DIR}/src/helperFunctions.cpp
 )
 add_dependencies(isoseqAln htslib)
+target_link_libraries(isoseqAln
+	PRIVATE ${htslib_BINARY_DIR}/libhts.so
+)
 target_include_directories(isoseqAln
 	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
 	PRIVATE ${htslib_SOURCE_DIR}/htslib

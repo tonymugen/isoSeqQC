@@ -42,9 +42,9 @@
 #include <future>
 #include <thread>
 
-#include "hts.h"
-#include "sam.h"
-#include "bgzf.h"
+#include "htslib/hts.h"
+#include "htslib/sam.h"
+#include "htslib/bgzf.h"
 
 #include "isoseqAlgn.hpp"
 #include "helperFunctions.hpp"

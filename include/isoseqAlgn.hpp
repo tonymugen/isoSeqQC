@@ -37,7 +37,7 @@
 #include <unordered_map>
 #include <string>
 
-#include "sam.h"
+#include "htslib/sam.h"
 
 namespace isaSpace {
 	constexpr size_t nGFFfields{9UL};
