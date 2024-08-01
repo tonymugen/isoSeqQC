@@ -148,6 +148,12 @@ namespace isaSpace {
 		 * \return strand ID (`+` or `-`)
 		 */
 		[[gnu::warn_unused_result]] char strand() const noexcept { return isNegativeStrand_ ? '-' : '+'; };
+		/** \brief Range covered by a given exon
+		 *
+		 * \param[in] idx exon index
+		 * \return the exon start and end nucleotide position pair
+		 */
+		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> operator[](const size_t &idx) const {return exonRanges_.at(idx);};
 		/** \brief Gene span 
 		 *
 		 * Returns the position span of the gene.
@@ -171,21 +177,39 @@ namespace isaSpace {
 		/** \brief Index of the first exon after a given position
 		 * 
 		 * 0-based index of the first exon found entirely after the given position.
-		 * Equal to the total number of exons if the position is after the last exon.
+		 * Equal to the index of the last exon if the position is after the last exon.
 		 *
 		 * \param[in] position genome position to test
 		 * \return index of the first exon after the given position
 		 */
 		[[gnu::warn_unused_result]] uint32_t firstExonAfter(const hts_pos_t &position) const noexcept;
+		/** \brief Index of the first exon overlapping a given position
+		 * 
+		 * 0-based index of the first exon found at least partially after the given position.
+		 * Equal to the index of the last exon if the position is after the last exon.
+		 *
+		 * \param[in] position genome position to test
+		 * \return index of the first exon overlapping the given position
+		 */
+		[[gnu::warn_unused_result]] uint32_t firstOverlappingExon(const hts_pos_t &position) const noexcept;
 		/** \brief Index of the last exon before a given position
 		 * 
 		 * 0-based index of the last exon found entirely before the given position.
-		 * Equal to the total number of exons if the position is after the last exon.
+		 * Equal to the index of the last exon if the position is after the last exon.
 		 *
 		 * \param[in] position genome position to test
 		 * \return index of the last exon before the given position
 		 */
 		[[gnu::warn_unused_result]] uint32_t lastExonBefore(const hts_pos_t &position) const noexcept;
+		/** \brief Index of the last exon overlapping a given position
+		 * 
+		 * 0-based index of the last exon found at least before after the given position.
+		 * Equal to the index of the last exon if the position is after the last exon.
+		 *
+		 * \param[in] position genome position to test
+		 * \return index of the last exon overlapping the given position
+		 */
+		[[gnu::warn_unused_result]] uint32_t lastOverlappingExon(const hts_pos_t &position) const noexcept;
 	private:
 		/** \brief Gene name */
 		std::string geneName_;

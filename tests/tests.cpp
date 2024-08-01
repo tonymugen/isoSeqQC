@@ -136,8 +136,10 @@ TEST_CASE("Exon range extraction works") {
 	std::copy( testExonSpans.cbegin(), testExonSpans.cend(), std::inserter( testSet, testSet.end() ) );
 	isaSpace::ExonGroup testExonGroupNeg(testGeneName, strand, testSet);
 	constexpr size_t correctNexons{4};
-	REQUIRE(testExonGroupNeg.nExons() == correctNexons);
-	REQUIRE(testExonGroupNeg.strand() == strand);
+	REQUIRE(testExonGroupNeg.nExons()  == correctNexons);
+	REQUIRE(testExonGroupNeg.strand()  == strand);
+	REQUIRE(testExonGroupNeg[1].first  == testExonSpans.at(1).first);
+	REQUIRE(testExonGroupNeg[1].second == testExonSpans.at(1).second);
 	auto fullSpan{testExonGroupNeg.geneSpan()};
 	REQUIRE(fullSpan.first  == testExonSpans.front().first);
 	REQUIRE(fullSpan.second == testExonSpans.back().second);
@@ -147,8 +149,10 @@ TEST_CASE("Exon range extraction works") {
 	// positive strand
 	strand = '+';
 	isaSpace::ExonGroup testExonGroupPos(testGeneName, strand, testSet);
-	REQUIRE(testExonGroupPos.nExons() == correctNexons);
-	REQUIRE(testExonGroupPos.strand() == strand);
+	REQUIRE(testExonGroupPos.nExons()  == correctNexons);
+	REQUIRE(testExonGroupPos.strand()  == strand);
+	REQUIRE(testExonGroupNeg[1].first  == testExonSpans.at(1).first);
+	REQUIRE(testExonGroupNeg[1].second == testExonSpans.at(1).second);
 	fullSpan = testExonGroupPos.geneSpan();
 	REQUIRE(fullSpan.first  == testExonSpans.front().first);
 	REQUIRE(fullSpan.second == testExonSpans.back().second);
@@ -158,8 +162,10 @@ TEST_CASE("Exon range extraction works") {
 	// undetermined strand, assumed positive
 	strand = '.';
 	isaSpace::ExonGroup testExonGroupUnd(testGeneName, strand, testSet);
-	REQUIRE(testExonGroupUnd.nExons() == correctNexons);
-	REQUIRE(testExonGroupUnd.strand() == '+');
+	REQUIRE(testExonGroupUnd.nExons()  == correctNexons);
+	REQUIRE(testExonGroupUnd.strand()  == '+');
+	REQUIRE(testExonGroupNeg[1].first  == testExonSpans.at(1).first);
+	REQUIRE(testExonGroupNeg[1].second == testExonSpans.at(1).second);
 	fullSpan = testExonGroupUnd.geneSpan();
 	REQUIRE(fullSpan.first  == testExonSpans.front().first);
 	REQUIRE(fullSpan.second == testExonSpans.back().second);
@@ -174,13 +180,19 @@ TEST_CASE("Exon range extraction works") {
 	constexpr uint16_t  correctPosBefore{0};
 	constexpr uint16_t  correctPosMidF{2};
 	constexpr uint16_t  correctPosMidL{1};
-	constexpr uint16_t  correctPosAfter{4};
+	constexpr uint16_t  correctPosAfter{3};
 	REQUIRE(testExonGroupPos.firstExonAfter(positionBefore)   == correctPosBefore);
 	REQUIRE(testExonGroupPos.firstExonAfter(positionInMiddle) == correctPosMidF);
 	REQUIRE(testExonGroupPos.firstExonAfter(positionAfter)    == correctPosAfter);
+	REQUIRE(testExonGroupPos.firstOverlappingExon(positionBefore)   == correctPosBefore);
+	REQUIRE(testExonGroupPos.firstOverlappingExon(positionInMiddle) == correctPosMidL);
+	REQUIRE(testExonGroupPos.firstOverlappingExon(positionAfter)    == correctPosAfter);
 	REQUIRE(testExonGroupPos.lastExonBefore(positionBefore)   == correctPosBefore);
 	REQUIRE(testExonGroupPos.lastExonBefore(positionInMiddle) == correctPosMidL);
 	REQUIRE(testExonGroupPos.lastExonBefore(positionAfter)    == correctPosAfter);
+	REQUIRE(testExonGroupPos.lastOverlappingExon(positionBefore)   == correctPosBefore);
+	REQUIRE(testExonGroupPos.lastOverlappingExon(positionInMiddle) == correctPosMidF);
+	REQUIRE(testExonGroupPos.lastOverlappingExon(positionAfter)    == correctPosAfter);
 
 	// throwing on empty set
 	std::set< std::pair<hts_pos_t, hts_pos_t> > emptyExonSet;
@@ -340,15 +352,6 @@ TEST_CASE("GFF and BAM parsing works") {
 			geneNames.cbegin(),
 			geneNames.cend(),
 			[](const std::string &name) {
-				return name == "backtracked_to_start";
-			}
-		) == 1
-	);
-	REQUIRE(
-		std::count_if(
-			geneNames.cbegin(),
-			geneNames.cend(),
-			[](const std::string &name) {
 				return name == "past_last_mRNA";
 			}
 		) == 1
@@ -360,7 +363,7 @@ TEST_CASE("GFF and BAM parsing works") {
 			[](const std::string &name) {
 				return name == "no_overlap";
 			}
-		) == 1
+		) == 2
 	);
 	REQUIRE(
 		std::count_if(

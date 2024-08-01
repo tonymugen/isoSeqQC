@@ -73,7 +73,27 @@ uint32_t ExonGroup::firstExonAfter(const hts_pos_t &position) const noexcept {
 			return currExonRange.first < position;
 		}
 	);
-	return static_cast<uint32_t>( std::distance(exonRanges_.cbegin(), feaIt) );
+	const auto result = std::min(
+		static_cast<uint32_t>(exonRanges_.size() - 1UL),
+		static_cast<uint32_t>( std::distance(exonRanges_.cbegin(), feaIt) )
+	);
+	return result;
+}
+
+uint32_t ExonGroup::firstOverlappingExon(const hts_pos_t &position) const noexcept {
+	const auto feaIt = std::lower_bound(
+		exonRanges_.cbegin(),
+		exonRanges_.cend(),
+		position,
+		[](const std::pair<hts_pos_t, hts_pos_t> &currExonRange, const hts_pos_t &position) {
+			return currExonRange.second < position;
+		}
+	);
+	const auto result = std::min(
+		static_cast<uint32_t>(exonRanges_.size() - 1UL),
+		static_cast<uint32_t>( std::distance(exonRanges_.cbegin(), feaIt) )
+	);
+	return result;
 }
 
 uint32_t ExonGroup::lastExonBefore(const hts_pos_t &position) const noexcept {
@@ -85,7 +105,27 @@ uint32_t ExonGroup::lastExonBefore(const hts_pos_t &position) const noexcept {
 			return currExonRange.second > position;
 		}
 	);
-	return static_cast<uint32_t>( std::distance( lebIt, exonRanges_.crend() ) );
+	const auto result = std::min(
+		static_cast<uint32_t>(exonRanges_.size() - 1UL),
+		static_cast<uint32_t>( std::distance( lebIt, exonRanges_.crend() ) )
+	);
+	return result;
+}
+
+uint32_t ExonGroup::lastOverlappingExon(const hts_pos_t &position) const noexcept {
+	const auto lebIt = std::lower_bound(
+		exonRanges_.crbegin(),
+		exonRanges_.crend(),
+		position,
+		[](const std::pair<hts_pos_t, hts_pos_t> &currExonRange, const hts_pos_t &position) {
+			return currExonRange.first > position;
+		}
+	);
+	const auto result = std::min(
+		static_cast<uint32_t>(exonRanges_.size() - 1UL),
+		static_cast<uint32_t>( std::distance( lebIt, exonRanges_.crend() ) )
+	);
+	return result;
 }
 
 //BAMrecord methods
@@ -347,7 +387,7 @@ void BAMtoGenome::mRNAfromGFF_(std::array<std::string, nGFFfields> &currentGFFli
 void BAMtoGenome::findOverlappingGene_(const std::string &referenceName, std::vector<ExonGroup>::const_iterator &gffExonGroupStart, ReadExonCoverage &readCoverageInfo) {
 	// if the BAM file is not sorted, we may have to backtrack
 	// looking for the first gene end that is after the read map start
-	if (readCoverageInfo.alignmentStart < gffExonGroupStart->firstExonSpan().first) {
+	if (readCoverageInfo.alignmentStart < gffExonGroupStart->geneSpan().first) {
 		auto reverseLEGI = std::make_reverse_iterator(gffExonGroupStart);
 		reverseLEGI      = std::lower_bound(
 			reverseLEGI,
@@ -358,7 +398,7 @@ void BAMtoGenome::findOverlappingGene_(const std::string &referenceName, std::ve
 			}
 		);
 		if ( reverseLEGI == gffExonGroups_[referenceName].crend() ) {
-			readCoverageInfo.geneName            = "backtracked_to_start";
+			readCoverageInfo.geneName            = "no_overlap";
 			readCoverageInfo.nExons              =  0;
 			readCoverageInfo.firstExonStart      = -1;
 			readCoverageInfo.lastExonEnd         = -1;
@@ -404,9 +444,6 @@ void BAMtoGenome::findOverlappingGene_(const std::string &referenceName, std::ve
 	readCoverageInfo.nExons              = gffExonGroupStart->nExons();
 	readCoverageInfo.firstExonStart      = gffExonGroupStart->geneSpan().first;
 	readCoverageInfo.lastExonEnd         = gffExonGroupStart->geneSpan().second;
-	readCoverageInfo.firstCoveredExonIdx = gffExonGroupStart->firstExonAfter(readCoverageInfo.alignmentStart);
-	readCoverageInfo.lastCoveredExonIdx  = std::min(
-		static_cast<uint32_t>(readCoverageInfo.nExons - 1),
-		gffExonGroupStart->lastExonBefore(readCoverageInfo.alignmentEnd)
-	);
+	readCoverageInfo.firstCoveredExonIdx = gffExonGroupStart->firstOverlappingExon(readCoverageInfo.alignmentStart);
+	readCoverageInfo.lastCoveredExonIdx  = gffExonGroupStart->firstOverlappingExon(readCoverageInfo.alignmentEnd);
 }
