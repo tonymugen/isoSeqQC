@@ -407,6 +407,16 @@ void BAMtoGenome::findOverlappingGene_(const std::string &referenceName, std::ve
 			// if we are back past the first mRNA, give up on this read but do not update the latest iterator
 			return;
 		}
+		if (reverseLEGI->geneSpan().second < readCoverageInfo.alignmentStart) {
+			readCoverageInfo.geneName            = "no_overlap";
+			readCoverageInfo.nExons              =  0;
+			readCoverageInfo.firstExonStart      = -1;
+			readCoverageInfo.lastExonEnd         = -1;
+			readCoverageInfo.firstCoveredExonIdx =  0;
+			readCoverageInfo.lastCoveredExonIdx  =  0;
+			// the read does not overlap the gene, give up on this read but do not update the latest iterator
+			return;
+		}
 		// convert back to the forward iterator using the reverse/forward relationship
 		// safe to increment the reverse iterator here due to the test above
 		gffExonGroupStart = std::next(reverseLEGI).base();
