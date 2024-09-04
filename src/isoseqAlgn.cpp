@@ -51,6 +51,15 @@
 
 using namespace isaSpace;
 
+constexpr std::array<float, 10> ExonGroup::referenceConsumption_{
+	1.0, 0.0, 1.0, 1.0, 0.0,
+	0.0, 0.0, 1.0, 1.0, 0.0
+};
+constexpr std::array<float, 10> ExonGroup::sequenceMatch_{
+	1.0, 0.0, 0.0, 0.0, 0.0,
+	0.0, 0.0, 1.0, 0.0, 0.0
+};
+
 ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSet) :
 												geneName_{std::move(geneName)}, isNegativeStrand_{strand == '-'} { // only affirmatively negative strand is marked as such
 	if ( exonSet.empty() ) {
@@ -128,15 +137,51 @@ uint32_t ExonGroup::lastOverlappingExon(const hts_pos_t &position) const noexcep
 	return result;
 }
 
-//BAMrecord methods
+std::vector<float> ExonGroup::getExonCoverageQuality(const std::vector<uint32_t> &cigar, const hts_pos_t &alignmentStart) const {
+	// TODO: deal with the reverse-complemented case
+	
+	// find the first overlapping exon
+	const auto exonRangeIt = std::lower_bound(
+		exonRanges_.cbegin(),
+		exonRanges_.cend(),
+		alignmentStart,
+		[](const std::pair<hts_pos_t, hts_pos_t> &currExonRange, const hts_pos_t &position) {
+			return currExonRange.second < position;
+		}
+	);
+	const auto nLeadingUncoveredExons = std::distance(exonRanges_.cbegin(), exonRangeIt);
+	// alignment quality for all uncovered exons is set to 0.0
+	std::vector<float> qualityScores(nLeadingUncoveredExons, 0.0);
+	hts_pos_t currentReferencePosition = std::max(alignmentStart, exonRangeIt->first);
+	// track along the CIGAR vector until it aligns with the currentReferencePosition
+	auto cigarIt = cigar.cbegin();
+	hts_pos_t remainingCIGARlen{0};
+	hts_pos_t distToCurrRefPos = currentReferencePosition - alignmentStart;
+	while ( (distToCurrRefPos != 0) && ( cigarIt != cigar.cend() ) ) {
+		hts_pos_t realCIGlength       = bam_cigar_oplen(*cigarIt) * referenceConsumption_.at( bam_cigar_op(*cigarIt) );
+		hts_pos_t positionAdvancement = std::min(distToCurrRefPos, realCIGlength);
+		remainingCIGARlen             = realCIGlength - positionAdvancement;
+		distToCurrRefPos             -= positionAdvancement;
+		cigarIt++;
+	}
+	std::vector<float> matchStatusByPosition();
 
+	while ( ( exonRangeIt != exonRanges_.cend() ) && ( cigarIt != cigar.cend() ) ) {
+		hts_pos_t currentDistanceToExonEnd = exonRangeIt->second - currentReferencePosition;
+	}
+
+
+	return qualityScores;
+}
+
+//BAMrecord methods
 std::string BAMrecord::getCIGARstring() const {
 	std::vector<uint32_t> cigarVec(
 		bam_get_cigar( alignmentRecord_.get() ),                                    // NOLINT
 		bam_get_cigar( alignmentRecord_.get() ) + alignmentRecord_->core.n_cigar    // NOLINT
 	);
 
-	auto stringify = [](std::string currString, uint32_t cigarElement){
+	auto stringify = [](std::string currString, uint32_t cigarElement) {
 		return std::move(currString)
 			+ std::to_string( bam_cigar_oplen(cigarElement) )
 			+ bam_cigar_opchr(cigarElement);
@@ -233,7 +278,7 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 		ReadExonCoverage currentAlignmentInfo;
 		currentAlignmentInfo.readName       = currentBAM.getReadName();
 		currentAlignmentInfo.chromosomeName = referenceName;
-		currentAlignmentInfo.chromosomeName.pop_back();
+		currentAlignmentInfo.chromosomeName.pop_back(); // delete the last character that tracks the strand
 		currentAlignmentInfo.strand         = strandID;
 		currentAlignmentInfo.cigarString    = currentBAM.getCIGARstring();
 		currentAlignmentInfo.alignmentStart = currentBAM.getMapStart();

@@ -210,7 +210,28 @@ namespace isaSpace {
 		 * \return index of the last exon overlapping the given position
 		 */
 		[[gnu::warn_unused_result]] uint32_t lastOverlappingExon(const hts_pos_t &position) const noexcept;
+		/** \brief Get read coverage quality per exon 
+		 *
+		 * Use CIGAR information to extract alignment quality for each exon.
+		 * Quality is the fraction of reference nucleotides covered by matching read bases.
+		 *
+		 * \param[in] cigar vector of CIGAR values
+		 * \param[in] alignmentStart start of the read alignment
+		 * \return vector of alignment qualities, one per exon
+		 *
+		 */
+		[[gnu::warn_unused_result]] std::vector<float> getExonCoverageQuality(const std::vector<uint32_t> &cigar, const hts_pos_t &alignmentStart) const;
 	private:
+		/** \brief Reference consumption status array 
+		 *
+		 * Can be indexed into using the CIGAR operation bit field. 
+		 */
+		static const std::array<float, 10> referenceConsumption_;
+		/** \brief Sequence match status array 
+		 *
+		 * Can be indexed into using the CIGAR operation bit field. 
+		 */
+		static const std::array<float, 10> sequenceMatch_;
 		/** \brief Gene name */
 		std::string geneName_;
 		/** \brief Is the mRNA on the negative strand? */
@@ -287,7 +308,7 @@ namespace isaSpace {
 		 *
 		 * Position of the first mRNA read nucleotide, taking into account possible reverse-complement.
 		 *
-		 * \return 1-based read nRNA start position
+		 * \return 1-based read mRNA start position
 		 */
 		[[gnu::warn_unused_result]] hts_pos_t getmRNAstart() const noexcept {
 			return bam_is_rev( alignmentRecord_.get() ) ? bam_endpos( alignmentRecord_.get() ) + 1 : alignmentRecord_->core.pos + 1 ;
