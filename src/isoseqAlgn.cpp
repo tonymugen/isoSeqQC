@@ -138,7 +138,60 @@ uint32_t ExonGroup::lastOverlappingExon(const hts_pos_t &position) const noexcep
 }
 
 std::vector<float> ExonGroup::getExonCoverageQuality(const std::vector<uint32_t> &cigar, const hts_pos_t &alignmentStart) const {
-	// TODO: deal with the reverse-complemented case
+	if (this->isNegativeStrand_) {
+		// find the first overlapping exon
+		const auto exonRangeIt = std::lower_bound(
+			exonRanges_.crbegin(),
+			exonRanges_.crend(),
+			alignmentStart,
+			[](const std::pair<hts_pos_t, hts_pos_t> &currExonRange, const hts_pos_t &position) {
+				return currExonRange.first > position;
+			}
+		);
+		const auto nLeadingUncoveredExons = std::distance(exonRanges_.crbegin(), exonRangeIt);
+		// alignment quality for all uncovered exons is set to 0.0
+		std::vector<float> qualityScores(nLeadingUncoveredExons, 0.0);
+		// vector that tracks reference match/mismatch status for each reference position covered by CIGAR
+		std::vector<float> referenceMatchStatus;
+		std::for_each(
+			cigar.crbegin(),
+			cigar.crend(),
+			[&referenceMatchStatus](uint32_t eachCIGAR) {
+				const std::vector<float> currCIGARfield(
+					bam_cigar_oplen(eachCIGAR) * referenceConsumption_.at( bam_cigar_op(eachCIGAR) ),
+					sequenceMatch_.at( bam_cigar_op(eachCIGAR) )
+				);
+				// start of the referenceMatchStatus vector is the end of the CIGAR vector
+				std::copy( currCIGARfield.cbegin(), currCIGARfield.cend(), std::back_inserter(referenceMatchStatus) );
+			}
+		);
+		std::for_each(
+			exonRangeIt,
+			exonRanges_.crend(),
+			[&referenceMatchStatus, &alignmentStart, &qualityScores](const std::pair<hts_pos_t, hts_pos_t> &currExonSpan) {
+				// TODO: reverse the order to account for the negative strand
+				const hts_pos_t realExonStart{std::max(alignmentStart, currExonSpan.first)};
+				const hts_pos_t realExonLength{std::max(static_cast<hts_pos_t>(0), currExonSpan.second - realExonStart)};
+				const auto rmsStartPosition{
+					std::min(
+						static_cast<std::vector<float>::difference_type>(realExonStart - alignmentStart),
+						static_cast<std::vector<float>::difference_type>( referenceMatchStatus.size() )
+					)
+				};
+				const auto rmsSpan{
+					std::min(
+						static_cast<std::vector<float>::difference_type>(realExonLength),
+						static_cast<std::vector<float>::difference_type>(referenceMatchStatus.size() - rmsStartPosition)
+					)
+				};
+				const auto rmsBeginIt  = referenceMatchStatus.cbegin() + rmsStartPosition;
+				const float matchCount = std::accumulate(rmsBeginIt, rmsBeginIt + rmsSpan, 0.0F);
+				qualityScores.push_back( matchCount / static_cast<float>(currExonSpan.second - currExonSpan.first) );
+			}
+		);
+
+		return qualityScores;
+	}
 	
 	// find the first overlapping exon
 	const auto exonRangeIt = std::lower_bound(
@@ -152,24 +205,39 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const std::vector<uint32_t>
 	const auto nLeadingUncoveredExons = std::distance(exonRanges_.cbegin(), exonRangeIt);
 	// alignment quality for all uncovered exons is set to 0.0
 	std::vector<float> qualityScores(nLeadingUncoveredExons, 0.0);
-	hts_pos_t currentReferencePosition = std::max(alignmentStart, exonRangeIt->first);
-	// track along the CIGAR vector until it aligns with the currentReferencePosition
-	auto cigarIt = cigar.cbegin();
-	hts_pos_t remainingCIGARlen{0};
-	hts_pos_t distToCurrRefPos = currentReferencePosition - alignmentStart;
-	while ( (distToCurrRefPos != 0) && ( cigarIt != cigar.cend() ) ) {
-		hts_pos_t realCIGlength       = bam_cigar_oplen(*cigarIt) * referenceConsumption_.at( bam_cigar_op(*cigarIt) );
-		hts_pos_t positionAdvancement = std::min(distToCurrRefPos, realCIGlength);
-		remainingCIGARlen             = realCIGlength - positionAdvancement;
-		distToCurrRefPos             -= positionAdvancement;
-		cigarIt++;
-	}
-	std::vector<float> matchStatusByPosition();
 
-	while ( ( exonRangeIt != exonRanges_.cend() ) && ( cigarIt != cigar.cend() ) ) {
-		hts_pos_t currentDistanceToExonEnd = exonRangeIt->second - currentReferencePosition;
+	// vector that tracks reference match/mismatch status for each reference position covered by CIGAR
+	std::vector<float> referenceMatchStatus;
+	for (const auto &eachCIGAR : cigar) {
+		const std::vector<float> currCIGARfield(
+			bam_cigar_oplen(eachCIGAR) * referenceConsumption_.at( bam_cigar_op(eachCIGAR) ),
+			sequenceMatch_.at( bam_cigar_op(eachCIGAR) )
+		);
+		std::copy( currCIGARfield.cbegin(), currCIGARfield.cend(), std::back_inserter(referenceMatchStatus) );
 	}
-
+	std::for_each(
+		exonRangeIt,
+		exonRanges_.cend(),
+		[&referenceMatchStatus, &alignmentStart, &qualityScores](const std::pair<hts_pos_t, hts_pos_t> &currExonSpan) {
+			const hts_pos_t realExonStart{std::max(alignmentStart, currExonSpan.first)};
+			const hts_pos_t realExonLength{std::max(static_cast<hts_pos_t>(0), currExonSpan.second - realExonStart)};
+			const auto rmsStartPosition{
+				std::min(
+					static_cast<std::vector<float>::difference_type>(realExonStart - alignmentStart),
+					static_cast<std::vector<float>::difference_type>( referenceMatchStatus.size() )
+				)
+			};
+			const auto rmsSpan{
+				std::min(
+					static_cast<std::vector<float>::difference_type>(realExonLength),
+					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.size() - rmsStartPosition)
+				)
+			};
+			const auto rmsBeginIt  = referenceMatchStatus.cbegin() + rmsStartPosition;
+			const float matchCount = std::accumulate(rmsBeginIt, rmsBeginIt + rmsSpan, 0.0F);
+			qualityScores.push_back( matchCount / static_cast<float>(currExonSpan.second - currExonSpan.first) );
+		}
+	);
 
 	return qualityScores;
 }
