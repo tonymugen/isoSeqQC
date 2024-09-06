@@ -194,6 +194,23 @@ TEST_CASE("Exon range extraction works") {
 	REQUIRE(testExonGroupPos.lastOverlappingExon(positionInMiddle) == correctPosMidF);
 	REQUIRE(testExonGroupPos.lastOverlappingExon(positionAfter)    == correctPosAfter);
 
+		//std::pair<hts_pos_t, hts_pos_t>{50812, 50970},
+		//std::pair<hts_pos_t, hts_pos_t>{52164, 52649},
+		//std::pair<hts_pos_t, hts_pos_t>{55522, 56102},
+		//std::pair<hts_pos_t, hts_pos_t>{56205, 56835}
+	// Per-exon alignment quality tests
+	constexpr hts_pos_t earlyStartPos{50000};
+	constexpr hts_pos_t lateStartPos{52300};
+	constexpr size_t nCigars{11};
+	std::array<uint32_t, nCigars> cigarFields{
+		bam_cigar_gen(100, BAM_CSOFT_CLIP),
+		bam_cigar_gen(820, BAM_CMATCH),
+		bam_cigar_gen(2,   BAM_CINS),
+		bam_cigar_gen(50,  BAM_CMATCH),
+		bam_cigar_gen(5,   BAM_CDEL),
+		bam_cigar_gen(95,  BAM_CMATCH),
+	};
+
 	// throwing on empty set
 	std::set< std::pair<hts_pos_t, hts_pos_t> > emptyExonSet;
 	REQUIRE_THROWS_WITH(
