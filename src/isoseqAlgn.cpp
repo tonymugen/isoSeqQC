@@ -165,11 +165,11 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const std::vector<uint32_t>
 		exonRanges_.cend(),
 		[&referenceMatchStatus, &alignmentStart, &qualityScores](const std::pair<hts_pos_t, hts_pos_t> &currExonSpan) {
 			const hts_pos_t realExonStart{std::max(alignmentStart, currExonSpan.first)};
-			const hts_pos_t realExonLength{std::max(static_cast<hts_pos_t>(0), currExonSpan.second - realExonStart)};
+			const hts_pos_t realExonLength{std::max(static_cast<hts_pos_t>(0), currExonSpan.second - realExonStart + 1)};
 			const auto rmsStartPosition{
 				std::min(
 					static_cast<std::vector<float>::difference_type>(realExonStart - alignmentStart),
-					static_cast<std::vector<float>::difference_type>( referenceMatchStatus.size() )
+					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.size() - 1)
 				)
 			};
 			const auto rmsSpan{
@@ -180,7 +180,7 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const std::vector<uint32_t>
 			};
 			const auto rmsBeginIt  = referenceMatchStatus.cbegin() + rmsStartPosition;
 			const float matchCount = std::accumulate(rmsBeginIt, rmsBeginIt + rmsSpan, 0.0F);
-			qualityScores.push_back( matchCount / static_cast<float>(currExonSpan.second - currExonSpan.first) );
+			qualityScores.push_back( matchCount / static_cast<float>(currExonSpan.second - currExonSpan.first + 1) );
 		}
 	);
 

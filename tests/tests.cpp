@@ -27,6 +27,8 @@
 #include <fstream>
 #include <sstream>
 
+#include<iostream>
+
 #include "bgzf.h"
 #include "sam.h"
 
@@ -199,17 +201,60 @@ TEST_CASE("Exon range extraction works") {
 		//std::pair<hts_pos_t, hts_pos_t>{55522, 56102},
 		//std::pair<hts_pos_t, hts_pos_t>{56205, 56835}
 	// Per-exon alignment quality tests
-	constexpr hts_pos_t earlyStartPos{50000};
-	constexpr hts_pos_t lateStartPos{52300};
-	constexpr size_t nCigars{11};
-	std::array<uint32_t, nCigars> cigarFields{
-		bam_cigar_gen(100, BAM_CSOFT_CLIP),
-		bam_cigar_gen(820, BAM_CMATCH),
-		bam_cigar_gen(2,   BAM_CINS),
-		bam_cigar_gen(50,  BAM_CMATCH),
-		bam_cigar_gen(5,   BAM_CDEL),
-		bam_cigar_gen(95,  BAM_CMATCH),
+	// Simmple no mismatch alignments
+	constexpr std::array<uint32_t, 7> simpleCIGAR{
+		bam_cigar_gen(159,  BAM_CMATCH),
+		bam_cigar_gen(1193, BAM_CREF_SKIP),
+		bam_cigar_gen(486,  BAM_CMATCH),
+		bam_cigar_gen(2872, BAM_CREF_SKIP),
+		bam_cigar_gen(581,  BAM_CMATCH),
+		bam_cigar_gen(102,  BAM_CREF_SKIP),
+		bam_cigar_gen(631,  BAM_CMATCH)
 	};
+	std::vector<uint32_t> cigarVec;
+	std::copy( simpleCIGAR.cbegin(), simpleCIGAR.cend(), std::back_inserter(cigarVec) );
+	std::vector<float> exonCoverage{testExonGroupPos.getExonCoverageQuality(cigarVec, testExonSpans.front().first)};
+	REQUIRE( exonCoverage.size() == testExonGroupPos.nExons() );
+	REQUIRE(
+		std::all_of(exonCoverage.cbegin(), exonCoverage.cend(), [](float val) {return val == 1.0F;})
+	);
+
+	// Read starts early
+	constexpr hts_pos_t earlyStartPos{50000};
+	constexpr float qsCutOff{0.95};
+	constexpr std::array<uint32_t, 14> earlyCigarFields{
+		bam_cigar_gen(100,  BAM_CSOFT_CLIP),
+		bam_cigar_gen(821,  BAM_CMATCH),
+		bam_cigar_gen(2,    BAM_CINS),
+		bam_cigar_gen(50,   BAM_CMATCH),
+		bam_cigar_gen(5,    BAM_CDEL),
+		bam_cigar_gen(95,   BAM_CMATCH),
+		bam_cigar_gen(1193, BAM_CREF_SKIP),
+		bam_cigar_gen(486,  BAM_CMATCH),
+		bam_cigar_gen(2872, BAM_CDEL),
+		bam_cigar_gen(500,  BAM_CMATCH),
+		bam_cigar_gen(1,    BAM_CDIFF),
+		bam_cigar_gen(80,   BAM_CMATCH),
+		bam_cigar_gen(102,  BAM_CREF_SKIP),
+		bam_cigar_gen(604,  BAM_CMATCH)
+	};
+	cigarVec.clear();
+	std::copy( earlyCigarFields.cbegin(), earlyCigarFields.cend(), std::back_inserter(cigarVec) );
+	exonCoverage.clear();
+	exonCoverage = testExonGroupPos.getExonCoverageQuality(cigarVec, earlyStartPos);
+	REQUIRE( exonCoverage.size() == testExonGroupPos.nExons() );
+	REQUIRE(
+		std::count_if(exonCoverage.cbegin(), exonCoverage.cend(), [](float val) {return val == 1.0F;}) == 1
+	);
+	REQUIRE(
+		std::all_of(exonCoverage.cbegin(), exonCoverage.cend(), [&qsCutOff](float val) {return val > qsCutOff;})
+	);
+	//std::cout << "exon coverage values:\n";
+	//for (const auto &ecVal : exonCoverage) {
+	//	std::cout << ecVal << " ";
+	//}
+	//std::cout << "\n";
+	constexpr hts_pos_t lateStartPos{52300};
 
 	// throwing on empty set
 	std::set< std::pair<hts_pos_t, hts_pos_t> > emptyExonSet;
