@@ -74,6 +74,7 @@ namespace isaSpace {
 	struct ReadExonCoverage {
 		std::string chromosomeName;
 		std::string readName;
+		// TODO: replace with a vector of exon coverages
 		std::string cigarString;
 		// smaller value first for the negative and positive strand
 		hts_pos_t   alignmentStart;
@@ -214,6 +215,7 @@ namespace isaSpace {
 		 *
 		 * Use CIGAR information to extract alignment quality for each exon.
 		 * Quality is the fraction of reference nucleotides covered by matching read bases.
+		 * Alignment start refers to the start in BAM and should precede the gene regardless of strand.
 		 *
 		 * \param[in] cigar vector of CIGAR values
 		 * \param[in] alignmentStart start of the read alignment
