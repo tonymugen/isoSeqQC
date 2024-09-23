@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <numeric>
 #include <string>
 #include <utility>
 
@@ -71,9 +72,17 @@ std::string isaSpace::extractAttributeName(const TokenAttibuteListPair &tokenAnd
 }
 
 std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separator) {
+	std::string coverages = std::accumulate(
+		readRecord.exonCoverageScores.cbegin(),
+		readRecord.exonCoverageScores.cend(),
+		std::string("{"),
+		[](std::string strVal, float val) {
+			return std::move(strVal) + std::to_string(val) + ',';
+		}
+	);
+	coverages.back() = '}';
 	std::string result =  readRecord.readName                                + separator
 						+ readRecord.chromosomeName                          + separator
-						+ readRecord.cigarString                             + separator
 						+ readRecord.strand                                  + separator
 						+ std::to_string(readRecord.alignmentStart)          + separator
 						+ std::to_string(readRecord.alignmentEnd)            + separator
@@ -81,8 +90,7 @@ std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separat
 						+ std::to_string(readRecord.nExons)                  + separator
 						+ std::to_string(readRecord.firstExonStart)          + separator
 						+ std::to_string(readRecord.lastExonEnd)             + separator
-						+ std::to_string(readRecord.firstCoveredExonIdx + 1) + separator
-						+ std::to_string(readRecord.lastCoveredExonIdx + 1);
+						+ coverages;
 
 	return result;
 }

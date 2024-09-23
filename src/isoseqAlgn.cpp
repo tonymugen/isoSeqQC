@@ -191,11 +191,16 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const std::vector<uint32_t>
 }
 
 //BAMrecord methods
-std::string BAMrecord::getCIGARstring() const {
+std::vector<uint32_t>BAMrecord::getCIGARvector() const {
 	std::vector<uint32_t> cigarVec(
 		bam_get_cigar( alignmentRecord_.get() ),                                    // NOLINT
 		bam_get_cigar( alignmentRecord_.get() ) + alignmentRecord_->core.n_cigar    // NOLINT
 	);
+	return cigarVec;
+}
+
+std::string BAMrecord::getCIGARstring() const {
+	std::vector<uint32_t> cigarVec{this->getCIGARvector()};
 
 	auto stringify = [](std::string currString, uint32_t cigarElement) {
 		return std::move(currString)
@@ -250,7 +255,6 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
 
-	//throw std::string("GOT HERE");
 	// must read the header first to get to the alignments
 	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> bamHeader(
 		bam_hdr_read( bamFile.get() ),
@@ -296,7 +300,6 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 		currentAlignmentInfo.chromosomeName = referenceName;
 		currentAlignmentInfo.chromosomeName.pop_back(); // delete the last character that tracks the strand
 		currentAlignmentInfo.strand         = strandID;
-		currentAlignmentInfo.cigarString    = currentBAM.getCIGARstring();
 		currentAlignmentInfo.alignmentStart = currentBAM.getMapStart();
 		currentAlignmentInfo.alignmentEnd   = currentBAM.getMapEnd();
 
@@ -304,6 +307,9 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			latestExonGroupIts[referenceName] = gffExonGroups_[referenceName].cbegin();
 		}
 		findOverlappingGene_(referenceName, latestExonGroupIts[referenceName], currentAlignmentInfo);
+		if (currentAlignmentInfo.firstExonStart > 0) { // if an overlapping gene was found
+			currentAlignmentInfo.exonCoverageScores = latestExonGroupIts[referenceName]->getExonCoverageQuality(currentBAM.getCIGARvector(), currentAlignmentInfo.alignmentStart);
+		}
 		readCoverageStats_.emplace_back( std::move(currentAlignmentInfo) );
 	}
 }
@@ -459,22 +465,20 @@ void BAMtoGenome::findOverlappingGene_(const std::string &referenceName, std::ve
 			}
 		);
 		if ( reverseLEGI == gffExonGroups_[referenceName].crend() ) {
-			readCoverageInfo.geneName            = "no_overlap";
-			readCoverageInfo.nExons              =  0;
-			readCoverageInfo.firstExonStart      = -1;
-			readCoverageInfo.lastExonEnd         = -1;
-			readCoverageInfo.firstCoveredExonIdx =  0;
-			readCoverageInfo.lastCoveredExonIdx  =  0;
+			readCoverageInfo.geneName           = "no_overlap";
+			readCoverageInfo.nExons             =  0;
+			readCoverageInfo.firstExonStart     = -1;
+			readCoverageInfo.lastExonEnd        = -1;
+			readCoverageInfo.exonCoverageScores = std::vector<float>(1, -1.0);
 			// if we are back past the first mRNA, give up on this read but do not update the latest iterator
 			return;
 		}
 		if (reverseLEGI->geneSpan().second < readCoverageInfo.alignmentStart) {
-			readCoverageInfo.geneName            = "no_overlap";
-			readCoverageInfo.nExons              =  0;
-			readCoverageInfo.firstExonStart      = -1;
-			readCoverageInfo.lastExonEnd         = -1;
-			readCoverageInfo.firstCoveredExonIdx =  0;
-			readCoverageInfo.lastCoveredExonIdx  =  0;
+			readCoverageInfo.geneName           = "no_overlap";
+			readCoverageInfo.nExons             =  0;
+			readCoverageInfo.firstExonStart     = -1;
+			readCoverageInfo.lastExonEnd        = -1;
+			readCoverageInfo.exonCoverageScores = std::vector<float>(1, -1.0);
 			// the read does not overlap the gene, give up on this read but do not update the latest iterator
 			return;
 		}
@@ -492,29 +496,25 @@ void BAMtoGenome::findOverlappingGene_(const std::string &referenceName, std::ve
 		);
 	}
 	if ( gffExonGroupStart == gffExonGroups_[referenceName].cend() ) {
-		readCoverageInfo.geneName            = "past_last_mRNA";
-		readCoverageInfo.nExons              =  0;
-		readCoverageInfo.firstExonStart      = -1;
-		readCoverageInfo.lastExonEnd         = -1;
-		readCoverageInfo.firstCoveredExonIdx =  0;
-		readCoverageInfo.lastCoveredExonIdx  =  0;
+		readCoverageInfo.geneName           = "past_last_mRNA";
+		readCoverageInfo.nExons             =  0;
+		readCoverageInfo.firstExonStart     = -1;
+		readCoverageInfo.lastExonEnd        = -1;
+		readCoverageInfo.exonCoverageScores = std::vector<float>(1, -1.0);
 		// return the iterator to a valid record
 		std::advance(gffExonGroupStart, -1);
 		return;
 	}
 	if (readCoverageInfo.alignmentStart < gffExonGroupStart->geneSpan().first) { // no overlap with a known gene
-		readCoverageInfo.geneName            = "no_overlap";
-		readCoverageInfo.nExons              =  0;
-		readCoverageInfo.firstExonStart      = -1;
-		readCoverageInfo.lastExonEnd         = -1;
-		readCoverageInfo.firstCoveredExonIdx =  0;
-		readCoverageInfo.lastCoveredExonIdx  =  0;
+		readCoverageInfo.geneName           = "no_overlap";
+		readCoverageInfo.nExons             =  0;
+		readCoverageInfo.firstExonStart     = -1;
+		readCoverageInfo.lastExonEnd        = -1;
+		readCoverageInfo.exonCoverageScores = std::vector<float>(1, -1.0);
 		return;
 	}
-	readCoverageInfo.geneName            = gffExonGroupStart->geneName();
-	readCoverageInfo.nExons              = gffExonGroupStart->nExons();
-	readCoverageInfo.firstExonStart      = gffExonGroupStart->geneSpan().first;
-	readCoverageInfo.lastExonEnd         = gffExonGroupStart->geneSpan().second;
-	readCoverageInfo.firstCoveredExonIdx = gffExonGroupStart->firstOverlappingExon(readCoverageInfo.alignmentStart);
-	readCoverageInfo.lastCoveredExonIdx  = gffExonGroupStart->firstOverlappingExon(readCoverageInfo.alignmentEnd);
+	readCoverageInfo.geneName       = gffExonGroupStart->geneName();
+	readCoverageInfo.nExons         = gffExonGroupStart->nExons();
+	readCoverageInfo.firstExonStart = gffExonGroupStart->geneSpan().first;
+	readCoverageInfo.lastExonEnd    = gffExonGroupStart->geneSpan().second;
 }

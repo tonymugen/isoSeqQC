@@ -59,21 +59,18 @@ TEST_CASE("Helper functions work") {
 	REQUIRE( absentAttrResult.empty() );
 
 	// stringify tests
-	const std::string correctStatsLine("m54312U_201215_225530/460252/ccs	NC_052529.2	2265M62N589M913N1007M	+	2983523	2988359	gene-LOC6532627	7	2980697	2988366	5	7");
+	const std::string correctStatsLine("m54312U_201215_225530/460252/ccs	NC_052529.2	+	2983523	2988359	gene-LOC6532627	4	2980697	2988366	{0.000000,0.930000,1.000000,0.500000}");
 	isaSpace::ReadExonCoverage coverageStats;
-	coverageStats.readName            = "m54312U_201215_225530/460252/ccs";
-	coverageStats.chromosomeName      = "NC_052529.2";
-	coverageStats.cigarString         = "2265M62N589M913N1007M";
-	coverageStats.strand              = '+';
-	coverageStats.alignmentStart      = 2983523; // NOLINT
-	coverageStats.alignmentEnd        = 2988359; // NOLINT
-	coverageStats.geneName            = "gene-LOC6532627";
-	coverageStats.nExons              = 7;       // NOLINT
-	coverageStats.firstExonStart      = 2980697; // NOLINT
-	coverageStats.lastExonEnd         = 2988366; // NOLINT
-	// stored values are base-0, saved as base-1
-	coverageStats.firstCoveredExonIdx = 4;       // NOLINT
-	coverageStats.lastCoveredExonIdx  = 6;       // NOLINT
+	coverageStats.readName           = "m54312U_201215_225530/460252/ccs";
+	coverageStats.chromosomeName     = "NC_052529.2";
+	coverageStats.strand             = '+';
+	coverageStats.alignmentStart     = 2983523; // NOLINT
+	coverageStats.alignmentEnd       = 2988359; // NOLINT
+	coverageStats.geneName           = "gene-LOC6532627";
+	coverageStats.nExons             = 4;       // NOLINT
+	coverageStats.firstExonStart     = 2980697; // NOLINT
+	coverageStats.lastExonEnd        = 2988366; // NOLINT
+	coverageStats.exonCoverageScores = std::vector<float>{0.0, 0.93, 1.0, 0.5}; // NOLINT
 	REQUIRE(isaSpace::stringify(coverageStats) == correctStatsLine);
 
 	constexpr size_t recVecSize{7};
@@ -425,7 +422,6 @@ TEST_CASE("GFF and BAM parsing works") {
 		std::stringstream lineStream;
 		lineStream.str(line);
 		std::string field;
-		lineStream >> field;
 		lineStream >> field;
 		lineStream >> field;
 		lineStream >> field;

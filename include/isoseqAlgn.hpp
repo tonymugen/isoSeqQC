@@ -74,8 +74,6 @@ namespace isaSpace {
 	struct ReadExonCoverage {
 		std::string chromosomeName;
 		std::string readName;
-		// TODO: replace with a vector of exon coverages
-		std::string cigarString;
 		// smaller value first for the negative and positive strand
 		hts_pos_t   alignmentStart;
 		hts_pos_t   alignmentEnd;
@@ -84,9 +82,7 @@ namespace isaSpace {
 		uint16_t    nExons;
 		hts_pos_t   firstExonStart;
 		hts_pos_t   lastExonEnd;
-		// completely covered exons
-		uint16_t    firstCoveredExonIdx;
-		uint16_t    lastCoveredExonIdx;
+		std::vector<float> exonCoverageScores;
 	};
 
 	/** \brief Group of exons from the same gene
@@ -320,6 +316,13 @@ namespace isaSpace {
 		 * \return true if the read is reverse-complemented
 		 */
 		[[gnu::warn_unused_result]] bool isRevComp() const noexcept { return bam_is_rev( alignmentRecord_.get() ); };
+		/** \brief CIGAR vector 
+		 *
+		 * Orientation independent of strand
+		 *
+		 * \return CIGAR vector
+		 */
+		[[gnu::warn_unused_result]] std::vector<uint32_t> getCIGARvector() const;
 		/** \brief CIGAR string 
 		 *
 		 * Reversed if the read is reverse-complemented.
