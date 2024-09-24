@@ -81,15 +81,16 @@ std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separat
 		}
 	);
 	coverages.back() = '}';
-	std::string result =  readRecord.readName                                + separator
-						+ readRecord.chromosomeName                          + separator
-						+ readRecord.strand                                  + separator
-						+ std::to_string(readRecord.alignmentStart)          + separator
-						+ std::to_string(readRecord.alignmentEnd)            + separator
-						+ readRecord.geneName                                + separator
-						+ std::to_string(readRecord.nExons)                  + separator
-						+ std::to_string(readRecord.firstExonStart)          + separator
-						+ std::to_string(readRecord.lastExonEnd)             + separator
+	std::string result =  readRecord.readName                            + separator
+						+ readRecord.chromosomeName                      + separator
+						+ readRecord.strand                              + separator
+						+ std::to_string(readRecord.alignmentStart)      + separator
+						+ std::to_string(readRecord.alignmentEnd)        + separator
+						+ std::to_string(readRecord.firstSoftClipLength) + separator
+						+ readRecord.geneName                            + separator
+						+ std::to_string(readRecord.nExons)              + separator
+						+ std::to_string(readRecord.firstExonStart)      + separator
+						+ std::to_string(readRecord.lastExonEnd)         + separator
 						+ coverages;
 
 	return result;

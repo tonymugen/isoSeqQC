@@ -18,6 +18,7 @@
  */
 
 #include <cstddef>
+#include <htslib/sam.h>
 #include <iterator>
 #include <algorithm>
 #include <utility>
@@ -26,6 +27,7 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 #include "bgzf.h"
 #include "sam.h"
@@ -59,18 +61,19 @@ TEST_CASE("Helper functions work") {
 	REQUIRE( absentAttrResult.empty() );
 
 	// stringify tests
-	const std::string correctStatsLine("m54312U_201215_225530/460252/ccs	NC_052529.2	+	2983523	2988359	gene-LOC6532627	4	2980697	2988366	{0.000000,0.930000,1.000000,0.500000}");
+	const std::string correctStatsLine("m54312U_201215_225530/460252/ccs	NC_052529.2	+	2983523	2988359	0	gene-LOC6532627	4	2980697	2988366	{0.000000,0.930000,1.000000,0.500000}");
 	isaSpace::ReadExonCoverage coverageStats;
-	coverageStats.readName           = "m54312U_201215_225530/460252/ccs";
-	coverageStats.chromosomeName     = "NC_052529.2";
-	coverageStats.strand             = '+';
-	coverageStats.alignmentStart     = 2983523; // NOLINT
-	coverageStats.alignmentEnd       = 2988359; // NOLINT
-	coverageStats.geneName           = "gene-LOC6532627";
-	coverageStats.nExons             = 4;       // NOLINT
-	coverageStats.firstExonStart     = 2980697; // NOLINT
-	coverageStats.lastExonEnd        = 2988366; // NOLINT
-	coverageStats.exonCoverageScores = std::vector<float>{0.0, 0.93, 1.0, 0.5}; // NOLINT
+	coverageStats.readName            = "m54312U_201215_225530/460252/ccs";
+	coverageStats.chromosomeName      = "NC_052529.2";
+	coverageStats.strand              = '+';
+	coverageStats.alignmentStart      = 2983523; // NOLINT
+	coverageStats.alignmentEnd        = 2988359; // NOLINT
+	coverageStats.firstSoftClipLength = 0;
+	coverageStats.geneName            = "gene-LOC6532627";
+	coverageStats.nExons              = 4;       // NOLINT
+	coverageStats.firstExonStart      = 2980697; // NOLINT
+	coverageStats.lastExonEnd         = 2988366; // NOLINT
+	coverageStats.exonCoverageScores  = std::vector<float>{0.0, 0.93, 1.0, 0.5}; // NOLINT
 	REQUIRE(isaSpace::stringify(coverageStats) == correctStatsLine);
 
 	constexpr size_t recVecSize{7};
@@ -307,6 +310,12 @@ TEST_CASE("Reading individual BAM records works") {
 	const std::string oneRecordBAMname("../tests/oneRecord.bam");
 	const std::string correctReadName("m54312U_201215_225530/657093/ccs");
 	const std::string correctCIGAR("22M1D667M1552N264M485N193M361N75M81N196M53N1706M62N126M236N170M");
+	constexpr std::array<uint32_t, 17> correctCIGV{
+		352,  18,   10672, 24835, 4224,
+		7763, 3088, 5779,  1200,  1299,
+		3136, 851,  27296, 995,   2016,
+		3779, 2720
+	};
 	constexpr hts_pos_t correctMapPosition{2468434};
 	constexpr hts_pos_t correctMapEndPosition{2474684};
 	// read one record from the BAM file
@@ -337,10 +346,19 @@ TEST_CASE("Reading individual BAM records works") {
 	REQUIRE(bamRecord.getMapEnd()      == correctMapEndPosition);
 	REQUIRE(bamRecord.getCIGARstring() == correctCIGAR);
 
+	const std::vector<uint32_t> cigarVec{bamRecord.getCIGARvector()};
+	REQUIRE(
+		std::equal( cigarVec.cbegin(), cigarVec.cend(), correctCIGV.cbegin() )
+	);
+
 	// reverse-complemented read
 	const std::string oneRecordRevBAMname("../tests/oneRecordRev.bam");
 	const std::string correctRevReadName("m54312U_201215_225530/38470652/ccs");
 	const std::string correctCIGARrev("454M68N701M61N133M61N1652M78N106M56N280M");
+	constexpr std::array<uint32_t, 11> correctCIGVrev{
+		4480, 899,  1696, 1251,  26432,
+		979,  2128, 979,  11216, 1091, 7264
+	};
 	constexpr hts_pos_t correctRevMapPosition{22550967};
 	constexpr hts_pos_t correctRevmRNAposition{22554617};
 	constexpr hts_pos_t correctRevMapEndPosition = correctRevmRNAposition;
@@ -368,6 +386,10 @@ TEST_CASE("Reading individual BAM records works") {
 	REQUIRE(bamRecordRev.getMapStart()    == correctRevMapPosition);
 	REQUIRE(bamRecordRev.getMapEnd()      == correctRevMapEndPosition);
 	REQUIRE(bamRecordRev.getCIGARstring() == correctCIGARrev);
+	const std::vector<uint32_t> cigarVecRev{bamRecordRev.getCIGARvector()};
+	REQUIRE(
+		std::equal( cigarVecRev.cbegin(), cigarVecRev.cend(), correctCIGVrev.cbegin() )
+	);
 }
 
 TEST_CASE("Catching bad GFF and BAM files works") {
@@ -426,6 +448,7 @@ TEST_CASE("GFF and BAM parsing works") {
 		lineStream >> field;
 		lineStream >> field;
 		strands.push_back( field.at(0) );
+		lineStream >> field;
 		lineStream >> field;
 		lineStream >> field;
 		lineStream >> field;

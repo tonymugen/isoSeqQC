@@ -294,21 +294,24 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			continue;
 		}
 		BAMrecord currentBAM( std::move(bamRecordPtr) );
+		const std::vector<uint32_t> cigarVec{currentBAM.getCIGARvector()};
+		const uint32_t firstCIGAR = ( strandID == '+' ? cigarVec.front() : cigarVec.back() );
 
 		ReadExonCoverage currentAlignmentInfo;
 		currentAlignmentInfo.readName       = currentBAM.getReadName();
 		currentAlignmentInfo.chromosomeName = referenceName;
 		currentAlignmentInfo.chromosomeName.pop_back(); // delete the last character that tracks the strand
-		currentAlignmentInfo.strand         = strandID;
-		currentAlignmentInfo.alignmentStart = currentBAM.getMapStart();
-		currentAlignmentInfo.alignmentEnd   = currentBAM.getMapEnd();
+		currentAlignmentInfo.strand              = strandID;
+		currentAlignmentInfo.alignmentStart      = currentBAM.getMapStart();
+		currentAlignmentInfo.alignmentEnd        = currentBAM.getMapEnd();
+		currentAlignmentInfo.firstSoftClipLength = bam_cigar_oplen(firstCIGAR) * static_cast<uint32_t>(bam_cigar_opchr(firstCIGAR) == 'S');
 
 		if ( latestExonGroupIts.find(referenceName) == latestExonGroupIts.cend() ) {
 			latestExonGroupIts[referenceName] = gffExonGroups_[referenceName].cbegin();
 		}
 		findOverlappingGene_(referenceName, latestExonGroupIts[referenceName], currentAlignmentInfo);
 		if (currentAlignmentInfo.firstExonStart > 0) { // if an overlapping gene was found
-			currentAlignmentInfo.exonCoverageScores = latestExonGroupIts[referenceName]->getExonCoverageQuality(currentBAM.getCIGARvector(), currentAlignmentInfo.alignmentStart);
+			currentAlignmentInfo.exonCoverageScores = latestExonGroupIts[referenceName]->getExonCoverageQuality(cigarVec, currentAlignmentInfo.alignmentStart);
 		}
 		readCoverageStats_.emplace_back( std::move(currentAlignmentInfo) );
 	}
@@ -368,9 +371,9 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 		eachThread.wait();
 	}
 
-	const std::string headerLine = "read_name\tchromosome\tCIGAR\tstrand\talignment_start\t" 
-									"alignment_end\tgene_name\tn_exons\tfirst_exon_start\t" 
-									"last_exon_end\tfirst_covered_exon_idx\tlast_covered_exon_idx\n";
+	const std::string headerLine = "read_name\tchromosome\tstrand\talignment_start\t" 
+									"alignment_end\tfirst_soft_clip_length\tgene_name\tn_exons\tfirst_exon_start\t" 
+									"last_exon_end\talignment_quality_string\n";
 	std::fstream outStream;
 	outStream.open(outFileName, std::ios::out | std::ios::binary | std::ios::trunc);
 	outStream.write( headerLine.c_str(), static_cast<std::streamsize>( headerLine.size() ) );

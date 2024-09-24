@@ -77,8 +77,10 @@ namespace isaSpace {
 		// smaller value first for the negative and positive strand
 		hts_pos_t   alignmentStart;
 		hts_pos_t   alignmentEnd;
-		std::string geneName;       // NA if no known gene
-		char        strand;         // '+' or '-'
+		// Start of the read, end of the CIGAR if reverse-complemented
+		uint32_t    firstSoftClipLength;
+		std::string geneName;
+		char        strand;   // '+' or '-'
 		uint16_t    nExons;
 		hts_pos_t   firstExonStart;
 		hts_pos_t   lastExonEnd;
