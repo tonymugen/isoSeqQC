@@ -227,11 +227,12 @@ std::string BAMrecord::getCIGARstring() const {
 }
 
 // BAMtoGenome methods
-constexpr char   BAMtoGenome::gffDelimiter_{'\t'};
-constexpr char   BAMtoGenome::attrDelimiter_{';'};
-constexpr size_t BAMtoGenome::strandIDidx_{6UL};
-constexpr size_t BAMtoGenome::spanStart_{3UL};
-constexpr size_t BAMtoGenome::spanEnd_{4UL};
+constexpr char     BAMtoGenome::gffDelimiter_{'\t'};
+constexpr char     BAMtoGenome::attrDelimiter_{';'};
+constexpr size_t   BAMtoGenome::strandIDidx_{6UL};
+constexpr size_t   BAMtoGenome::spanStart_{3UL};
+constexpr size_t   BAMtoGenome::spanEnd_{4UL};
+constexpr uint16_t BAMtoGenome::suppSecondaryAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
 
 BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 	parseGFF_(bamGFFfilePairNames.gffFileName);

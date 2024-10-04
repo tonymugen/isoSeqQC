@@ -52,18 +52,28 @@ namespace isaSpace {
 
 	/** \brief Deleter of the C BAM record */
 	struct CbamRecordDeleter {
+		/** \brief Function operator 
+		 *
+		 * Deletes the BAM record
+		 *
+		 * \param[in] bamRecordPtr pointer to the BAM record
+		 */
 		void operator()(bam1_t *bamRecordPtr) const {
 			bam_destroy1(bamRecordPtr);
 		}
 	};
 	/** \brief BAM and GFF file name pair */
 	struct BamAndGffFiles {
+		/** \brief BAM file name */
 		std::string bamFileName;
+		/** \brief GFF file name */
 		std::string gffFileName;
 	};
 	/** \brief Token name and GFF attribute list pair */
 	struct TokenAttibuteListPair {
+		/** \brief GFF token name */
 		std::string tokenName;
+		/** \brief Attribute list */
 		std::vector<std::string> attributeList;
 	};
 	/** \brief Exons covered by a read
@@ -72,18 +82,62 @@ namespace isaSpace {
 	 * All positions are 1-based, indexes are 0-based.
 	 */
 	struct ReadExonCoverage {
+		/** \brief Chromosome name 
+		 * 
+		 * This can also be a linkage group or scaffold name,
+		 * as listed in the GFF file in the `seqid` column.
+		 */
 		std::string chromosomeName;
+		/** \brief Read name */
 		std::string readName;
-		// smaller value first for the negative and positive strand
-		hts_pos_t   alignmentStart;
-		hts_pos_t   alignmentEnd;
-		// Start of the read, end of the CIGAR if reverse-complemented
-		uint32_t    firstSoftClipLength;
+		/** \brief Alignment start
+		 *
+		 * Base-1 position of the read start from the primary alignment.
+		 * Never larger than `alignmentEnd` regardless of strand.
+		 */
+		hts_pos_t alignmentStart;
+		/** \brief Alignment end
+		 *
+		 * Base-1 position of the read end from the primary alignment.
+		 * Never smaller than `alignmentStart` regardless of strand.
+		 */
+		hts_pos_t alignmentEnd;
+		/** \brief Length of the soft clip at read start
+		 *
+		 * End of the CIGAR string if the read is reverse-complemented.
+		 * Set to 0 if there is no soft clip.
+		 */
+		uint32_t firstSoftClipLength;
+		/** \brief Gene name
+		 *
+		 * Set to `no_overlap` or `past_last_mRNA` if there is no
+		 * gene in the GFF file that overlaps the alignment.
+		 */
 		std::string geneName;
-		char        strand;   // '+' or '-'
-		uint16_t    nExons;
-		hts_pos_t   firstExonStart;
-		hts_pos_t   lastExonEnd;
+		/** \brief Strand ID
+		 *
+		 * Must be `+` or `-`.
+		 */
+		char strand;
+		/** \brief Number of exons */
+		uint16_t nExons;
+		/** \brief First exon start
+		 *
+		 * Base-1 position of the first exon start from the GFF file.
+		 * End of the last exon if the strand negative.
+		 */
+		hts_pos_t firstExonStart;
+		/** \brief Last exon end
+		 *
+		 * Base-1 position of the last exon end from the GFF file.
+		 * Start of the first exon if the strand negative.
+		 */
+		hts_pos_t lastExonEnd;
+		/** \brief Exon coverage scores
+		 *
+		 * Fraction of reference bases in each exon covered by a matching base
+		 * in the read from the primary alignment.
+		 */
 		std::vector<float> exonCoverageScores;
 	};
 
@@ -92,7 +146,6 @@ namespace isaSpace {
 	 * Gathers exons belonging to all transcripts of a gene.
 	 */
 	class ExonGroup {
-		//friend class BAMtoGenome;
 	public:
 		/** \brief Default constructor */
 		ExonGroup() = default;
@@ -413,6 +466,8 @@ namespace isaSpace {
 		static const size_t spanStart_;
 		/** \brief Span end position */
 		static const size_t spanEnd_;
+		/** \brief Flag testing the two possible secondary alignment markers */
+		static const uint16_t suppSecondaryAlgn_;
 
 		/** \brief GFF file parent record identifier token */
 		std::string parentToken_{"Parent="};
