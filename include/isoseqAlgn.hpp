@@ -108,6 +108,22 @@ namespace isaSpace {
 		 * Set to 0 if there is no soft clip.
 		 */
 		uint32_t firstSoftClipLength;
+		/** \brief Number of secondary alignments */
+		uint16_t nSecondaryAlignments;
+		/** \brief Number of good secondary alignments 
+		 *
+		 * Secondary alignments that are on the same strand as
+		 * the primary and overlap the same gene.
+		 */
+		uint16_t nGoodSecondaryAlignments;
+		/** \brief Number of locally mapping reverse-complemented reads 
+		 *
+		 * Number of alignments on the opposite strand from the 
+		 * primary that overlap the same gene as the primary.
+		 */
+		uint16_t nLocalReversedAlignments;
+		/** \brief Number of exons */
+		uint16_t nExons;
 		/** \brief Gene name
 		 *
 		 * Set to `no_overlap` or `past_last_mRNA` if there is no
@@ -119,8 +135,11 @@ namespace isaSpace {
 		 * Must be `+` or `-`.
 		 */
 		char strand;
-		/** \brief Number of exons */
-		uint16_t nExons;
+		/** \brief First exon length 
+		 *
+		 * Actual first exon, last in the sequence if the strand is negative.
+		 */
+		hts_pos_t firstExonLength;
 		/** \brief First exon start
 		 *
 		 * Base-1 position of the first exon start from the GFF file.
@@ -139,6 +158,12 @@ namespace isaSpace {
 		 * in the read from the primary alignment.
 		 */
 		std::vector<float> exonCoverageScores;
+		/** \brief Best exon coverage scores
+		 *
+		 * Fraction of reference bases in each exon covered by a matching base
+		 * in the read from the best alignment for that exon among all alignments for the read.
+		 */
+		std::vector<float> bestExonCoverageScores;
 	};
 
 	/** \brief Group of exons from the same gene
