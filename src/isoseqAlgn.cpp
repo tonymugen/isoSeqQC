@@ -226,6 +226,17 @@ std::string BAMrecord::getCIGARstring() const {
 	return cigar;
 }
 
+std::string BAMrecord::getReferenceName(const sam_hdr_t *samHeader) const {
+	const auto *const namePtr = sam_hdr_tid2name(samHeader, alignmentRecord_->core.tid);
+	if (namePtr == nullptr) {
+		const std::string referenceName("*");
+		return referenceName;
+	}
+	const std::string referenceName(namePtr);
+	return referenceName;
+
+};
+
 // BAMtoGenome methods
 constexpr char     BAMtoGenome::gffDelimiter_{'\t'};
 constexpr char     BAMtoGenome::attrDelimiter_{';'};
@@ -282,17 +293,17 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 		if (nBytes < -1) {
 			continue;
 		}
+		BAMrecord currentBAM( std::move(bamRecordPtr) );
+		std::string referenceName( currentBAM.getReferenceName( bamHeader.get() ) );
 		// I want primary reads only with reverse-complement flag possibly set
-		const bool isGoodPimaryMapping = (bamRecordPtr->core.flag & ~BAM_FREVERSE) == 0;
-		if (isGoodPimaryMapping) {
-			std::string referenceName( sam_hdr_tid2name(bamHeader.get(), bamRecordPtr->core.tid) );
-			const char strandID  = (bam_is_rev( bamRecordPtr.get() ) ? '-' : '+' );
+		const bool isGoodPrimaryMapping = (currentBAM.getBAMflag() & ~BAM_FREVERSE) == 0;
+		if (isGoodPrimaryMapping) {
+			const char strandID  = (currentBAM.isRevComp() ? '-' : '+' );
 			referenceName       += strandID;
 			const auto refNameIt = gffExonGroups_.find(referenceName);
 			if ( refNameIt == gffExonGroups_.cend() ) {  // ignore of the chromosome not in the GFF
 				continue;
 			}
-			BAMrecord currentBAM( std::move(bamRecordPtr) );
 			const std::vector<uint32_t> cigarVec{currentBAM.getCIGARvector()};
 			const uint32_t firstCIGAR = ( strandID == '+' ? cigarVec.front() : cigarVec.back() );
 
@@ -319,10 +330,13 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			readCoverageStats_.emplace_back( std::move(currentAlignmentInfo) );
 			continue;
 		}
-		if ( (bamRecordPtr->core.flag & suppSecondaryAlgn_) != 0 ) {
-			;
+		// This is not a primary alignment. See if it is a good secondary and process if yes.
+		if ( (currentBAM.getBAMflag() & suppSecondaryAlgn_) != 0 ) {
+			readCoverageStats_.back().nSecondaryAlignments++;
+			const bool overlapsCurrentGene =
+				(referenceName == readCoverageStats_.back().chromosomeName) &&
+				rangesOverlap(readCoverageStats_.back(), currentBAM);
 		}
-		// If we are here the read alignment is secondary or bad
 	}
 }
 

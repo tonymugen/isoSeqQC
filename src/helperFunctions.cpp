@@ -71,6 +71,10 @@ std::string isaSpace::extractAttributeName(const TokenAttibuteListPair &tokenAnd
 	return attributeField;
 }
 
+bool isaSpace::rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &candidateBAM) noexcept {
+	return ( candidateBAM.getMapStart() <= geneInfo.lastExonEnd ) && ( candidateBAM.getMapEnd() >= geneInfo.firstExonStart );
+}
+
 std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separator) {
 	std::string coverages = std::accumulate(
 		readRecord.exonCoverageScores.cbegin(),

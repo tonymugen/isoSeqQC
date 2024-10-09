@@ -43,6 +43,15 @@ namespace isaSpace {
 	 * \param[in] tokenAndAttrList field token and the list of attributes
 	 */
 	[[gnu::warn_unused_result]] std::string extractAttributeName(const TokenAttibuteListPair &tokenAndAttrList);
+	/** \brief Test for range overlap
+	 *
+	 * Checks if the BAM record overlaps the nucleotide range covered by a gene.
+	 *
+	 * \param[in] geneInfo gene information
+	 * \param[in] candidateBAM BAM record
+	 * \return `true` if there is overlap
+	 */
+	[[gnu::warn_unused_result]] bool rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &candidateBAM) noexcept;
 	/** \brief Convert `ReadExonCoverage` to string
 	 *
 	 * \param[in] readRecord individual read record

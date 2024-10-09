@@ -368,6 +368,11 @@ namespace isaSpace {
 		 * \return read name
 		 */
 		[[gnu::warn_unused_result]] std::string getReadName() const {return std::string{bam_get_qname( alignmentRecord_.get() )}; }; // NOLINT
+		/** \brief Get the bitwise BAM record flag 
+		 *
+		 * \return flag value
+		 */
+		[[gnu::warn_unused_result]] uint16_t getBAMflag() const noexcept { return alignmentRecord_->core.flag; };
 		/** \brief Map start position
 		 *
 		 * Position of the first mapped nucleotide.
@@ -410,6 +415,14 @@ namespace isaSpace {
 		 * \return CIGAR string
 		 */
 		[[gnu::warn_unused_result]] std::string getCIGARstring() const;
+		/** \brief Get reference name 
+		 *
+		 * Reference sequence (e.g., chromosome) name. If absent, returns `*` like samtools.
+		 *
+		 * \param[in] samHeader pointer to the corresponding SAM header
+		 * \return reference name
+		 */ 
+		[[gnu::warn_unused_result]] std::string getReferenceName(const sam_hdr_t *samHeader) const;
 	private:
 		/** \brief Pointer to the BAM record */
 		std::unique_ptr<bam1_t, CbamRecordDeleter> alignmentRecord_;
