@@ -298,44 +298,12 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 		// I want primary reads only with reverse-complement flag possibly set
 		const bool isGoodPrimaryMapping = (currentBAM.getBAMflag() & ~BAM_FREVERSE) == 0;
 		if (isGoodPrimaryMapping) {
-			const char strandID  = (currentBAM.isRevComp() ? '-' : '+' );
-			referenceName       += strandID;
-			const auto refNameIt = gffExonGroups_.find(referenceName);
-			if ( refNameIt == gffExonGroups_.cend() ) {  // ignore of the chromosome not in the GFF
-				continue;
-			}
-			const std::vector<uint32_t> cigarVec{currentBAM.getCIGARvector()};
-			const uint32_t firstCIGAR = ( strandID == '+' ? cigarVec.front() : cigarVec.back() );
-
-			ReadExonCoverage currentAlignmentInfo;
-			currentAlignmentInfo.readName       = currentBAM.getReadName();
-			currentAlignmentInfo.chromosomeName = referenceName;
-			currentAlignmentInfo.chromosomeName.pop_back(); // delete the last character that tracks the strand
-			currentAlignmentInfo.strand                   = strandID;
-			currentAlignmentInfo.alignmentStart           = currentBAM.getMapStart();
-			currentAlignmentInfo.alignmentEnd             = currentBAM.getMapEnd();
-			currentAlignmentInfo.firstSoftClipLength      = bam_cigar_oplen(firstCIGAR) * static_cast<uint32_t>(bam_cigar_opchr(firstCIGAR) == 'S');
-			currentAlignmentInfo.nSecondaryAlignments     = 0;
-			currentAlignmentInfo.nLocalReversedAlignments = 0;
-			currentAlignmentInfo.nGoodSecondaryAlignments = 0;
-
-			if ( latestExonGroupIts.find(referenceName) == latestExonGroupIts.cend() ) {
-				latestExonGroupIts[referenceName] = gffExonGroups_[referenceName].cbegin();
-			}
-			findOverlappingGene_(referenceName, latestExonGroupIts[referenceName], currentAlignmentInfo);
-			if (currentAlignmentInfo.firstExonStart > 0) { // if an overlapping gene was found
-				currentAlignmentInfo.exonCoverageScores     = latestExonGroupIts[referenceName]->getExonCoverageQuality(cigarVec, currentAlignmentInfo.alignmentStart);
-				currentAlignmentInfo.bestExonCoverageScores = latestExonGroupIts[referenceName]->getExonCoverageQuality(cigarVec, currentAlignmentInfo.alignmentStart);
-			}
-			readCoverageStats_.emplace_back( std::move(currentAlignmentInfo) );
+			proecessPrimaryAlignment_(referenceName, currentBAM, latestExonGroupIts);
 			continue;
 		}
 		// This is not a primary alignment. See if it is a good secondary and process if yes.
 		if ( (currentBAM.getBAMflag() & suppSecondaryAlgn_) != 0 ) {
-			readCoverageStats_.back().nSecondaryAlignments++;
-			const bool overlapsCurrentGene =
-				(referenceName == readCoverageStats_.back().chromosomeName) &&
-				rangesOverlap(readCoverageStats_.back(), currentBAM);
+			proecessSecondaryAlignment_(referenceName, currentBAM, latestExonGroupIts);
 		}
 	}
 }
@@ -548,4 +516,62 @@ void BAMtoGenome::findOverlappingGene_(const std::string &referenceName, std::ve
 	readCoverageInfo.firstExonStart  = gffExonGroupStart->geneSpan().first;
 	readCoverageInfo.lastExonEnd     = gffExonGroupStart->geneSpan().second;
 	readCoverageInfo.firstExonLength = gffExonGroupStart->firstExonSpan().second - gffExonGroupStart->firstExonSpan().second + 1;
+}
+void BAMtoGenome::proecessPrimaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts) {
+	const char strandID                   = (alignmentRecord.isRevComp() ? '-' : '+' );
+	const std::string strandReferenceName = referenceName + strandID;
+	const auto refNameIt = gffExonGroups_.find(referenceName);
+	if ( refNameIt == gffExonGroups_.cend() ) {  // ignore of the chromosome not in the GFF
+		return;
+	}
+	const std::vector<uint32_t> cigarVec{alignmentRecord.getCIGARvector()};
+	const uint32_t firstCIGAR = ( strandID == '+' ? cigarVec.front() : cigarVec.back() );
+
+	ReadExonCoverage currentAlignmentInfo;
+	currentAlignmentInfo.readName       = alignmentRecord.getReadName();
+	currentAlignmentInfo.chromosomeName = referenceName;
+	currentAlignmentInfo.chromosomeName.pop_back(); // delete the last character that tracks the strand
+	currentAlignmentInfo.strand                   = strandID;
+	currentAlignmentInfo.alignmentStart           = alignmentRecord.getMapStart();
+	currentAlignmentInfo.alignmentEnd             = alignmentRecord.getMapEnd();
+	currentAlignmentInfo.firstSoftClipLength      = bam_cigar_oplen(firstCIGAR) * static_cast<uint32_t>(bam_cigar_opchr(firstCIGAR) == 'S');
+	currentAlignmentInfo.nSecondaryAlignments     = 0;
+	currentAlignmentInfo.nLocalReversedAlignments = 0;
+	currentAlignmentInfo.nGoodSecondaryAlignments = 0;
+
+	if ( latestExonGroupIts.find(referenceName) == latestExonGroupIts.cend() ) {
+		latestExonGroupIts[referenceName] = gffExonGroups_[referenceName].cbegin();
+	}
+	findOverlappingGene_(referenceName, latestExonGroupIts[referenceName], currentAlignmentInfo);
+	if (currentAlignmentInfo.firstExonStart > 0) { // if an overlapping gene was found
+		currentAlignmentInfo.exonCoverageScores     = latestExonGroupIts[referenceName]->getExonCoverageQuality(cigarVec, currentAlignmentInfo.alignmentStart);
+		currentAlignmentInfo.bestExonCoverageScores = latestExonGroupIts[referenceName]->getExonCoverageQuality(cigarVec, currentAlignmentInfo.alignmentStart);
+	}
+	readCoverageStats_.emplace_back( std::move(currentAlignmentInfo) );
+}
+
+void BAMtoGenome::proecessSecondaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, const std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts) {
+	readCoverageStats_.back().nSecondaryAlignments++;
+	const bool overlapsCurrentGene =
+		(referenceName == readCoverageStats_.back().chromosomeName) &&
+		rangesOverlap(readCoverageStats_.back(), alignmentRecord);
+	const bool sameStrand = alignmentRecord.isRevComp()     != (readCoverageStats_.back().strand == '-');
+	readCoverageStats_.back().nLocalReversedAlignments += static_cast<uint16_t>(overlapsCurrentGene) * static_cast<uint16_t>(sameStrand);
+	if (overlapsCurrentGene && sameStrand) {
+		readCoverageStats_.back().nGoodSecondaryAlignments++;
+		const std::vector<uint32_t> cigarVec{alignmentRecord.getCIGARvector()};
+		const std::vector<float> exonCovQuality{latestExonGroupIts.at(referenceName)->getExonCoverageQuality( cigarVec, alignmentRecord.getMapStart() )};
+		auto ecqIt = exonCovQuality.cbegin();
+		// save the element-wise max quality score
+		std::transform(
+			readCoverageStats_.back().bestExonCoverageScores.cbegin(),
+			readCoverageStats_.back().bestExonCoverageScores.cend(),
+			readCoverageStats_.back().bestExonCoverageScores.begin(),
+			[&ecqIt](float score){
+				const float maxValue = std::max(score, *ecqIt);
+				ecqIt++;
+				return maxValue;
+			}
+		);
+	}
 }

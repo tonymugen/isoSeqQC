@@ -545,5 +545,19 @@ namespace isaSpace {
 		 * \param[in,out] readCoverageInfo the object with read coverage information
 		 */
 		void findOverlappingGene_(const std::string &referenceName, std::vector<ExonGroup>::const_iterator &gffExonGroupStart, ReadExonCoverage &readCoverageInfo);
+		/** \brief Process a primary alignment 
+		 *
+		 * \param[in] referenceName reference sequence name
+		 * \param[in] alignmentRecord current alignment record
+		 * \param[in,out] latestExonGroupIts iterators to the latest exon groups for each reference and strand
+		 */
+		void proecessPrimaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts);
+		/** \brief Process a secondary alignment 
+		 *
+		 * \param[in] referenceName reference sequence name
+		 * \param[in] alignmentRecord current alignment record
+		 * \param[in] latestExonGroupIts iterators to the latest exon groups for each reference and strand
+		 */
+		void proecessSecondaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, const std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts);
 	};
 }
