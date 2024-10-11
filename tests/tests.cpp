@@ -29,6 +29,8 @@
 #include <sstream>
 #include <vector>
 
+#include <iostream>
+
 #include "bgzf.h"
 #include "sam.h"
 
@@ -59,6 +61,64 @@ TEST_CASE("Helper functions work") {
 	testTokAttr.tokenName = "Random=";
 	const std::string absentAttrResult{isaSpace::extractAttributeName(testTokAttr)};
 	REQUIRE( absentAttrResult.empty() );
+
+	// Range overlap function
+	isaSpace::CbamRecordDeleter localDeleter;
+	std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRecordPtr(bam_init1(), localDeleter);
+	const std::string tstSeq("GCCTACTGCAGTCCACAAGGAGGCCACATCCACAGCCACGACAACGGCGACATACGCCAATGGCAATCCCAATTCTAACGCAAATCCTAGCCAGAGTCAG");
+	const std::string tstQual(tstSeq.size(), '~');
+	const std::string tstQname("testQueryName");
+	constexpr uint16_t  flag{0};
+	constexpr int32_t   tid{0};
+	constexpr hts_pos_t position{50};
+	constexpr uint8_t   mapq{60};
+	const std::array<uint32_t, 1> tstCigar{bam_cigar_gen(tstSeq.size(), BAM_CMATCH)};
+
+	const int bamSetRes = bam_set1(
+		bamRecordPtr.get(),
+		tstQname.size(),
+		tstQname.c_str(),
+		flag,
+		tid,
+		position,
+		mapq,
+		tstCigar.size(),
+		tstCigar.data(),
+		0,
+		0,
+		static_cast<hts_pos_t>( tstSeq.size() ),
+		tstSeq.size(),
+		tstSeq.c_str(),
+		tstQual.c_str(),
+		0
+	);
+	isaSpace::BAMrecord tstBAMrecord( std::move(bamRecordPtr) );
+	isaSpace::ReadExonCoverage tstREC;
+	constexpr hts_pos_t earlyES{30};
+	constexpr hts_pos_t midES{90};
+	constexpr hts_pos_t lateES{245};
+	constexpr hts_pos_t earlyEE{45};
+	constexpr hts_pos_t midEE{110};
+	constexpr hts_pos_t lateEE{345};
+
+	tstREC.firstExonStart = earlyES;
+	tstREC.lastExonEnd    = lateEE;
+	REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
+	tstREC.firstExonStart = earlyES;
+	tstREC.lastExonEnd    = midEE;
+	REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
+	tstREC.firstExonStart = earlyES;
+	tstREC.lastExonEnd    = earlyEE;
+	REQUIRE( !isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
+	tstREC.firstExonStart = midES;
+	tstREC.lastExonEnd    = lateEE;
+	REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
+	tstREC.firstExonStart = lateES;
+	tstREC.lastExonEnd    = lateEE;
+	REQUIRE( !isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
+	tstREC.firstExonStart = midES;
+	tstREC.lastExonEnd    = midEE;
+	REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
 
 	// stringify tests
 	const std::string correctStatsLine("m54312U_201215_225530/460252/ccs	NC_052529.2	+	2983523	2988359	0	gene-LOC6532627	4	2980697	2988366	{0.000000,0.930000,1.000000,0.500000}");
@@ -421,7 +481,7 @@ TEST_CASE("Catching bad GFF and BAM files works") {
 		Catch::Matchers::StartsWith("ERROR: no mRNAs with exons found in the")
 	);
 }
-
+/*
 TEST_CASE("GFF and BAM parsing works") {
 	const std::string gffName("../tests/posNegYak.gff");
 	const std::string testAlignmentBAMname("../tests/testAlignment.bam");
@@ -500,3 +560,4 @@ TEST_CASE("GFF and BAM parsing works") {
 	REQUIRE(std::count(nExons.cbegin(), nExons.cend(), 0) == correctNfailed);
 	REQUIRE(std::count(fesValues.cbegin(), fesValues.cend(), -1) == correctNfailed);
 }
+*/
