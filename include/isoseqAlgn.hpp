@@ -102,6 +102,18 @@ namespace isaSpace {
 		 * Never smaller than `alignmentStart` regardless of strand.
 		 */
 		hts_pos_t alignmentEnd;
+		/** \brief Best alignment start
+		 *
+		 * Base-1 position of the earliest read start from the primary and all good secondary alignments.
+		 * Never larger than `bestAlignmentEnd` regardless of strand.
+		 */
+		hts_pos_t bestAlignmentStart;
+		/** \brief Best alignment end
+		 *
+		 * Base-1 position of the latest read end from the primary and all good secondary alignments.
+		 * Never smaller than `bestAlignmentStart` regardless of strand.
+		 */
+		hts_pos_t bestAlignmentEnd;
 		/** \brief Length of the soft clip at read start
 		 *
 		 * End of the CIGAR string if the read is reverse-complemented.
@@ -551,13 +563,13 @@ namespace isaSpace {
 		 * \param[in] alignmentRecord current alignment record
 		 * \param[in,out] latestExonGroupIts iterators to the latest exon groups for each reference and strand
 		 */
-		void proecessPrimaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts);
+		void processPrimaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts);
 		/** \brief Process a secondary alignment 
 		 *
 		 * \param[in] referenceName reference sequence name
 		 * \param[in] alignmentRecord current alignment record
 		 * \param[in] latestExonGroupIts iterators to the latest exon groups for each reference and strand
 		 */
-		void proecessSecondaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, const std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts);
+		void processSecondaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, const std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts);
 	};
 }

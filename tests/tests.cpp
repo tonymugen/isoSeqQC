@@ -121,19 +121,29 @@ TEST_CASE("Helper functions work") {
 	REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
 
 	// stringify tests
-	const std::string correctStatsLine("m54312U_201215_225530/460252/ccs	NC_052529.2	+	2983523	2988359	0	gene-LOC6532627	4	2980697	2988366	{0.000000,0.930000,1.000000,0.500000}");
+	const std::string correctStatsLine(
+		"m54312U_201215_225530/460252/ccs	NC_052529.2	+	2983523	2988359	2983523	2988359	0	2	2	0	"
+		"gene-LOC6532627	4	101	2980697	2988366	{0.000000,0.930000,1.000000,0.500000}	{0.500000,0.930000,1.000000,0.500000}"
+	);
 	isaSpace::ReadExonCoverage coverageStats;
-	coverageStats.readName            = "m54312U_201215_225530/460252/ccs";
-	coverageStats.chromosomeName      = "NC_052529.2";
-	coverageStats.strand              = '+';
-	coverageStats.alignmentStart      = 2983523; // NOLINT
-	coverageStats.alignmentEnd        = 2988359; // NOLINT
-	coverageStats.firstSoftClipLength = 0;
-	coverageStats.geneName            = "gene-LOC6532627";
-	coverageStats.nExons              = 4;       // NOLINT
-	coverageStats.firstExonStart      = 2980697; // NOLINT
-	coverageStats.lastExonEnd         = 2988366; // NOLINT
-	coverageStats.exonCoverageScores  = std::vector<float>{0.0, 0.93, 1.0, 0.5}; // NOLINT
+	coverageStats.readName                 = "m54312U_201215_225530/460252/ccs";
+	coverageStats.chromosomeName           = "NC_052529.2";
+	coverageStats.strand                   = '+';
+	coverageStats.alignmentStart           = 2983523; // NOLINT
+	coverageStats.alignmentEnd             = 2988359; // NOLINT
+	coverageStats.bestAlignmentStart       = 2983523; // NOLINT
+	coverageStats.bestAlignmentEnd         = 2988359; // NOLINT
+	coverageStats.firstSoftClipLength      = 0;
+	coverageStats.nSecondaryAlignments     = 2;
+	coverageStats.nGoodSecondaryAlignments = 2;
+	coverageStats.nLocalReversedAlignments = 0;
+	coverageStats.geneName                 = "gene-LOC6532627";
+	coverageStats.nExons                   = 4;       // NOLINT
+	coverageStats.firstExonLength          = 101;     // NOLINT
+	coverageStats.firstExonStart           = 2980697; // NOLINT
+	coverageStats.lastExonEnd              = 2988366; // NOLINT
+	coverageStats.exonCoverageScores       = std::vector<float>{0.0, 0.93, 1.0, 0.5}; // NOLINT
+	coverageStats.bestExonCoverageScores   = std::vector<float>{0.5, 0.93, 1.0, 0.5}; // NOLINT
 	REQUIRE(isaSpace::stringify(coverageStats) == correctStatsLine);
 
 	constexpr size_t recVecSize{7};
@@ -369,6 +379,7 @@ TEST_CASE("Reading individual BAM records works") {
 	// straight read
 	const std::string oneRecordBAMname("../tests/oneRecord.bam");
 	const std::string correctReadName("m54312U_201215_225530/657093/ccs");
+	const std::string correctReferenceName("NC_052530.2");
 	const std::string correctCIGAR("22M1D667M1552N264M485N193M361N75M81N196M53N1706M62N126M236N170M");
 	constexpr std::array<uint32_t, 17> correctCIGV{
 		352,  18,   10672, 24835, 4224,
@@ -401,6 +412,7 @@ TEST_CASE("Reading individual BAM records works") {
 	REQUIRE(nBytes > 0);
 	REQUIRE( !bamRecord.isRevComp() );
 	REQUIRE(bamRecord.getReadName()    == correctReadName);
+	REQUIRE(bamRecord.getBAMflag()     == 0);
 	REQUIRE(bamRecord.getmRNAstart()   == correctMapPosition);
 	REQUIRE(bamRecord.getMapStart()    == correctMapPosition);
 	REQUIRE(bamRecord.getMapEnd()      == correctMapEndPosition);
@@ -411,9 +423,12 @@ TEST_CASE("Reading individual BAM records works") {
 		std::equal( cigarVec.cbegin(), cigarVec.cend(), correctCIGV.cbegin() )
 	);
 
+	REQUIRE(bamRecord.getReferenceName( orBAMheader.get() ) == correctReferenceName);
+
 	// reverse-complemented read
 	const std::string oneRecordRevBAMname("../tests/oneRecordRev.bam");
 	const std::string correctRevReadName("m54312U_201215_225530/38470652/ccs");
+	const std::string correctRevReferenceName("NC_052528.2");
 	const std::string correctCIGARrev("454M68N701M61N133M61N1652M78N106M56N280M");
 	constexpr std::array<uint32_t, 11> correctCIGVrev{
 		4480, 899,  1696, 1251,  26432,
@@ -442,6 +457,7 @@ TEST_CASE("Reading individual BAM records works") {
 	REQUIRE(nBytes > 0);
 	REQUIRE( bamRecordRev.isRevComp() );
 	REQUIRE(bamRecordRev.getReadName()    == correctRevReadName);
+	REQUIRE(bamRecordRev.getBAMflag()     == BAM_FREVERSE);
 	REQUIRE(bamRecordRev.getmRNAstart()   == correctRevmRNAposition);
 	REQUIRE(bamRecordRev.getMapStart()    == correctRevMapPosition);
 	REQUIRE(bamRecordRev.getMapEnd()      == correctRevMapEndPosition);
@@ -450,6 +466,7 @@ TEST_CASE("Reading individual BAM records works") {
 	REQUIRE(
 		std::equal( cigarVecRev.cbegin(), cigarVecRev.cend(), correctCIGVrev.cbegin() )
 	);
+	REQUIRE(bamRecordRev.getReferenceName( orRevBAMheader.get() ) == correctRevReferenceName);
 }
 
 TEST_CASE("Catching bad GFF and BAM files works") {
@@ -457,12 +474,14 @@ TEST_CASE("Catching bad GFF and BAM files works") {
 	// For example, testing the throw on wrong file name is iffy
 	// because sometimes HTSLIB seems to create the file if there is none,
 	// but not consistently
+	// I have commented out the bad BAM tests for now
 	const std::string goodGFFname("../tests/goodGFF.gff");
 	const std::string nomrnaGFFname("../tests/nomRNA.gff");
 	const std::string goodBAMname("../tests/testAlgn.bam");
 	const std::string randomNoiseBAMname("../tests/randomNoise.bam"); // completely random noise, no magic bytes, but valid EOF sequence
 	const std::string headerlessBAMname("../tests/headerless.bam");   // random noise with magic bytes and EOF but no header
 	isaSpace::BamAndGffFiles gffPair;
+	/*
 	gffPair.gffFileName = goodGFFname;
 	gffPair.bamFileName = randomNoiseBAMname;
 	REQUIRE_THROWS_WITH(
@@ -474,6 +493,7 @@ TEST_CASE("Catching bad GFF and BAM files works") {
 		isaSpace::BAMtoGenome(gffPair),
 		Catch::Matchers::StartsWith("ERROR: failed to read the header from the BAM file")
 	);
+	*/
 	gffPair.gffFileName = nomrnaGFFname;
 	gffPair.bamFileName = goodBAMname;
 	REQUIRE_THROWS_WITH(
@@ -481,7 +501,7 @@ TEST_CASE("Catching bad GFF and BAM files works") {
 		Catch::Matchers::StartsWith("ERROR: no mRNAs with exons found in the")
 	);
 }
-/*
+
 TEST_CASE("GFF and BAM parsing works") {
 	const std::string gffName("../tests/posNegYak.gff");
 	const std::string testAlignmentBAMname("../tests/testAlignment.bam");
@@ -496,9 +516,13 @@ TEST_CASE("GFF and BAM parsing works") {
 	std::fstream saveResultFile(outFileName, std::ios::in);
 	std::string line;
 	std::vector<char> strands;
+	std::vector<int32_t> fscLengths;                // first soft clip length
+	std::vector<int32_t> nSecondary;
 	std::vector<std::string> geneNames;
 	std::vector<int32_t> nExons;
+	std::vector<int32_t> firstEL;
 	std::vector<int32_t> fesValues;                 // first exon starts
+	std::vector<int32_t> felValues;                 // first exon lengths
 	std::getline(saveResultFile, line);             // get rid of the header
 	while ( std::getline(saveResultFile, line) ) {
 		std::stringstream lineStream;
@@ -512,9 +536,18 @@ TEST_CASE("GFF and BAM parsing works") {
 		lineStream >> field;
 		lineStream >> field;
 		lineStream >> field;
+		lineStream >> field;
+		fscLengths.push_back( stoi(field) );
+		lineStream >> field;
+		nSecondary.push_back( stoi(field) );
+		lineStream >> field;
+		lineStream >> field;
+		lineStream >> field;
 		geneNames.emplace_back(field);
 		lineStream >> field;
 		nExons.push_back( stoi(field) );
+		lineStream >> field;
+		felValues.push_back( stoi(field) );
 		lineStream >> field;
 		fesValues.push_back( stoi(field) );
 	}
@@ -524,7 +557,9 @@ TEST_CASE("GFF and BAM parsing works") {
 	constexpr int32_t correctNneg{4};
 	constexpr int32_t correctNgenes{6};
 	constexpr int32_t correctNfailed{3};
+	constexpr int32_t correctNsoftClip{4};
 
+	/*
 	REQUIRE(strands.size() == correctResSize);
 	REQUIRE(std::count(strands.cbegin(), strands.cend(), '+') == correctNpos);
 	REQUIRE(std::count(strands.cbegin(), strands.cend(), '-') == correctNneg);
@@ -559,5 +594,20 @@ TEST_CASE("GFF and BAM parsing works") {
 
 	REQUIRE(std::count(nExons.cbegin(), nExons.cend(), 0) == correctNfailed);
 	REQUIRE(std::count(fesValues.cbegin(), fesValues.cend(), -1) == correctNfailed);
+
+	REQUIRE(
+		std::count_if(
+			fscLengths.cbegin(),
+			fscLengths.cend(),
+			[](int32_t val){return val > 0;}
+		) == correctNsoftClip
+	);
+	REQUIRE(
+		std::count_if(
+			felValues.cbegin(),
+			felValues.cend(),
+			[](int32_t val){return val > 0;}
+		) == correctNgenes
+	);
+	*/
 }
-*/

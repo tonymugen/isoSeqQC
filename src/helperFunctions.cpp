@@ -85,17 +85,32 @@ std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separat
 		}
 	);
 	coverages.back() = '}';
-	std::string result =  readRecord.readName                            + separator
-						+ readRecord.chromosomeName                      + separator
-						+ readRecord.strand                              + separator
-						+ std::to_string(readRecord.alignmentStart)      + separator
-						+ std::to_string(readRecord.alignmentEnd)        + separator
-						+ std::to_string(readRecord.firstSoftClipLength) + separator
-						+ readRecord.geneName                            + separator
-						+ std::to_string(readRecord.nExons)              + separator
-						+ std::to_string(readRecord.firstExonStart)      + separator
-						+ std::to_string(readRecord.lastExonEnd)         + separator
-						+ coverages;
+	std::string bestCoverages = std::accumulate(
+		readRecord.bestExonCoverageScores.cbegin(),
+		readRecord.bestExonCoverageScores.cend(),
+		std::string("{"),
+		[](std::string strVal, float val) {
+			return std::move(strVal) + std::to_string(val) + ',';
+		}
+	);
+	bestCoverages.back() = '}';
+	std::string result =  readRecord.readName                                 + separator
+						+ readRecord.chromosomeName                           + separator
+						+ readRecord.strand                                   + separator
+						+ std::to_string(readRecord.alignmentStart)           + separator
+						+ std::to_string(readRecord.alignmentEnd)             + separator
+						+ std::to_string(readRecord.bestAlignmentStart)       + separator
+						+ std::to_string(readRecord.bestAlignmentEnd)         + separator
+						+ std::to_string(readRecord.firstSoftClipLength)      + separator
+						+ std::to_string(readRecord.nSecondaryAlignments)     + separator
+						+ std::to_string(readRecord.nGoodSecondaryAlignments) + separator
+						+ std::to_string(readRecord.nLocalReversedAlignments) + separator
+						+ readRecord.geneName                                 + separator
+						+ std::to_string(readRecord.nExons)                   + separator
+						+ std::to_string(readRecord.firstExonLength)          + separator
+						+ std::to_string(readRecord.firstExonStart)           + separator
+						+ std::to_string(readRecord.lastExonEnd)              + separator
+						+ coverages + separator + bestCoverages;
 
 	return result;
 }
