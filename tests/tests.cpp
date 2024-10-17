@@ -552,14 +552,14 @@ TEST_CASE("GFF and BAM parsing works") {
 		fesValues.push_back( stoi(field) );
 	}
 	saveResultFile.close();
-	constexpr size_t correctResSize{9};
-	constexpr int32_t correctNpos{5};
-	constexpr int32_t correctNneg{4};
-	constexpr int32_t correctNgenes{6};
+	constexpr size_t correctResSize{11};
+	constexpr int32_t correctNpos{6};
+	constexpr int32_t correctNneg{5};
+	constexpr int32_t correctNgenes{8};
 	constexpr int32_t correctNfailed{3};
 	constexpr int32_t correctNsoftClip{4};
+	constexpr int32_t correctNsecondary{3};
 
-	/*
 	REQUIRE(strands.size() == correctResSize);
 	REQUIRE(std::count(strands.cbegin(), strands.cend(), '+') == correctNpos);
 	REQUIRE(std::count(strands.cbegin(), strands.cend(), '-') == correctNneg);
@@ -609,5 +609,11 @@ TEST_CASE("GFF and BAM parsing works") {
 			[](int32_t val){return val > 0;}
 		) == correctNgenes
 	);
-	*/
+	REQUIRE(
+		std::count_if(
+			nSecondary.cbegin(),
+			nSecondary.cend(),
+			[](int32_t val){return val > 0;}
+		) == correctNsecondary
+	);
 }

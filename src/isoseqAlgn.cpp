@@ -561,12 +561,13 @@ void BAMtoGenome::processSecondaryAlignment_(const std::string &referenceName, c
 	const bool overlapsCurrentGene =
 		(referenceName == readCoverageStats_.back().chromosomeName) &&
 		rangesOverlap(readCoverageStats_.back(), alignmentRecord);
-	const bool sameStrand = ( alignmentRecord.isRevComp() != (readCoverageStats_.back().strand == '-') );
-	readCoverageStats_.back().nLocalReversedAlignments += static_cast<uint16_t>(overlapsCurrentGene) * static_cast<uint16_t>(sameStrand);
+	const bool sameStrand = ( alignmentRecord.isRevComp() == (readCoverageStats_.back().strand == '-') );
+	readCoverageStats_.back().nLocalReversedAlignments += static_cast<uint16_t>(overlapsCurrentGene) * static_cast<uint16_t>(!sameStrand);
 	if (overlapsCurrentGene && sameStrand) {
+		const std::string strandedRefName = referenceName + readCoverageStats_.back().strand;
 		readCoverageStats_.back().nGoodSecondaryAlignments++;
 		const std::vector<uint32_t> cigarVec{alignmentRecord.getCIGARvector()};
-		const std::vector<float> exonCovQuality{latestExonGroupIts.at(referenceName)->getExonCoverageQuality( cigarVec, alignmentRecord.getMapStart() )};
+		const std::vector<float> exonCovQuality{latestExonGroupIts.at(strandedRefName)->getExonCoverageQuality( cigarVec, alignmentRecord.getMapStart() )};
 		auto ecqIt = exonCovQuality.cbegin();
 		// save the element-wise max quality score
 		std::transform(
@@ -588,8 +589,5 @@ void BAMtoGenome::processSecondaryAlignment_(const std::string &referenceName, c
 			alignmentRecord.getMapEnd()
 		);
 		return;
-	}
-	if (overlapsCurrentGene) { // overlaps but on a different strand
-		readCoverageStats_.back().nLocalReversedAlignments++;
 	}
 }
