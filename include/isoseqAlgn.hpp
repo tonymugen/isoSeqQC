@@ -299,6 +299,15 @@ namespace isaSpace {
 		 * \return index of the last exon overlapping the given position
 		 */
 		[[gnu::warn_unused_result]] uint32_t lastOverlappingExon(const hts_pos_t &position) const noexcept;
+		/** \brief First intron span
+		 *
+		 * Smaller value first regardless of strand, but the intron is always the first in the gene,
+		 * last in the sequence if the strand is negative.
+		 * If there is only one exon, the start and end are reported as `-1`.
+		 *
+		 * \return first intron start and end positions
+		 */
+		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> getFirstIntronSpan() const;
 		/** \brief Get read coverage quality per exon 
 		 *
 		 * Use CIGAR information to extract alignment quality for each exon.
@@ -333,6 +342,8 @@ namespace isaSpace {
 		std::vector< std::pair<hts_pos_t, hts_pos_t> > exonRanges_;
 		/** \brief Iterator pointing to the first exon */
 		std::vector< std::pair<hts_pos_t, hts_pos_t> >::iterator firstExonIt_;
+		// TODO: to implement tracking transcripts, additional vector of iterators pointing to the next exon
+		// Keep the number the same and equal to the number of transcripts listed in the GFF
 	};
 
 	/** \brief Summary of a BAM record set

@@ -137,6 +137,42 @@ uint32_t ExonGroup::lastOverlappingExon(const hts_pos_t &position) const noexcep
 	return result;
 }
 
+std::pair<hts_pos_t, hts_pos_t> ExonGroup::getFirstIntronSpan() const {
+	std::pair<hts_pos_t, hts_pos_t> intronSpan{-1, -1};
+	if (isNegativeStrand_) {
+		const hts_pos_t endOfFirstExon = exonRanges_.back().first;
+		const auto trueSecondExonIt = std::lower_bound(
+			std::next( exonRanges_.crbegin() ),
+			exonRanges_.crend(),
+			endOfFirstExon,
+			[](const std::pair<hts_pos_t, hts_pos_t> &currExonRange, const hts_pos_t &firstExonEnd) {
+				return currExonRange.second > firstExonEnd;
+			}
+		);
+		if ( trueSecondExonIt == exonRanges_.crend() ) {
+			return intronSpan;
+		}
+		intronSpan.first  = trueSecondExonIt->second;
+		intronSpan.second = std::prev(trueSecondExonIt)->first;
+		return intronSpan;
+	}
+	const hts_pos_t endOfFirstExon = exonRanges_.front().second;
+	const auto trueSecondExonIt = std::lower_bound(
+		std::next( exonRanges_.cbegin() ),
+		exonRanges_.cend(),
+		endOfFirstExon,
+		[](const std::pair<hts_pos_t, hts_pos_t> &currExonRange, const hts_pos_t &firstExonEnd) {
+			return currExonRange.first < firstExonEnd;
+		}
+	);
+	if ( trueSecondExonIt == exonRanges_.cend() ) {
+		return intronSpan;
+	}
+	intronSpan.second = trueSecondExonIt->first;
+	intronSpan.first  = std::prev(trueSecondExonIt)->second;
+	return intronSpan;
+}
+
 std::vector<float> ExonGroup::getExonCoverageQuality(const std::vector<uint32_t> &cigar, const hts_pos_t &alignmentStart) const {
 	// find the first overlapping exon
 	const auto exonRangeIt = std::lower_bound(
