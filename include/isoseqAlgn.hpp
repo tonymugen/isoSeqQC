@@ -312,25 +312,13 @@ namespace isaSpace {
 		 *
 		 * Use CIGAR information to extract alignment quality for each exon.
 		 * Quality is the fraction of reference nucleotides covered by matching read bases.
-		 * Alignment start refers to the start in BAM and should precede the gene regardless of strand.
 		 *
-		 * \param[in] cigar vector of CIGAR values
-		 * \param[in] alignmentStart start of the read alignment
+		 * \param[in] alignment BAM alignment record
 		 * \return vector of alignment qualities, one per exon
 		 *
 		 */
-		[[gnu::warn_unused_result]] std::vector<float> getExonCoverageQuality(const std::vector<uint32_t> &cigar, const hts_pos_t &alignmentStart) const;
+		[[gnu::warn_unused_result]] std::vector<float> getExonCoverageQuality(const BAMrecord &alignment) const;
 	private:
-		/** \brief Reference consumption status array 
-		 *
-		 * Can be indexed into using the CIGAR operation bit field. 
-		 */
-		static const std::array<float, 10> referenceConsumption_;
-		/** \brief Sequence match status array 
-		 *
-		 * Can be indexed into using the CIGAR operation bit field. 
-		 */
-		static const std::array<float, 10> sequenceMatch_;
 		/** \brief Gene name */
 		std::string geneName_;
 		/** \brief Is the mRNA on the negative strand? */
@@ -356,22 +344,23 @@ namespace isaSpace {
 		BAMrecord() = default;
 		/** \brief Constructor with data 
 		 *
-		 * Constructs an object from an HTSLIB alignment record.
+		 * Constructs an object from an HTSLIB alignment record and the corresponding header.
 		 *
 		 * \param[in] alignmentRecordPointer pointer to a read alignment record
+		 * \param[in] samHeader pointer to the corresponding BAM/SAM header
 		 */
-		BAMrecord(std::unique_ptr<bam1_t, CbamRecordDeleter> &&alignmentRecordPointer) : alignmentRecord_{std::move(alignmentRecordPointer)} {};
+		BAMrecord(const std::unique_ptr<bam1_t, CbamRecordDeleter> &alignmentRecordPointer, const sam_hdr_t *samHeader);
 		/** \brief Copy constructor
 		 *
 		 * \param[in] toCopy object to copy
 		 */
-		BAMrecord(const BAMrecord &toCopy) = delete;
+		BAMrecord(const BAMrecord &toCopy) = default;
 		/** \brief Copy assignment operator
 		 *
 		 * \param[in] toCopy object to copy
 		 * \return `BAMrecord` object
 		 */
-		BAMrecord& operator=(const BAMrecord &toCopy) = delete;
+		BAMrecord& operator=(const BAMrecord &toCopy) = default;
 		/** \brief Move constructor
 		 *
 		 * \param[in] toMove object to move
@@ -390,26 +379,21 @@ namespace isaSpace {
 		 *
 		 * \return read name
 		 */
-		[[gnu::warn_unused_result]] std::string getReadName() const {return std::string{bam_get_qname( alignmentRecord_.get() )}; }; // NOLINT
-		/** \brief Get the bitwise BAM record flag 
-		 *
-		 * \return flag value
-		 */
-		[[gnu::warn_unused_result]] uint16_t getBAMflag() const noexcept { return alignmentRecord_->core.flag; };
+		[[gnu::warn_unused_result]] std::string getReadName() const {return readName_; };
 		/** \brief Map start position
 		 *
 		 * Position of the first mapped nucleotide.
 		 *
 		 * \return 1-based read map start position
 		 */
-		[[gnu::warn_unused_result]] hts_pos_t getMapStart() const noexcept { return alignmentRecord_->core.pos + 1; };
+		[[gnu::warn_unused_result]] hts_pos_t getMapStart() const noexcept { return mapStart_; };
 		/** \brief Map end position
 		 *
 		 * Position of the first past the mapped region of the reference.
 		 *
 		 * \return 1-based read map end position
 		 */
-		[[gnu::warn_unused_result]] hts_pos_t getMapEnd() const noexcept { return bam_endpos( alignmentRecord_.get() ) + 1; };
+		[[gnu::warn_unused_result]] hts_pos_t getMapEnd() const noexcept { return mapEnd_; };
 		/** \brief mRNA start position
 		 *
 		 * Position of the first mRNA read nucleotide, taking into account possible reverse-complement.
@@ -417,20 +401,30 @@ namespace isaSpace {
 		 * \return 1-based read mRNA start position
 		 */
 		[[gnu::warn_unused_result]] hts_pos_t getmRNAstart() const noexcept {
-			return bam_is_rev( alignmentRecord_.get() ) ? bam_endpos( alignmentRecord_.get() ) + 1 : alignmentRecord_->core.pos + 1 ;
+			return isRev_ ? mapEnd_ : mapStart_;
 		};
 		/** \brief Is the read reverse-complemented?
 		 *
 		 * \return true if the read is reverse-complemented
 		 */
-		[[gnu::warn_unused_result]] bool isRevComp() const noexcept { return bam_is_rev( alignmentRecord_.get() ); };
+		[[gnu::warn_unused_result]] bool isRevComp() const noexcept { return isRev_; };
+		/** \brief Is this the primary alignment?
+		 *
+		 * \return true if the alignment is primary
+		 */
+		[[gnu::warn_unused_result]] bool isPrimaryMap() const noexcept { return isPrimary_ && isMapped_; };
+		/** \brief Is this a valid secondary alignment?
+		 *
+		 * \return true if the read is mapped and the alignment is secondary
+		 */
+		[[gnu::warn_unused_result]] bool isSecondaryMap() const noexcept { return (!isPrimary_) && isMapped_; };
 		/** \brief CIGAR vector 
 		 *
 		 * Orientation independent of strand
 		 *
 		 * \return CIGAR vector
 		 */
-		[[gnu::warn_unused_result]] std::vector<uint32_t> getCIGARvector() const;
+		[[gnu::warn_unused_result]] std::vector<uint32_t> getCIGARvector() const {return cigar_;};
 		/** \brief CIGAR string 
 		 *
 		 * Reversed if the read is reverse-complemented.
@@ -442,13 +436,79 @@ namespace isaSpace {
 		 *
 		 * Reference sequence (e.g., chromosome) name. If absent, returns `*` like samtools.
 		 *
-		 * \param[in] samHeader pointer to the corresponding SAM header
 		 * \return reference name
 		 */ 
-		[[gnu::warn_unused_result]] std::string getReferenceName(const sam_hdr_t *samHeader) const;
+		[[gnu::warn_unused_result]] std::string getReferenceName() const {return referenceName_; };
+		/** \brief Read match status along the reference
+		 *
+		 * Parses CIGAR to track read (query) match/mismatch (1.0 for match, 0.0 for mismatch) status along the reference.
+		 * This means that insertions in the read are ignored.
+		 * The vector start begins at the position closest to the first exon start regardless of strand.
+		 *
+		 * \return vector of match status
+		 */
+		[[gnu::warn_unused_result]] std::vector<float> getReferenceMatchStatus() const;
+		/** \brief Reference match status along the read 
+		 *
+		 * Parses CIGAR to track reference match/mismatch (1.0 for match, 0.0 for mismatch) status along the read,
+		 * relating each read position to the corresponding reference base-1 nucleotide position.
+		 * The vector start begins at the position closest to the first exon start regardless of strand.
+		 *
+		 * \return vector of match status/reference position pairs
+		 */
+		[[gnu::warn_unused_result]] std::vector< std::pair<float, hts_pos_t> > getReadCentricMatchStatus() const;
 	private:
-		/** \brief Pointer to the BAM record */
-		std::unique_ptr<bam1_t, CbamRecordDeleter> alignmentRecord_;
+		/** \brief Mask isolating the sequence byte */
+		static const uint16_t sequenceMask_;
+		/** \brief Size of shift to get the quality byte */
+		static const uint16_t qualityShift_;
+		/** \brief Mask to test for secondary alignment */
+		static const uint16_t suppSecondaryAlgn_;
+		/** \brief Query (read) consumption status array 
+		 *
+		 * Can be indexed into using the CIGAR operation bit field. 
+		 */
+		static const std::array<float, 10> queryConsumption_;
+		/** \brief Sequence match status array 
+		 *
+		 * Can be indexed into using the CIGAR operation bit field. 
+		 */
+		static const std::array<float, 10> sequenceMatch_;
+		/** \brief Reference consumption status array 
+		 *
+		 * Can be indexed into using the CIGAR operation bit field. 
+		 */
+		static const std::array<float, 10> referenceConsumption_;
+		/** \brief Is this the primary alignment? */
+		bool isPrimary_{true};
+		/** \brief Is the read mapped? */
+		bool isMapped_{false};
+		/** \brief Is the read reverse-complemented? */
+		bool isRev_{false};
+		/** \brief Map start 
+		 *
+		 * Base-1 position on the reference where the read alignment starts.
+		 * As in the BAM record, always precedes map end regardless of strand.
+		 */
+		hts_pos_t mapStart_{0};
+		/** \brief Map end 
+		 *
+		 * Base-1 position on the reference where the read alignment ends.
+		 * As in the BAM record, always after the map start regardless of strand.
+		 */
+		hts_pos_t mapEnd_{0};
+		/** \brief Read name */
+		std::string readName_;
+		/** \brief Reference name */
+		std::string referenceName_;
+		/** \brief CIGAR vector */
+		std::vector<uint32_t> cigar_;
+		/** \brief Sequence its quality
+		 *
+		 * Lower byte is the sequence in BAM format,
+		 * higher byte the BAM (no +33 adjustment) quality score.
+		 */
+		std::vector<uint16_t> sequenceAndQuality_;
 	};
 
 	/** \brief Relate BAM alignments to exons

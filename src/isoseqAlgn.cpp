@@ -28,6 +28,7 @@
  */
 
 #include <algorithm>
+#include <cstring>
 #include <memory>
 #include <iterator>
 #include <numeric>
@@ -50,15 +51,6 @@
 #include "helperFunctions.hpp"
 
 using namespace isaSpace;
-
-constexpr std::array<float, 10> ExonGroup::referenceConsumption_{
-	1.0, 0.0, 1.0, 1.0, 0.0,
-	0.0, 0.0, 1.0, 1.0, 0.0
-};
-constexpr std::array<float, 10> ExonGroup::sequenceMatch_{
-	1.0, 0.0, 0.0, 0.0, 0.0,
-	0.0, 0.0, 1.0, 0.0, 0.0
-};
 
 ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSet) :
 												geneName_{std::move(geneName)}, isNegativeStrand_{strand == '-'} { // only affirmatively negative strand is marked as such
@@ -173,12 +165,12 @@ std::pair<hts_pos_t, hts_pos_t> ExonGroup::getFirstIntronSpan() const {
 	return intronSpan;
 }
 
-std::vector<float> ExonGroup::getExonCoverageQuality(const std::vector<uint32_t> &cigar, const hts_pos_t &alignmentStart) const {
+std::vector<float> ExonGroup::getExonCoverageQuality(const BAMrecord &alignment) const {
 	// find the first overlapping exon
 	const auto exonRangeIt = std::lower_bound(
 		exonRanges_.cbegin(),
 		exonRanges_.cend(),
-		alignmentStart,
+		alignment.getMapStart(),
 		[](const std::pair<hts_pos_t, hts_pos_t> &currExonRange, const hts_pos_t &position) {
 			return currExonRange.second < position;
 		}
@@ -188,23 +180,17 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const std::vector<uint32_t>
 	std::vector<float> qualityScores(nLeadingUncoveredExons, 0.0);
 
 	// vector that tracks reference match/mismatch status for each reference position covered by CIGAR
-	std::vector<float> referenceMatchStatus;
-	for (const auto &eachCIGAR : cigar) {
-		const std::vector<float> currCIGARfield(
-			bam_cigar_oplen(eachCIGAR) * referenceConsumption_.at( bam_cigar_op(eachCIGAR) ),
-			sequenceMatch_.at( bam_cigar_op(eachCIGAR) )
-		);
-		std::copy( currCIGARfield.cbegin(), currCIGARfield.cend(), std::back_inserter(referenceMatchStatus) );
-	}
+	const std::vector<uint32_t> cigar{alignment.getCIGARvector()};
+	std::vector<float> referenceMatchStatus{alignment.getReferenceMatchStatus()};
 	std::for_each(
 		exonRangeIt,
 		exonRanges_.cend(),
-		[&referenceMatchStatus, &alignmentStart, &qualityScores](const std::pair<hts_pos_t, hts_pos_t> &currExonSpan) {
-			const hts_pos_t realExonStart{std::max(alignmentStart, currExonSpan.first)};
+		[&referenceMatchStatus, &alignment, &qualityScores](const std::pair<hts_pos_t, hts_pos_t> &currExonSpan) {
+			const hts_pos_t realExonStart{std::max(alignment.getMapStart(), currExonSpan.first)};
 			const hts_pos_t realExonLength{std::max(static_cast<hts_pos_t>(0), currExonSpan.second - realExonStart + 1)};
 			const auto rmsStartPosition{
 				std::min(
-					static_cast<std::vector<float>::difference_type>(realExonStart - alignmentStart),
+					static_cast<std::vector<float>::difference_type>( realExonStart - alignment.getMapStart() ),
 					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.size() - 1)
 				)
 			};
@@ -227,34 +213,57 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const std::vector<uint32_t>
 }
 
 //BAMrecord methods
-std::vector<uint32_t>BAMrecord::getCIGARvector() const {
-	std::vector<uint32_t> cigarVec(
-		bam_get_cigar( alignmentRecord_.get() ),                                    // NOLINT
-		bam_get_cigar( alignmentRecord_.get() ) + alignmentRecord_->core.n_cigar    // NOLINT
-	);
-	return cigarVec;
+constexpr uint16_t BAMrecord::sequenceMask_{0x00FF};
+constexpr uint16_t BAMrecord::qualityShift_{8};
+constexpr uint16_t BAMrecord::suppSecondaryAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
+constexpr std::array<float, 10> BAMrecord::queryConsumption_{
+	1.0, 1.0, 0.0, 0.0, 1.0,
+	0.0, 0.0, 1.0, 1.0, 0.0
+};
+constexpr std::array<float, 10> BAMrecord::sequenceMatch_{
+	1.0, 0.0, 0.0, 0.0, 0.0,
+	0.0, 0.0, 1.0, 0.0, 0.0
+};
+constexpr std::array<float, 10> BAMrecord::referenceConsumption_{
+	1.0, 0.0, 1.0, 1.0, 0.0,
+	0.0, 0.0, 1.0, 1.0, 0.0
+};
+
+BAMrecord::BAMrecord(const std::unique_ptr<bam1_t, CbamRecordDeleter> &alignmentRecordPointer, const sam_hdr_t *samHeader) :
+			isRev_{bam_is_rev( alignmentRecordPointer.get() )}, mapStart_{alignmentRecordPointer->core.pos + 1}, mapEnd_{bam_endpos( alignmentRecordPointer.get() ) + 1},
+			isPrimary_{(alignmentRecordPointer->core.flag & suppSecondaryAlgn_) == 0}, isMapped_{ (alignmentRecordPointer->core.flag & BAM_FUNMAP) == 0 } {
+
+	readName_      = std::string{bam_get_qname( alignmentRecordPointer.get() )};
+	referenceName_ = std::string( sam_hdr_tid2name(samHeader, alignmentRecordPointer->core.tid) );
+	cigar_         = std::vector<uint32_t>(
+						bam_get_cigar( alignmentRecordPointer.get() ),
+						bam_get_cigar( alignmentRecordPointer.get() ) + alignmentRecordPointer->core.n_cigar
+					);
+	for (int32_t iSeq = 0; iSeq < alignmentRecordPointer->core.l_qseq; ++iSeq) {
+		const uint16_t qualityByte{*(bam_get_qual( alignmentRecordPointer.get() ) + iSeq)};
+		const uint16_t sequenceByte{bam_seqi(bam_get_seq( alignmentRecordPointer.get() ), iSeq)};
+		sequenceAndQuality_.push_back( (qualityByte << qualityShift_) | sequenceByte );
+	}
 }
 
 std::string BAMrecord::getCIGARstring() const {
-	std::vector<uint32_t> cigarVec{this->getCIGARvector()};
-
 	auto stringify = [](std::string currString, uint32_t cigarElement) {
 		return std::move(currString)
 			+ std::to_string( bam_cigar_oplen(cigarElement) )
 			+ bam_cigar_opchr(cigarElement);
 	};
-	if ( bam_is_rev( alignmentRecord_.get() ) ) {
+	if (isRev_) {
 		std::string cigar = std::accumulate(
-			cigarVec.crbegin(),
-			cigarVec.crend(),
+			cigar_.crbegin(),
+			cigar_.crend(),
 			std::string(),
 			stringify
 		);
 		return cigar;
 	}
 	std::string cigar = std::accumulate(
-		cigarVec.cbegin(),
-		cigarVec.cend(),
+		cigar_.cbegin(),
+		cigar_.cend(),
 		std::string(),
 		stringify
 	);
@@ -262,16 +271,16 @@ std::string BAMrecord::getCIGARstring() const {
 	return cigar;
 }
 
-std::string BAMrecord::getReferenceName(const sam_hdr_t *samHeader) const {
-	const auto *const namePtr = sam_hdr_tid2name(samHeader, alignmentRecord_->core.tid);
-	if (namePtr == nullptr) {
-		const std::string referenceName("*");
-		return referenceName;
+std::vector<float> BAMrecord::getReferenceMatchStatus() const {
+	std::vector<float> referenceMatchStatus;
+	for (const auto &eachCIGAR : cigar_) {
+		const std::vector<float> currCIGARfield(
+			bam_cigar_oplen(eachCIGAR) * referenceConsumption_.at( bam_cigar_op(eachCIGAR) ),
+			sequenceMatch_.at( bam_cigar_op(eachCIGAR) )
+		);
+		std::copy( currCIGARfield.cbegin(), currCIGARfield.cend(), std::back_inserter(referenceMatchStatus) );
 	}
-	const std::string referenceName(namePtr);
-	return referenceName;
-
-};
+}
 
 // BAMtoGenome methods
 constexpr char     BAMtoGenome::gffDelimiter_{'\t'};
@@ -329,16 +338,15 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 		if (nBytes < -1) {
 			continue;
 		}
-		BAMrecord currentBAM( std::move(bamRecordPtr) );
-		std::string referenceName( currentBAM.getReferenceName( bamHeader.get() ) );
+		BAMrecord currentBAM( bamRecordPtr, bamHeader.get() );
+		std::string referenceName{currentBAM.getReferenceName()};
 		// I want primary reads only with reverse-complement flag possibly set
-		const bool isGoodPrimaryMapping = (currentBAM.getBAMflag() & ~BAM_FREVERSE) == 0;
-		if (isGoodPrimaryMapping) {
+		if ( currentBAM.isPrimaryMap() ) {
 			processPrimaryAlignment_(referenceName, currentBAM, latestExonGroupIts);
 			continue;
 		}
 		// This is not a primary alignment. See if it is a good secondary and process if yes.
-		if ( ( !readCoverageStats_.empty() ) && ( (currentBAM.getBAMflag() & suppSecondaryAlgn_) != 0 ) ) {
+		if ( ( !readCoverageStats_.empty() ) && currentBAM.isSecondaryMap() ) {
 			processSecondaryAlignment_(referenceName, currentBAM, latestExonGroupIts);
 		}
 	}
@@ -586,8 +594,8 @@ void BAMtoGenome::processPrimaryAlignment_(const std::string &referenceName, con
 	}
 	findOverlappingGene_(strandReferenceName, latestExonGroupIts[strandReferenceName], currentAlignmentInfo);
 	if (currentAlignmentInfo.firstExonStart > 0) { // if an overlapping gene was found
-		currentAlignmentInfo.exonCoverageScores     = latestExonGroupIts[strandReferenceName]->getExonCoverageQuality(cigarVec, currentAlignmentInfo.alignmentStart);
-		currentAlignmentInfo.bestExonCoverageScores = latestExonGroupIts[strandReferenceName]->getExonCoverageQuality(cigarVec, currentAlignmentInfo.alignmentStart);
+		currentAlignmentInfo.exonCoverageScores     = latestExonGroupIts[strandReferenceName]->getExonCoverageQuality(alignmentRecord);
+		currentAlignmentInfo.bestExonCoverageScores = latestExonGroupIts[strandReferenceName]->getExonCoverageQuality(alignmentRecord);
 	}
 	readCoverageStats_.emplace_back( std::move(currentAlignmentInfo) );
 }
@@ -603,7 +611,7 @@ void BAMtoGenome::processSecondaryAlignment_(const std::string &referenceName, c
 		const std::string strandedRefName = referenceName + readCoverageStats_.back().strand;
 		readCoverageStats_.back().nGoodSecondaryAlignments++;
 		const std::vector<uint32_t> cigarVec{alignmentRecord.getCIGARvector()};
-		const std::vector<float> exonCovQuality{latestExonGroupIts.at(strandedRefName)->getExonCoverageQuality( cigarVec, alignmentRecord.getMapStart() )};
+		const std::vector<float> exonCovQuality{latestExonGroupIts.at(strandedRefName)->getExonCoverageQuality(alignmentRecord)};
 		auto ecqIt = exonCovQuality.cbegin();
 		// save the element-wise max quality score
 		std::transform(
