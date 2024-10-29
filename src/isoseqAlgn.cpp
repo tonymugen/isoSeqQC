@@ -280,6 +280,7 @@ std::vector<float> BAMrecord::getReferenceMatchStatus() const {
 		);
 		std::copy( currCIGARfield.cbegin(), currCIGARfield.cend(), std::back_inserter(referenceMatchStatus) );
 	}
+	return referenceMatchStatus;
 }
 
 // BAMtoGenome methods

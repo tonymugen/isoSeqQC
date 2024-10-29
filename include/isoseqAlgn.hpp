@@ -424,7 +424,7 @@ namespace isaSpace {
 		 *
 		 * \return CIGAR vector
 		 */
-		[[gnu::warn_unused_result]] std::vector<uint32_t> getCIGARvector() const {return cigar_;};
+		[[gnu::warn_unused_result]] std::vector<uint32_t> getCIGARvector() const { return cigar_; };
 		/** \brief CIGAR string 
 		 *
 		 * Reversed if the read is reverse-complemented.
