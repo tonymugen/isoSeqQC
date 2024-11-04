@@ -17,7 +17,7 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/// Read isoSeq alignments and save potential fusions
+/// Read isoSeq alignments and compare to genome annotations
 /** \file
  * \author Anthony J. Greenberg and Rebekah Rogers
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
@@ -229,19 +229,19 @@ constexpr std::array<float, 10> BAMrecord::referenceConsumption_{
 	0.0, 0.0, 1.0, 1.0, 0.0
 };
 
-BAMrecord::BAMrecord(const std::unique_ptr<bam1_t, CbamRecordDeleter> &alignmentRecordPointer, const sam_hdr_t *samHeader) :
-			isRev_{bam_is_rev( alignmentRecordPointer.get() )}, mapStart_{alignmentRecordPointer->core.pos + 1}, mapEnd_{bam_endpos( alignmentRecordPointer.get() ) + 1},
-			isPrimary_{(alignmentRecordPointer->core.flag & suppSecondaryAlgn_) == 0}, isMapped_{ (alignmentRecordPointer->core.flag & BAM_FUNMAP) == 0 } {
+BAMrecord::BAMrecord(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader) :
+			isRev_{bam_is_rev(alignmentRecord)}, mapStart_{alignmentRecord->core.pos + 1}, mapEnd_{bam_endpos(alignmentRecord) + 1},
+			isPrimary_{(alignmentRecord->core.flag & suppSecondaryAlgn_) == 0}, isMapped_{ (alignmentRecord->core.flag & BAM_FUNMAP) == 0 } {
 
-	readName_      = std::string{bam_get_qname( alignmentRecordPointer.get() )};
-	referenceName_ = std::string( sam_hdr_tid2name(samHeader, alignmentRecordPointer->core.tid) );
+	readName_      = std::string{bam_get_qname(alignmentRecord)};
+	referenceName_ = std::string( sam_hdr_tid2name(samHeader, alignmentRecord->core.tid) );
 	cigar_         = std::vector<uint32_t>(
-						bam_get_cigar( alignmentRecordPointer.get() ),
-						bam_get_cigar( alignmentRecordPointer.get() ) + alignmentRecordPointer->core.n_cigar
+						bam_get_cigar(alignmentRecord),
+						bam_get_cigar(alignmentRecord) + alignmentRecord->core.n_cigar
 					);
-	for (int32_t iSeq = 0; iSeq < alignmentRecordPointer->core.l_qseq; ++iSeq) {
-		const uint16_t qualityByte{*(bam_get_qual( alignmentRecordPointer.get() ) + iSeq)};
-		const uint16_t sequenceByte{bam_seqi(bam_get_seq( alignmentRecordPointer.get() ), iSeq)};
+	for (int32_t iSeq = 0; iSeq < alignmentRecord->core.l_qseq; ++iSeq) {
+		const uint16_t qualityByte{*(bam_get_qual(alignmentRecord) + iSeq)};
+		const uint16_t sequenceByte{bam_seqi(bam_get_seq(alignmentRecord), iSeq)};
 		sequenceAndQuality_.push_back( (qualityByte << qualityShift_) | sequenceByte );
 	}
 }
@@ -330,8 +330,12 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 	// keeping track of the latest iterators pointing to identified exon groups, one per chromosome/reference sequence
 	std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> latestExonGroupIts;
 	while (true) {
-		CbamRecordDeleter localDeleter;
-		std::unique_ptr<bam1_t, CbamRecordDeleter> bamRecordPtr(bam_init1(), localDeleter);
+		std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr(
+			bam_init1(),
+			[](bam1_t *bamRecord){
+				bam_destroy1(bamRecord);
+			}
+		);
 		const auto nBytes = bam_read1( bamFile.get(), bamRecordPtr.get() );
 		if (nBytes == -1) {
 			break;
@@ -339,7 +343,7 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 		if (nBytes < -1) {
 			continue;
 		}
-		BAMrecord currentBAM( bamRecordPtr, bamHeader.get() );
+		BAMrecord currentBAM( bamRecordPtr.get(), bamHeader.get() );
 		std::string referenceName{currentBAM.getReferenceName()};
 		// I want primary reads only with reverse-complement flag possibly set
 		if ( currentBAM.isPrimaryMap() ) {

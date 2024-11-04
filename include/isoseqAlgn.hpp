@@ -17,7 +17,7 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/// Read isoSeq alignments and save potential fusions
+/// Read isoSeq alignments and compare to genome annotations
 /** \file
  * \author Anthony J. Greenberg and Rebekah Rogers
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
@@ -29,7 +29,6 @@
 
 #pragma once
 
-#include <memory>
 #include <utility>
 #include <vector>
 #include <array>
@@ -42,7 +41,6 @@
 namespace isaSpace {
 	constexpr size_t nGFFfields{9UL};
 
-	struct CbamRecordDeleter;
 	struct BamAndGffFiles;
 	struct TokenAttibuteListPair;
 	struct ReadExonCoverage;
@@ -50,18 +48,6 @@ namespace isaSpace {
 	class  BAMrecord;
 	class  BAMtoGenome;
 
-	/** \brief Deleter of the C BAM record */
-	struct CbamRecordDeleter {
-		/** \brief Function operator 
-		 *
-		 * Deletes the BAM record
-		 *
-		 * \param[in] bamRecordPtr pointer to the BAM record
-		 */
-		void operator()(bam1_t *bamRecordPtr) const {
-			bam_destroy1(bamRecordPtr);
-		}
-	};
 	/** \brief BAM and GFF file name pair */
 	struct BamAndGffFiles {
 		/** \brief BAM file name */
@@ -95,31 +81,31 @@ namespace isaSpace {
 		 * Base-1 position of the read start from the primary alignment.
 		 * Never larger than `alignmentEnd` regardless of strand.
 		 */
-		hts_pos_t alignmentStart;
+		hts_pos_t alignmentStart{0};
 		/** \brief Alignment end
 		 *
 		 * Base-1 position of the read end from the primary alignment.
 		 * Never smaller than `alignmentStart` regardless of strand.
 		 */
-		hts_pos_t alignmentEnd;
+		hts_pos_t alignmentEnd{0};
 		/** \brief Best alignment start
 		 *
 		 * Base-1 position of the earliest read start from the primary and all good secondary alignments.
 		 * Never larger than `bestAlignmentEnd` regardless of strand.
 		 */
-		hts_pos_t bestAlignmentStart;
+		hts_pos_t bestAlignmentStart{0};
 		/** \brief Best alignment end
 		 *
 		 * Base-1 position of the latest read end from the primary and all good secondary alignments.
 		 * Never smaller than `bestAlignmentStart` regardless of strand.
 		 */
-		hts_pos_t bestAlignmentEnd;
+		hts_pos_t bestAlignmentEnd{0};
 		/** \brief Length of the soft clip at read start
 		 *
 		 * End of the CIGAR string if the read is reverse-complemented.
 		 * Set to 0 if there is no soft clip.
 		 */
-		uint32_t firstSoftClipLength;
+		uint32_t firstSoftClipLength{0};
 		/** \brief Number of secondary alignments */
 		uint16_t nSecondaryAlignments;
 		/** \brief Number of good secondary alignments 
@@ -127,13 +113,13 @@ namespace isaSpace {
 		 * Secondary alignments that are on the same strand as
 		 * the primary and overlap the same gene.
 		 */
-		uint16_t nGoodSecondaryAlignments;
+		uint16_t nGoodSecondaryAlignments{0};
 		/** \brief Number of locally mapping reverse-complemented reads 
 		 *
 		 * Number of alignments on the opposite strand from the 
 		 * primary that overlap the same gene as the primary.
 		 */
-		uint16_t nLocalReversedAlignments;
+		uint16_t nLocalReversedAlignments{0};
 		/** \brief Number of exons */
 		uint16_t nExons;
 		/** \brief Gene name
@@ -146,24 +132,24 @@ namespace isaSpace {
 		 *
 		 * Must be `+` or `-`.
 		 */
-		char strand;
+		char strand{'\0'};
 		/** \brief First exon length 
 		 *
 		 * Actual first exon, last in the sequence if the strand is negative.
 		 */
-		hts_pos_t firstExonLength;
+		hts_pos_t firstExonLength{0};
 		/** \brief First exon start
 		 *
 		 * Base-1 position of the first exon start from the GFF file.
 		 * End of the last exon if the strand negative.
 		 */
-		hts_pos_t firstExonStart;
+		hts_pos_t firstExonStart{0};
 		/** \brief Last exon end
 		 *
 		 * Base-1 position of the last exon end from the GFF file.
 		 * Start of the first exon if the strand negative.
 		 */
-		hts_pos_t lastExonEnd;
+		hts_pos_t lastExonEnd{0};
 		/** \brief Exon coverage scores
 		 *
 		 * Fraction of reference bases in each exon covered by a matching base
@@ -346,10 +332,10 @@ namespace isaSpace {
 		 *
 		 * Constructs an object from an HTSLIB alignment record and the corresponding header.
 		 *
-		 * \param[in] alignmentRecordPointer pointer to a read alignment record
+		 * \param[in] alignmentRecord pointer to a read alignment record
 		 * \param[in] samHeader pointer to the corresponding BAM/SAM header
 		 */
-		BAMrecord(const std::unique_ptr<bam1_t, CbamRecordDeleter> &alignmentRecordPointer, const sam_hdr_t *samHeader);
+		BAMrecord(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader);
 		/** \brief Copy constructor
 		 *
 		 * \param[in] toCopy object to copy
@@ -418,6 +404,11 @@ namespace isaSpace {
 		 * \return true if the read is mapped and the alignment is secondary
 		 */
 		[[gnu::warn_unused_result]] bool isSecondaryMap() const noexcept { return (!isPrimary_) && isMapped_; };
+		/** \brief Read length 
+		 *
+		 * \return read length in bases
+		 */
+		[[gnu::warn_unused_result]] hts_pos_t getReadLength() const noexcept { return static_cast<hts_pos_t>( sequenceAndQuality_.size() ); };
 		/** \brief CIGAR vector 
 		 *
 		 * Orientation independent of strand

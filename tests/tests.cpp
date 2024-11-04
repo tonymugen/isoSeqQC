@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Anthony J. Greenberg and Rebekah Rogers
+ * Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
  *
@@ -19,8 +19,10 @@
 
 #include <cstddef>
 #include <htslib/sam.h>
+#include <memory>
 #include <iterator>
 #include <algorithm>
+#include <numeric>
 #include <utility>
 #include <set>
 #include <array>
@@ -61,8 +63,12 @@ TEST_CASE("Helper functions work") {
 	REQUIRE( absentAttrResult.empty() );
 
 	// Range overlap function
-	isaSpace::CbamRecordDeleter localDeleter;
-	std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRecordPtr(bam_init1(), localDeleter);
+	std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr(
+		bam_init1(),
+		[](bam1_t *bamRecord){
+			bam_destroy1(bamRecord);
+		}
+	);
 	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> tstBAMheader(
 		sam_hdr_init(),
 		[](sam_hdr_t *samHeader) {
@@ -74,7 +80,7 @@ TEST_CASE("Helper functions work") {
 	const std::string tstQname("testQueryName");
 	constexpr uint16_t  flag{0};
 	constexpr int32_t   tid{0};
-	constexpr hts_pos_t position{50};
+	constexpr hts_pos_t position{49};
 	constexpr uint8_t   mapq{60};
 	const std::array<uint32_t, 1> tstCigar{bam_cigar_gen(tstSeq.size(), BAM_CMATCH)};
 
@@ -98,8 +104,7 @@ TEST_CASE("Helper functions work") {
 	);
 	int headRes = sam_hdr_add_line(tstBAMheader.get(), "HD", "VN", "1.6", "SO", "unknown", NULL); // NOLINT
 	headRes     = sam_hdr_add_line(tstBAMheader.get(), "SQ", "SN", "test", "LN", "100000", NULL); // NOLINT
-	isaSpace::BAMrecord tstBAMrecord( bamRecordPtr, tstBAMheader.get() );
-	isaSpace::ReadExonCoverage tstREC;
+	isaSpace::BAMrecord tstBAMrecord( bamRecordPtr.get(), tstBAMheader.get() );
 	constexpr hts_pos_t earlyES{30};
 	constexpr hts_pos_t midES{90};
 	constexpr hts_pos_t lateES{245};
@@ -107,8 +112,16 @@ TEST_CASE("Helper functions work") {
 	constexpr hts_pos_t midEE{110};
 	constexpr hts_pos_t lateEE{345};
 
-	tstREC.firstExonStart = earlyES;
-	tstREC.lastExonEnd    = lateEE;
+	isaSpace::ReadExonCoverage tstREC;
+	tstREC.readName               = "m54312U_201215_225530/460252/ccs";
+	tstREC.chromosomeName         = "NC_052529.2";
+	tstREC.strand                 = '+';
+	tstREC.geneName               = "gene-LOC6532627";
+	tstREC.firstExonStart         = earlyES;
+	tstREC.lastExonEnd            = lateEE;
+	tstREC.exonCoverageScores     = std::vector<float>{0.0, 0.93, 1.0, 0.5}; // NOLINT
+	tstREC.bestExonCoverageScores = std::vector<float>{0.5, 0.93, 1.0, 0.5}; // NOLINT
+
 	REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
 	tstREC.firstExonStart = earlyES;
 	tstREC.lastExonEnd    = midEE;
@@ -346,10 +359,14 @@ TEST_CASE("Exon range extraction works") {
 		bam_cigar_gen(102,  BAM_CREF_SKIP),
 		bam_cigar_gen(631,  BAM_CMATCH)
 	};
-	isaSpace::CbamRecordDeleter localDeleter1;
 	const std::string tstSeq1(bam_cigar2qlen( simpleCIGAR.size(), simpleCIGAR.data() ), 'A');
 	const std::string tstQual1(tstSeq1.size(), '~');
-	std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRecordPtr1(bam_init1(), localDeleter1);
+	std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr1(
+		bam_init1(),
+		[](bam1_t *bamRecord){
+			bam_destroy1(bamRecord);
+		}
+	);
 	int bamSetRes = bam_set1(
 		bamRecordPtr1.get(),
 		tstQname.size(),
@@ -368,7 +385,7 @@ TEST_CASE("Exon range extraction works") {
 		tstQual1.c_str(),
 		0
 	);
-	isaSpace::BAMrecord bamRecord1( bamRecordPtr1, commonBAMheader.get() );
+	isaSpace::BAMrecord bamRecord1( bamRecordPtr1.get(), commonBAMheader.get() );
 	std::vector<float> exonCoverage{testExonGroupPos.getExonCoverageQuality(bamRecord1)};
 	REQUIRE( exonCoverage.size() == testExonGroupPos.nExons() );
 	REQUIRE(
@@ -396,8 +413,12 @@ TEST_CASE("Exon range extraction works") {
 	};
 	const std::string tstSeq2(bam_cigar2qlen( earlyCigarFields.size(), earlyCigarFields.data() ), 'A');
 	const std::string tstQual2(tstSeq2.size(), '~');
-	isaSpace::CbamRecordDeleter localDeleter2;
-	std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRecordPtr2(bam_init1(), localDeleter2);
+	std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr2(
+		bam_init1(),
+		[](bam1_t *bamRecord){
+			bam_destroy1(bamRecord);
+		}
+	);
 	bamSetRes = bam_set1(
 		bamRecordPtr2.get(),
 		tstQname.size(),
@@ -416,7 +437,7 @@ TEST_CASE("Exon range extraction works") {
 		tstQual2.c_str(),
 		0
 	);
-	isaSpace::BAMrecord bamRecord2( bamRecordPtr2, commonBAMheader.get() );
+	isaSpace::BAMrecord bamRecord2( bamRecordPtr2.get(), commonBAMheader.get() );
 	exonCoverage.clear();
 	exonCoverage = testExonGroupPos.getExonCoverageQuality(bamRecord2);
 	REQUIRE( exonCoverage.size() == testExonGroupPos.nExons() );
@@ -438,8 +459,12 @@ TEST_CASE("Exon range extraction works") {
 	};
 	const std::string tstSeq3(bam_cigar2qlen( lateCigarFields.size(), lateCigarFields.data() ), 'A');
 	const std::string tstQual3(tstSeq3.size(), '~');
-	isaSpace::CbamRecordDeleter localDeleter3;
-	std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRecordPtr3(bam_init1(), localDeleter3);
+	std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr3(
+		bam_init1(),
+		[](bam1_t *bamRecord){
+			bam_destroy1(bamRecord);
+		}
+	);
 	bamSetRes = bam_set1(
 		bamRecordPtr3.get(),
 		tstQname.size(),
@@ -458,7 +483,7 @@ TEST_CASE("Exon range extraction works") {
 		tstQual3.c_str(),
 		0
 	);
-	isaSpace::BAMrecord bamRecord3( bamRecordPtr3, commonBAMheader.get() );
+	isaSpace::BAMrecord bamRecord3( bamRecordPtr3.get(), commonBAMheader.get() );
 	exonCoverage.clear();
 	exonCoverage = testExonGroupPos.getExonCoverageQuality(bamRecord3);
 	REQUIRE( exonCoverage.size() == testExonGroupPos.nExons() );
@@ -491,8 +516,12 @@ TEST_CASE("Exon range extraction works") {
 	};
 	const std::string tstSeq4(bam_cigar2qlen( negativeCigarFields.size(), negativeCigarFields.data() ), 'A');
 	const std::string tstQual4(tstSeq4.size(), '~');
-	isaSpace::CbamRecordDeleter localDeleter4;
-	std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRecordPtr4(bam_init1(), localDeleter4);
+	std::unique_ptr<bam1_t, void(*)(bam1_t *bamRecord)> bamRecordPtr4(
+		bam_init1(),
+		[](bam1_t *bamRecord){
+			bam_destroy1(bamRecord);
+		}
+	);
 	bamSetRes = bam_set1(
 		bamRecordPtr4.get(),
 		tstQname.size(),
@@ -511,7 +540,7 @@ TEST_CASE("Exon range extraction works") {
 		tstQual4.c_str(),
 		0
 	);
-	isaSpace::BAMrecord bamRecord4( bamRecordPtr4, commonBAMheader.get() );
+	isaSpace::BAMrecord bamRecord4( bamRecordPtr4.get(), commonBAMheader.get() );
 	exonCoverage.clear();
 	exonCoverage = testExonGroupNeg.getExonCoverageQuality(bamRecord4);
 	REQUIRE( exonCoverage.size() == testExonGroupPos.nExons() );
@@ -544,6 +573,9 @@ TEST_CASE("Reading individual BAM records works") {
 	};
 	constexpr hts_pos_t correctMapPosition{2468434};
 	constexpr hts_pos_t correctMapEndPosition{2474684};
+	constexpr hts_pos_t correctReadLength{3419};
+	constexpr size_t    correctRefMatchLength{6250};
+
 	// read one record from the BAM file
 	constexpr char openMode{'r'};
 	std::unique_ptr<BGZF, void(*)(BGZF *)> orBAMfile(
@@ -560,16 +592,23 @@ TEST_CASE("Reading individual BAM records works") {
 			sam_hdr_destroy(samHeader);
 		}
 	);
-	isaSpace::CbamRecordDeleter localDeleter;
-	std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRecordPtr(bam_init1(), localDeleter);
+	std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr(
+		bam_init1(),
+		[](bam1_t *bamRecord){
+			bam_destroy1(bamRecord);
+		}
+	);
 	auto nBytes = bam_read1( orBAMfile.get(), bamRecordPtr.get() );
-	isaSpace::BAMrecord bamRecord( bamRecordPtr, orBAMheader.get() );
+	isaSpace::BAMrecord bamRecord( bamRecordPtr.get(), orBAMheader.get() );
 	REQUIRE(nBytes > 0);
 	REQUIRE( !bamRecord.isRevComp() );
+	REQUIRE( bamRecord.isPrimaryMap() );
+	REQUIRE( !bamRecord.isSecondaryMap() );
 	REQUIRE(bamRecord.getReadName()    == correctReadName);
 	REQUIRE(bamRecord.getmRNAstart()   == correctMapPosition);
 	REQUIRE(bamRecord.getMapStart()    == correctMapPosition);
 	REQUIRE(bamRecord.getMapEnd()      == correctMapEndPosition);
+	REQUIRE(bamRecord.getReadLength()  == correctReadLength);
 	REQUIRE(bamRecord.getCIGARstring() == correctCIGAR);
 
 	const std::vector<uint32_t> cigarVec{bamRecord.getCIGARvector()};
@@ -577,6 +616,11 @@ TEST_CASE("Reading individual BAM records works") {
 		std::equal( cigarVec.cbegin(), cigarVec.cend(), correctCIGV.cbegin() )
 	);
 	REQUIRE(bamRecord.getReferenceName() == correctReferenceName);
+
+	std::vector<float> referenceMatches{bamRecord.getReferenceMatchStatus()};
+	REQUIRE(referenceMatches.size() == correctRefMatchLength);
+	const float matchSum = std::accumulate(referenceMatches.cbegin(), referenceMatches.cend(), 0.0F);
+	REQUIRE( matchSum == static_cast<float>(correctReadLength) );
 
 	// reverse-complemented read
 	const std::string oneRecordRevBAMname("../tests/oneRecordRev.bam");
@@ -589,6 +633,7 @@ TEST_CASE("Reading individual BAM records works") {
 	};
 	constexpr hts_pos_t correctRevMapPosition{22550967};
 	constexpr hts_pos_t correctRevmRNAposition{22554617};
+	constexpr hts_pos_t correctRevReadLength{3326};
 	constexpr hts_pos_t correctRevMapEndPosition = correctRevmRNAposition;
 	std::unique_ptr<BGZF, void(*)(BGZF *)> orRevBAMfile(
 		bgzf_open(oneRecordRevBAMname.c_str(), &openMode),
@@ -604,10 +649,14 @@ TEST_CASE("Reading individual BAM records works") {
 			sam_hdr_destroy(samHeader);
 		}
 	);
-	isaSpace::CbamRecordDeleter localDeleterRev;
-	std::unique_ptr<bam1_t, isaSpace::CbamRecordDeleter> bamRevRecordPtr(bam_init1(), localDeleterRev);
+	std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRevRecordPtr(
+		bam_init1(),
+		[](bam1_t *bamRecord){
+			bam_destroy1(bamRecord);
+		}
+	);
 	nBytes = bam_read1( orRevBAMfile.get(), bamRevRecordPtr.get() );
-	isaSpace::BAMrecord bamRecordRev( bamRevRecordPtr, orRevBAMheader.get() );
+	isaSpace::BAMrecord bamRecordRev( bamRevRecordPtr.get(), orRevBAMheader.get() );
 	REQUIRE(nBytes > 0);
 	REQUIRE( bamRecordRev.isRevComp() );
 	REQUIRE(bamRecordRev.getReadName()    == correctRevReadName);
@@ -621,6 +670,7 @@ TEST_CASE("Reading individual BAM records works") {
 	);
 	REQUIRE(bamRecordRev.getReferenceName() == correctRevReferenceName);
 }
+
 /*
  Since HTSLIB is not in my control, I cannot test everything
  For example, testing the throw on wrong file name is iffy
