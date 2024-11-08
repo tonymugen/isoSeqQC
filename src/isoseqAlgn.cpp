@@ -216,17 +216,17 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const BAMrecord &alignment)
 constexpr uint16_t BAMrecord::sequenceMask_{0x00FF};
 constexpr uint16_t BAMrecord::qualityShift_{8};
 constexpr uint16_t BAMrecord::suppSecondaryAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
-constexpr std::array<float, 10> BAMrecord::queryConsumption_{
-	1.0, 1.0, 0.0, 0.0, 1.0,
-	0.0, 0.0, 1.0, 1.0, 0.0
+constexpr std::array<hts_pos_t, 10> BAMrecord::queryConsumption_{
+	1, 1, 0, 0, 1,
+	0, 0, 1, 1, 0
+};
+constexpr std::array<hts_pos_t, 10> BAMrecord::referenceConsumption_{
+	1, 0, 1, 1, 0,
+	0, 0, 1, 1, 0
 };
 constexpr std::array<float, 10> BAMrecord::sequenceMatch_{
 	1.0, 0.0, 0.0, 0.0, 0.0,
 	0.0, 0.0, 1.0, 0.0, 0.0
-};
-constexpr std::array<float, 10> BAMrecord::referenceConsumption_{
-	1.0, 0.0, 1.0, 1.0, 0.0,
-	0.0, 0.0, 1.0, 1.0, 0.0
 };
 
 BAMrecord::BAMrecord(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader) :
@@ -281,6 +281,32 @@ std::vector<float> BAMrecord::getReferenceMatchStatus() const {
 		std::copy( currCIGARfield.cbegin(), currCIGARfield.cend(), std::back_inserter(referenceMatchStatus) );
 	}
 	return referenceMatchStatus;
+}
+
+std::vector< std::pair<float, hts_pos_t> > BAMrecord::getReadCentricMatchStatus() const {
+	std::vector< std::pair<float, hts_pos_t> > readMatchStatus;
+	hts_pos_t referencePosition{mapStart_};
+	for (const auto &eachCIGAR : cigar_) {
+		if (queryConsumption_.at( bam_cigar_op(eachCIGAR) ) == 0) {
+			hts_pos_t iSIGLEN{0};
+			const hts_pos_t rcStatus{referenceConsumption_.at( bam_cigar_op(eachCIGAR) )};
+			while ( iSIGLEN < bam_cigar_oplen(eachCIGAR) ) {
+				referencePosition += rcStatus;
+				iSIGLEN++;
+			}
+			continue;
+		}
+		hts_pos_t iSIGLEN{0};
+		const float matchStatus{sequenceMatch_.at( bam_cigar_op(eachCIGAR) )};
+		const hts_pos_t rcStatus{referenceConsumption_.at( bam_cigar_op(eachCIGAR) )};
+		while ( iSIGLEN < bam_cigar_oplen(eachCIGAR) ) {
+			referencePosition += rcStatus;
+			readMatchStatus.emplace_back(matchStatus, referencePosition);
+			iSIGLEN++;
+		}
+	}
+
+	return readMatchStatus;
 }
 
 // BAMtoGenome methods

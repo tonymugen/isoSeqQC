@@ -459,17 +459,17 @@ namespace isaSpace {
 		 *
 		 * Can be indexed into using the CIGAR operation bit field. 
 		 */
-		static const std::array<float, 10> queryConsumption_;
+		static const std::array<hts_pos_t, 10> queryConsumption_;
+		/** \brief Reference consumption status array 
+		 *
+		 * Can be indexed into using the CIGAR operation bit field. 
+		 */
+		static const std::array<hts_pos_t, 10> referenceConsumption_;
 		/** \brief Sequence match status array 
 		 *
 		 * Can be indexed into using the CIGAR operation bit field. 
 		 */
 		static const std::array<float, 10> sequenceMatch_;
-		/** \brief Reference consumption status array 
-		 *
-		 * Can be indexed into using the CIGAR operation bit field. 
-		 */
-		static const std::array<float, 10> referenceConsumption_;
 		/** \brief Is this the primary alignment? */
 		bool isPrimary_{true};
 		/** \brief Is the read mapped? */
