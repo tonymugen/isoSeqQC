@@ -300,8 +300,8 @@ std::vector< std::pair<float, hts_pos_t> > BAMrecord::getReadCentricMatchStatus(
 		const float matchStatus{sequenceMatch_.at( bam_cigar_op(eachCIGAR) )};
 		const hts_pos_t rcStatus{referenceConsumption_.at( bam_cigar_op(eachCIGAR) )};
 		while ( iSIGLEN < bam_cigar_oplen(eachCIGAR) ) {
-			referencePosition += rcStatus;
 			readMatchStatus.emplace_back(matchStatus, referencePosition);
+			referencePosition += rcStatus;
 			iSIGLEN++;
 		}
 	}

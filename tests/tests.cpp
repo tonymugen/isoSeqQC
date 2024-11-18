@@ -18,7 +18,6 @@
  */
 
 #include <cstddef>
-#include <htslib/sam.h>
 #include <memory>
 #include <iterator>
 #include <algorithm>
@@ -31,8 +30,10 @@
 #include <sstream>
 #include <vector>
 
-#include "bgzf.h"
-#include "sam.h"
+#include <iostream>
+
+#include "htslib/bgzf.h"
+#include "htslib/sam.h"
 
 #include "isoseqAlgn.hpp"
 #include "helperFunctions.hpp"
@@ -575,6 +576,7 @@ TEST_CASE("Reading individual BAM records works") {
 	constexpr hts_pos_t correctMapEndPosition{2474684};
 	constexpr hts_pos_t correctReadLength{3419};
 	constexpr size_t    correctRefMatchLength{6250};
+	constexpr std::vector< std::pair<float, hts_pos_t> >::difference_type correctNjumps{8};
 
 	// read one record from the BAM file
 	constexpr char openMode{'r'};
@@ -619,8 +621,35 @@ TEST_CASE("Reading individual BAM records works") {
 
 	std::vector<float> referenceMatches{bamRecord.getReferenceMatchStatus()};
 	REQUIRE(referenceMatches.size() == correctRefMatchLength);
-	const float matchSum = std::accumulate(referenceMatches.cbegin(), referenceMatches.cend(), 0.0F);
+	float matchSum = std::accumulate(referenceMatches.cbegin(), referenceMatches.cend(), 0.0F);
 	REQUIRE( matchSum == static_cast<float>(correctReadLength) );
+
+	std::vector< std::pair<float, hts_pos_t> > readMatches{bamRecord.getReadCentricMatchStatus()};
+	REQUIRE(readMatches.front().second == correctMapPosition);
+	REQUIRE(
+		std::all_of(
+			readMatches.cbegin(),
+			readMatches.cend(),
+			[](const std::pair<float, hts_pos_t> &eachPair){return eachPair.first == 1.0;}
+		)
+	);
+	std::vector< std::pair<float, hts_pos_t> > posDiffs;
+	std::adjacent_difference(
+		readMatches.cbegin(),
+		readMatches.cend(),
+		std::back_inserter(posDiffs),
+		[](std::pair<float, hts_pos_t> prevVal, const std::pair<float, hts_pos_t> &eachPair){
+			prevVal.second -= eachPair.second;
+			return prevVal;
+		}
+	);
+	REQUIRE(
+		std::count_if(
+			std::next( posDiffs.cbegin() ),
+			posDiffs.cend(),
+			[](const std::pair<float, hts_pos_t> &eachPair){return eachPair.second > 1;}
+		) == correctNjumps
+	);
 
 	// reverse-complemented read
 	const std::string oneRecordRevBAMname("../tests/oneRecordRev.bam");
@@ -635,6 +664,9 @@ TEST_CASE("Reading individual BAM records works") {
 	constexpr hts_pos_t correctRevmRNAposition{22554617};
 	constexpr hts_pos_t correctRevReadLength{3326};
 	constexpr hts_pos_t correctRevMapEndPosition = correctRevmRNAposition;
+	constexpr size_t    correctRevRefMatchLength{3650};
+	constexpr std::vector< std::pair<float, hts_pos_t> >::difference_type correctNjumpsRev{5};
+
 	std::unique_ptr<BGZF, void(*)(BGZF *)> orRevBAMfile(
 		bgzf_open(oneRecordRevBAMname.c_str(), &openMode),
 		[](BGZF *bamFile) {
@@ -659,16 +691,138 @@ TEST_CASE("Reading individual BAM records works") {
 	isaSpace::BAMrecord bamRecordRev( bamRevRecordPtr.get(), orRevBAMheader.get() );
 	REQUIRE(nBytes > 0);
 	REQUIRE( bamRecordRev.isRevComp() );
-	REQUIRE(bamRecordRev.getReadName()    == correctRevReadName);
-	REQUIRE(bamRecordRev.getmRNAstart()   == correctRevmRNAposition);
-	REQUIRE(bamRecordRev.getMapStart()    == correctRevMapPosition);
-	REQUIRE(bamRecordRev.getMapEnd()      == correctRevMapEndPosition);
-	REQUIRE(bamRecordRev.getCIGARstring() == correctCIGARrev);
+	REQUIRE(bamRecordRev.getReadName()      == correctRevReadName);
+	REQUIRE(bamRecordRev.getmRNAstart()     == correctRevmRNAposition);
+	REQUIRE(bamRecordRev.getMapStart()      == correctRevMapPosition);
+	REQUIRE(bamRecordRev.getMapEnd()        == correctRevMapEndPosition);
+	REQUIRE(bamRecordRev.getReadLength()    == correctRevReadLength);
+	REQUIRE(bamRecordRev.getCIGARstring()   == correctCIGARrev);
+	REQUIRE(bamRecordRev.getReferenceName() == correctRevReferenceName);
+
 	const std::vector<uint32_t> cigarVecRev{bamRecordRev.getCIGARvector()};
 	REQUIRE(
 		std::equal( cigarVecRev.cbegin(), cigarVecRev.cend(), correctCIGVrev.cbegin() )
 	);
-	REQUIRE(bamRecordRev.getReferenceName() == correctRevReferenceName);
+
+	referenceMatches = bamRecordRev.getReferenceMatchStatus();
+	REQUIRE(referenceMatches.size() == correctRevRefMatchLength);
+	matchSum = std::accumulate(referenceMatches.cbegin(), referenceMatches.cend(), 0.0F);
+	REQUIRE( matchSum == static_cast<float>(correctRevReadLength) );
+
+	readMatches = bamRecordRev.getReadCentricMatchStatus();
+	REQUIRE(readMatches.front().second == correctRevMapPosition);
+	REQUIRE(
+		std::all_of(
+			readMatches.cbegin(),
+			readMatches.cend(),
+			[](const std::pair<float, hts_pos_t> &eachPair){return eachPair.first == 1.0;}
+		)
+	);
+	posDiffs.clear();
+	std::adjacent_difference(
+		readMatches.cbegin(),
+		readMatches.cend(),
+		std::back_inserter(posDiffs),
+		[](std::pair<float, hts_pos_t> prevVal, const std::pair<float, hts_pos_t> &eachPair){
+			prevVal.second -= eachPair.second;
+			return prevVal;
+		}
+	);
+	REQUIRE(
+		std::count_if(
+			std::next( posDiffs.cbegin() ),
+			posDiffs.cend(),
+			[](const std::pair<float, hts_pos_t> &eachPair){return eachPair.second > 1;}
+		) == correctNjumpsRev
+	);
+
+	// Read alignment with a soft clip
+	const std::string oneRecordSoftBAMname("../tests/oneRecordSC.bam");
+	const std::string correctSoftReadName("m54312U_201215_225530/1115205/ccs");
+	const std::string correctSoftReferenceName("NC_052528.2");
+	const std::string correctCIGARsoft("13S119M2003N264M1538N210M221N887M168N79M765N1176M67N906M701N64M440N164M");
+	constexpr std::array<uint32_t, 18> correctCIGVsoft{
+		2624,  7043,  1024, 11219, 14496, 1075,
+		18816, 12243, 1264, 2691,  14192, 3539,
+		3360,  24611, 4224, 32051, 1904,  212
+	};
+	constexpr hts_pos_t correctSoftMapPosition{6894852};
+	constexpr hts_pos_t correctSoftmRNAposition{6904624};
+	constexpr hts_pos_t correctSoftReadLength{3882};
+	constexpr hts_pos_t correctSoftMapEndPosition{6904624};
+	constexpr hts_pos_t correctSoftMisMatchCount{13};
+	constexpr size_t    correctSoftRefMatchLength{9772};
+	constexpr float     correctSoftMatchCount{3869};
+	constexpr std::vector< std::pair<float, hts_pos_t> >::difference_type correctNjumpsSoft{8};
+
+	std::unique_ptr<BGZF, void(*)(BGZF *)> orSoftBAMfile(
+		bgzf_open(oneRecordSoftBAMname.c_str(), &openMode),
+		[](BGZF *bamFile) {
+			bgzf_close(bamFile);
+		}
+	);
+
+	// must read the header first to get to the alignments
+	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> orSoftBAMheader(
+		bam_hdr_read( orSoftBAMfile.get() ),
+		[](sam_hdr_t *samHeader) {
+			sam_hdr_destroy(samHeader);
+		}
+	);
+	std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamSoftRecordPtr(
+		bam_init1(),
+		[](bam1_t *bamRecord){
+			bam_destroy1(bamRecord);
+		}
+	);
+	nBytes = bam_read1( orSoftBAMfile.get(), bamSoftRecordPtr.get() );
+	isaSpace::BAMrecord bamRecordSoft( bamSoftRecordPtr.get(), orSoftBAMheader.get() );
+	REQUIRE(nBytes > 0);
+	REQUIRE( bamRecordSoft.isRevComp() );
+	REQUIRE(bamRecordSoft.getReadName()      == correctSoftReadName);
+	REQUIRE(bamRecordSoft.getMapStart()      == correctSoftMapPosition);
+	REQUIRE(bamRecordSoft.getmRNAstart()     == correctSoftmRNAposition);
+	REQUIRE(bamRecordSoft.getMapEnd()        == correctSoftMapEndPosition);
+	REQUIRE(bamRecordSoft.getReadLength()    == correctSoftReadLength);
+	REQUIRE(bamRecordSoft.getCIGARstring()   == correctCIGARsoft);
+	REQUIRE(bamRecordSoft.getReferenceName() == correctSoftReferenceName);
+
+	const std::vector<uint32_t> cigarVecSoft{bamRecordSoft.getCIGARvector()};
+	REQUIRE(
+		std::equal( cigarVecSoft.cbegin(), cigarVecSoft.cend(), correctCIGVsoft.cbegin() )
+	);
+
+	referenceMatches = bamRecordSoft.getReferenceMatchStatus();
+	REQUIRE(referenceMatches.size() == correctSoftRefMatchLength);
+	matchSum = std::accumulate(referenceMatches.cbegin(), referenceMatches.cend(), 0.0F);
+	REQUIRE(matchSum == correctSoftMatchCount);
+
+	readMatches = bamRecordSoft.getReadCentricMatchStatus();
+	REQUIRE(readMatches.front().second == correctSoftMapPosition);
+	REQUIRE(
+		std::count_if(
+			readMatches.cbegin(),
+			readMatches.cend(),
+			[](const std::pair<float, hts_pos_t> &eachPair){return eachPair.first == 0.0;}
+		) == correctSoftMisMatchCount
+	);
+	posDiffs.clear();
+	std::adjacent_difference(
+		readMatches.cbegin(),
+		readMatches.cend(),
+		std::back_inserter(posDiffs),
+		[](std::pair<float, hts_pos_t> prevVal, const std::pair<float, hts_pos_t> &eachPair){
+			prevVal.second -= eachPair.second;
+			return prevVal;
+		}
+	);
+	REQUIRE(
+		std::count_if(
+			std::next( posDiffs.cbegin() ),
+			posDiffs.cend(),
+			[](const std::pair<float, hts_pos_t> &eachPair){return eachPair.second > 1;}
+		) == correctNjumpsSoft
+	);
 }
 
 /*
