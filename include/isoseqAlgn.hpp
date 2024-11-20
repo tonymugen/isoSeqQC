@@ -62,6 +62,21 @@ namespace isaSpace {
 		/** \brief Attribute list */
 		std::vector<std::string> attributeList;
 	};
+	/** \brief Delineates an interval in a mapped read 
+	 *
+	 * Provides a start and end of a read interval and corresponding
+	 * positions on the reference.
+	 */
+	struct MappedReadInterval {
+		/** \brief Base-0 start position on the read */
+		hts_pos_t readStart{-1};
+		/** \brief Base-0 end position on the read */
+		hts_pos_t readEnd{-1};
+		/** \brief Base-1 start position on the reference */
+		hts_pos_t referenceStart{-1};
+		/** \brief Base-1 end position on the reference */
+		hts_pos_t referenceEnd{-1};
+	};
 	/** \brief Exons covered by a read
 	 *
 	 * For a given alignment, stores information on exons covered by the read.
@@ -448,6 +463,17 @@ namespace isaSpace {
 		 * \return vector of match status/reference position pairs
 		 */
 		[[gnu::warn_unused_result]] std::vector< std::pair<float, hts_pos_t> > getReadCentricMatchStatus() const;
+		/** \brief Identify unmapped portions of the read 
+		 *
+		 * Returns a vector of poorly mapped portions of the read. Vector is empty if the read is mapped.
+		 * Uses a sliding window with a simple binomial model assuming 0.25 probability of identity between unrelated
+		 * and 0.99 between matching sequences per site.
+		 *
+		 * \param[in] windowSize size of the sliding window
+		 *
+		 * \return vector of poorly mapped region coordinates
+		 */
+		[[gnu::warn_unused_result]] std::vector<MappedReadInterval> getPoorlyMappedRegions(const std::vector< std::pair<float, hts_pos_t> >::difference_type &windowSize) const;
 	private:
 		/** \brief Mask isolating the sequence byte */
 		static const uint16_t sequenceMask_;

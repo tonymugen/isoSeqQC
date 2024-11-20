@@ -30,8 +30,6 @@
 #include <sstream>
 #include <vector>
 
-#include <iostream>
-
 #include "htslib/bgzf.h"
 #include "htslib/sam.h"
 
@@ -41,173 +39,198 @@
 #include "catch2/catch_test_macros.hpp"
 #include "catch2/matchers/catch_matchers.hpp"
 #include "catch2/matchers/catch_matchers_string.hpp"
+#include "catch2/catch_approx.hpp"
 
 TEST_CASE("Helper functions work") {
-	constexpr size_t nAttr{4};
-	std::array<std::string, nAttr> attributeArr{
-		"ID=rna-XM_043206943.1",
-		"Parent=gene-LOC6\\",
-		"526243",
-		"Dbxref=GeneID:6526243,Genbank:XM_043206943.1"
-	};
-	isaSpace::TokenAttibuteListPair testTokAttr;
-	std::copy(
-		attributeArr.cbegin(),
-		attributeArr.cend(),
-		std::back_inserter(testTokAttr.attributeList)
-	);
-	testTokAttr.tokenName = "Parent=";
-	const std::string parentResult{isaSpace::extractAttributeName(testTokAttr)};
-	REQUIRE(parentResult == "gene-LOC6\\;526243");
-	testTokAttr.tokenName = "Random=";
-	const std::string absentAttrResult{isaSpace::extractAttributeName(testTokAttr)};
-	REQUIRE( absentAttrResult.empty() );
+	SECTION("Extract attribute name") {
+		constexpr size_t nAttr{4};
+		std::array<std::string, nAttr> attributeArr{
+			"ID=rna-XM_043206943.1",
+			"Parent=gene-LOC6\\",
+			"526243",
+			"Dbxref=GeneID:6526243,Genbank:XM_043206943.1"
+		};
+		isaSpace::TokenAttibuteListPair testTokAttr;
+		std::copy(
+			attributeArr.cbegin(),
+			attributeArr.cend(),
+			std::back_inserter(testTokAttr.attributeList)
+		);
+		testTokAttr.tokenName = "Parent=";
+		const std::string parentResult{isaSpace::extractAttributeName(testTokAttr)};
+		REQUIRE(parentResult == "gene-LOC6\\;526243");
+		testTokAttr.tokenName = "Random=";
+		const std::string absentAttrResult{isaSpace::extractAttributeName(testTokAttr)};
+		REQUIRE( absentAttrResult.empty() );
+	}
 
-	// Range overlap function
-	std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr(
-		bam_init1(),
-		[](bam1_t *bamRecord){
-			bam_destroy1(bamRecord);
-		}
-	);
-	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> tstBAMheader(
-		sam_hdr_init(),
-		[](sam_hdr_t *samHeader) {
-			sam_hdr_destroy(samHeader);
-		}
-	);
-	const std::string tstSeq("GCCTACTGCAGTCCACAAGGAGGCCACATCCACAGCCACGACAACGGCGACATACGCCAATGGCAATCCCAATTCTAACGCAAATCCTAGCCAGAGTCAG");
-	const std::string tstQual(tstSeq.size(), '~');
-	const std::string tstQname("testQueryName");
-	constexpr uint16_t  flag{0};
-	constexpr int32_t   tid{0};
-	constexpr hts_pos_t position{49};
-	constexpr uint8_t   mapq{60};
-	const std::array<uint32_t, 1> tstCigar{bam_cigar_gen(tstSeq.size(), BAM_CMATCH)};
-
-	const int bamSetRes = bam_set1(
-		bamRecordPtr.get(),
-		tstQname.size(),
-		tstQname.c_str(),
-		flag,
-		tid,
-		position,
-		mapq,
-		tstCigar.size(),
-		tstCigar.data(),
-		0,
-		0,
-		static_cast<hts_pos_t>( tstSeq.size() ),
-		tstSeq.size(),
-		tstSeq.c_str(),
-		tstQual.c_str(),
-		0
-	);
-	int headRes = sam_hdr_add_line(tstBAMheader.get(), "HD", "VN", "1.6", "SO", "unknown", NULL); // NOLINT
-	headRes     = sam_hdr_add_line(tstBAMheader.get(), "SQ", "SN", "test", "LN", "100000", NULL); // NOLINT
-	isaSpace::BAMrecord tstBAMrecord( bamRecordPtr.get(), tstBAMheader.get() );
-	constexpr hts_pos_t earlyES{30};
-	constexpr hts_pos_t midES{90};
-	constexpr hts_pos_t lateES{245};
-	constexpr hts_pos_t earlyEE{45};
-	constexpr hts_pos_t midEE{110};
-	constexpr hts_pos_t lateEE{345};
-
-	isaSpace::ReadExonCoverage tstREC;
-	tstREC.readName               = "m54312U_201215_225530/460252/ccs";
-	tstREC.chromosomeName         = "NC_052529.2";
-	tstREC.strand                 = '+';
-	tstREC.geneName               = "gene-LOC6532627";
-	tstREC.firstExonStart         = earlyES;
-	tstREC.lastExonEnd            = lateEE;
-	tstREC.exonCoverageScores     = std::vector<float>{0.0, 0.93, 1.0, 0.5}; // NOLINT
-	tstREC.bestExonCoverageScores = std::vector<float>{0.5, 0.93, 1.0, 0.5}; // NOLINT
-
-	REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
-	tstREC.firstExonStart = earlyES;
-	tstREC.lastExonEnd    = midEE;
-	REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
-	tstREC.firstExonStart = earlyES;
-	tstREC.lastExonEnd    = earlyEE;
-	REQUIRE( !isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
-	tstREC.firstExonStart = midES;
-	tstREC.lastExonEnd    = lateEE;
-	REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
-	tstREC.firstExonStart = lateES;
-	tstREC.lastExonEnd    = lateEE;
-	REQUIRE( !isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
-	tstREC.firstExonStart = midES;
-	tstREC.lastExonEnd    = midEE;
-	REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
-
-	// stringify tests
-	const std::string correctStatsLine(
-		"m54312U_201215_225530/460252/ccs	NC_052529.2	+	2983523	2988359	2983523	2988359	0	2	2	0	"
-		"gene-LOC6532627	4	101	2980697	2988366	{0.000000,0.930000,1.000000,0.500000}	{0.500000,0.930000,1.000000,0.500000}"
-	);
-	isaSpace::ReadExonCoverage coverageStats;
-	coverageStats.readName                 = "m54312U_201215_225530/460252/ccs";
-	coverageStats.chromosomeName           = "NC_052529.2";
-	coverageStats.strand                   = '+';
-	coverageStats.alignmentStart           = 2983523; // NOLINT
-	coverageStats.alignmentEnd             = 2988359; // NOLINT
-	coverageStats.bestAlignmentStart       = 2983523; // NOLINT
-	coverageStats.bestAlignmentEnd         = 2988359; // NOLINT
-	coverageStats.firstSoftClipLength      = 0;
-	coverageStats.nSecondaryAlignments     = 2;
-	coverageStats.nGoodSecondaryAlignments = 2;
-	coverageStats.nLocalReversedAlignments = 0;
-	coverageStats.geneName                 = "gene-LOC6532627";
-	coverageStats.nExons                   = 4;       // NOLINT
-	coverageStats.firstExonLength          = 101;     // NOLINT
-	coverageStats.firstExonStart           = 2980697; // NOLINT
-	coverageStats.lastExonEnd              = 2988366; // NOLINT
-	coverageStats.exonCoverageScores       = std::vector<float>{0.0, 0.93, 1.0, 0.5}; // NOLINT
-	coverageStats.bestExonCoverageScores   = std::vector<float>{0.5, 0.93, 1.0, 0.5}; // NOLINT
-	REQUIRE(isaSpace::stringify(coverageStats) == correctStatsLine);
-
-	constexpr size_t recVecSize{7};
-	const std::vector<isaSpace::ReadExonCoverage> recVec(recVecSize, coverageStats);
-	const auto testVecResult{isaSpace::stringifyRCSrange(recVec.cbegin() + 1, recVec.cbegin() + 4)};
-	REQUIRE(testVecResult.size() == 3 * correctStatsLine.size() + 3); // the newlines are the extra three characters
-	REQUIRE(
-		std::includes(
-			testVecResult.cbegin(),
-			testVecResult.cend(),
-			correctStatsLine.cbegin(),
-			correctStatsLine.cend()
-		)
-	);
-
-	// thread ranges function
-	constexpr size_t nThreads{4};
-	const std::vector<isaSpace::ReadExonCoverage> testRECvec(11);
-	const auto threadRanges{isaSpace::makeThreadRanges(testRECvec, nThreads)};
-	REQUIRE(threadRanges.size() == nThreads);
-	REQUIRE(
-		std::all_of(
-			threadRanges.cbegin(),
-			threadRanges.cend(),
-			[](const std::pair<std::vector<isaSpace::ReadExonCoverage>::const_iterator, std::vector<isaSpace::ReadExonCoverage>::const_iterator> &currPair) {
-				return std::distance(currPair.first, currPair.second) >= 0;
+	SECTION("Test range overlap") {
+		std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr(
+			bam_init1(),
+			[](bam1_t *bamRecord){
+				bam_destroy1(bamRecord);
 			}
-		)
-	);
-	REQUIRE(
-		std::all_of(
-			threadRanges.cbegin(),
-			threadRanges.cend(),
-			[&testRECvec, &nThreads](const std::pair<std::vector<isaSpace::ReadExonCoverage>::const_iterator, std::vector<isaSpace::ReadExonCoverage>::const_iterator> &currPair) {
-				return std::distance(currPair.first, currPair.second) >= testRECvec.size() / nThreads;
+		);
+		std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> tstBAMheader(
+			sam_hdr_init(),
+			[](sam_hdr_t *samHeader) {
+				sam_hdr_destroy(samHeader);
 			}
-		)
-	);
-	REQUIRE(
-		std::distance(threadRanges.front().first, threadRanges.front().second) >
-		std::distance(threadRanges.back().first, threadRanges.back().second)
-	);
-	REQUIRE( threadRanges.front().first == testRECvec.cbegin() );
-	REQUIRE( threadRanges.back().second == testRECvec.cend() );
+		);
+		const std::string tstSeq("GCCTACTGCAGTCCACAAGGAGGCCACATCCACAGCCACGACAACGGCGACATACGCCAATGGCAATCCCAATTCTAACGCAAATCCTAGCCAGAGTCAG");
+		const std::string tstQual(tstSeq.size(), '~');
+		const std::string tstQname("testQueryName");
+		constexpr uint16_t  flag{0};
+		constexpr int32_t   tid{0};
+		constexpr hts_pos_t position{49};
+		constexpr uint8_t   mapq{60};
+		const std::array<uint32_t, 1> tstCigar{bam_cigar_gen(tstSeq.size(), BAM_CMATCH)};
+
+		const int bamSetRes = bam_set1(
+			bamRecordPtr.get(),
+			tstQname.size(),
+			tstQname.c_str(),
+			flag,
+			tid,
+			position,
+			mapq,
+			tstCigar.size(),
+			tstCigar.data(),
+			0,
+			0,
+			static_cast<hts_pos_t>( tstSeq.size() ),
+			tstSeq.size(),
+			tstSeq.c_str(),
+			tstQual.c_str(),
+			0
+		);
+		int headRes = sam_hdr_add_line(tstBAMheader.get(), "HD", "VN", "1.6", "SO", "unknown", NULL); // NOLINT
+		headRes     = sam_hdr_add_line(tstBAMheader.get(), "SQ", "SN", "test", "LN", "100000", NULL); // NOLINT
+		isaSpace::BAMrecord tstBAMrecord( bamRecordPtr.get(), tstBAMheader.get() );
+		constexpr hts_pos_t earlyES{30};
+		constexpr hts_pos_t midES{90};
+		constexpr hts_pos_t lateES{245};
+		constexpr hts_pos_t earlyEE{45};
+		constexpr hts_pos_t midEE{110};
+		constexpr hts_pos_t lateEE{345};
+
+		isaSpace::ReadExonCoverage tstREC;
+		tstREC.readName               = "m54312U_201215_225530/460252/ccs";
+		tstREC.chromosomeName         = "NC_052529.2";
+		tstREC.strand                 = '+';
+		tstREC.geneName               = "gene-LOC6532627";
+		tstREC.firstExonStart         = earlyES;
+		tstREC.lastExonEnd            = lateEE;
+		tstREC.exonCoverageScores     = std::vector<float>{0.0, 0.93, 1.0, 0.5}; // NOLINT
+		tstREC.bestExonCoverageScores = std::vector<float>{0.5, 0.93, 1.0, 0.5}; // NOLINT
+
+		REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
+		tstREC.firstExonStart = earlyES;
+		tstREC.lastExonEnd    = midEE;
+		REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
+		tstREC.firstExonStart = earlyES;
+		tstREC.lastExonEnd    = earlyEE;
+		REQUIRE( !isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
+		tstREC.firstExonStart = midES;
+		tstREC.lastExonEnd    = lateEE;
+		REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
+		tstREC.firstExonStart = lateES;
+		tstREC.lastExonEnd    = lateEE;
+		REQUIRE( !isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
+		tstREC.firstExonStart = midES;
+		tstREC.lastExonEnd    = midEE;
+		REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
+	}
+
+	SECTION("Simplified binomial log density") {
+		constexpr size_t vecLength{20};
+		constexpr std::vector< std::pair<float, hts_pos_t> >::difference_type subWindow{5};
+		constexpr float hiProb{0.99F};
+		constexpr float loProb{0.25F};
+		constexpr float correctLBDhi{-92.1034};
+		constexpr float correctLBDlo{-11.2467};
+        std::vector< std::pair<float, hts_pos_t> > window(vecLength, {0.0F, 0});
+
+        REQUIRE( isaSpace::binomialLogDensity(window.cbegin(), window.cend(), hiProb) == Catch::Approx(correctLBDhi) );
+		std::for_each(
+			window.begin(),
+			window.begin() + subWindow,
+			[](std::pair<float, hts_pos_t> &eachPair) {
+				eachPair.first = 1.0F;
+			}
+		);
+        REQUIRE( isaSpace::binomialLogDensity(window.cbegin(), window.cend(), loProb) == Catch::Approx(correctLBDlo) );
+	}
+
+	SECTION("Stringify functions") {
+		const std::string correctStatsLine(
+			"m54312U_201215_225530/460252/ccs	NC_052529.2	+	2983523	2988359	2983523	2988359	0	2	2	0	"
+			"gene-LOC6532627	4	101	2980697	2988366	{0.000000,0.930000,1.000000,0.500000}	{0.500000,0.930000,1.000000,0.500000}"
+		);
+		isaSpace::ReadExonCoverage coverageStats;
+		coverageStats.readName                 = "m54312U_201215_225530/460252/ccs";
+		coverageStats.chromosomeName           = "NC_052529.2";
+		coverageStats.strand                   = '+';
+		coverageStats.alignmentStart           = 2983523; // NOLINT
+		coverageStats.alignmentEnd             = 2988359; // NOLINT
+		coverageStats.bestAlignmentStart       = 2983523; // NOLINT
+		coverageStats.bestAlignmentEnd         = 2988359; // NOLINT
+		coverageStats.firstSoftClipLength      = 0;
+		coverageStats.nSecondaryAlignments     = 2;
+		coverageStats.nGoodSecondaryAlignments = 2;
+		coverageStats.nLocalReversedAlignments = 0;
+		coverageStats.geneName                 = "gene-LOC6532627";
+		coverageStats.nExons                   = 4;       // NOLINT
+		coverageStats.firstExonLength          = 101;     // NOLINT
+		coverageStats.firstExonStart           = 2980697; // NOLINT
+		coverageStats.lastExonEnd              = 2988366; // NOLINT
+		coverageStats.exonCoverageScores       = std::vector<float>{0.0, 0.93, 1.0, 0.5}; // NOLINT
+		coverageStats.bestExonCoverageScores   = std::vector<float>{0.5, 0.93, 1.0, 0.5}; // NOLINT
+		REQUIRE(isaSpace::stringify(coverageStats) == correctStatsLine);
+
+		constexpr size_t recVecSize{7};
+		const std::vector<isaSpace::ReadExonCoverage> recVec(recVecSize, coverageStats);
+		const auto testVecResult{isaSpace::stringifyRCSrange(recVec.cbegin() + 1, recVec.cbegin() + 4)};
+		REQUIRE(testVecResult.size() == 3 * correctStatsLine.size() + 3); // the newlines are the extra three characters
+		REQUIRE(
+			std::includes(
+				testVecResult.cbegin(),
+				testVecResult.cend(),
+				correctStatsLine.cbegin(),
+				correctStatsLine.cend()
+			)
+		);
+		// thread ranges function
+		constexpr size_t nThreads{4};
+		const std::vector<isaSpace::ReadExonCoverage> testRECvec(11);
+		const auto threadRanges{isaSpace::makeThreadRanges(testRECvec, nThreads)};
+		REQUIRE(threadRanges.size() == nThreads);
+		REQUIRE(
+			std::all_of(
+				threadRanges.cbegin(),
+				threadRanges.cend(),
+				[](const std::pair<std::vector<isaSpace::ReadExonCoverage>::const_iterator, std::vector<isaSpace::ReadExonCoverage>::const_iterator> &currPair) {
+					return std::distance(currPair.first, currPair.second) >= 0;
+				}
+			)
+		);
+		REQUIRE(
+			std::all_of(
+				threadRanges.cbegin(),
+				threadRanges.cend(),
+				[&testRECvec, &nThreads](const std::pair<std::vector<isaSpace::ReadExonCoverage>::const_iterator, std::vector<isaSpace::ReadExonCoverage>::const_iterator> &currPair) {
+					return std::distance(currPair.first, currPair.second) >= testRECvec.size() / nThreads;
+				}
+			)
+		);
+		REQUIRE(
+			std::distance(threadRanges.front().first, threadRanges.front().second) >
+			std::distance(threadRanges.back().first, threadRanges.back().second)
+		);
+		REQUIRE( threadRanges.front().first == testRECvec.cbegin() );
+		REQUIRE( threadRanges.back().second == testRECvec.cend() );
+	}
+
 }
 
 TEST_CASE("Exon range extraction works") {

@@ -33,6 +33,8 @@
 #include <utility> // for std::pair
 #include <vector>
 
+#include "htslib/hts.h"
+
 #include "isoseqAlgn.hpp"
 
 namespace isaSpace {
@@ -43,6 +45,7 @@ namespace isaSpace {
 	 * \param[in] tokenAndAttrList field token and the list of attributes
 	 */
 	[[gnu::warn_unused_result]] std::string extractAttributeName(const TokenAttibuteListPair &tokenAndAttrList);
+
 	/** \brief Test for range overlap
 	 *
 	 * Checks if the BAM record overlaps the nucleotide range covered by a gene.
@@ -52,6 +55,25 @@ namespace isaSpace {
 	 * \return `true` if there is overlap
 	 */
 	[[gnu::warn_unused_result]] bool rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &candidateBAM) noexcept;
+
+	/** \brief Simplified binomial log density 
+	 *
+	 * Calculates a simplified binomial log density for a given window and probability.
+	 * The iterator pair should point to a vector of match status and reference position pairs.
+	 * The log-density estimate excludes the constant \f$n \choose k \f$ element because the value
+	 * will only be used for BIC difference.
+	 *
+	 * \param[in] windowBegin iterator to window start
+	 * \param[in] windowEnd iterator to one past the window end
+	 * \param[in] probability probability of success
+	 *
+	 * \return log-density value
+	 */
+	[[gnu::warn_unused_result]] float binomialLogDensity(
+			const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin,
+			const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowEnd,
+			const float &probability);
+
 	/** \brief Convert `ReadExonCoverage` to string
 	 *
 	 * \param[in] readRecord individual read record
@@ -59,6 +81,7 @@ namespace isaSpace {
 	 * \return `std::string` with the read record elements, without a new line at the end
 	 */
 	[[gnu::warn_unused_result]] std::string stringify(const ReadExonCoverage &readRecord, char separator = '\t');
+
 	/** \brief Produce a string from a range of `ReadExonCoverage` elements
 	 *
 	 * \param[in] begin start iterator
@@ -66,6 +89,7 @@ namespace isaSpace {
 	 * \return string with coverage information
 	 */
 	[[gnu::warn_unused_result]] std::string stringifyRCSrange(const std::vector<ReadExonCoverage>::const_iterator &begin, const std::vector<ReadExonCoverage>::const_iterator &end);
+
 	/** \brief Make per-thread `ReadExonCoverage` vector ranges
 	 *
 	 * Constructs a vector of iterator pairs bracketing chunks of a vector to be processed in parallel.
@@ -77,6 +101,7 @@ namespace isaSpace {
 	 */
 	[[gnu::warn_unused_result]] std::vector< std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vector<ReadExonCoverage>::const_iterator> > 
 		makeThreadRanges(const std::vector<ReadExonCoverage> &targetVector, const size_t &threadCount);
+
 	/** \brief Command line parser
 	 *
 	 * Maps flags to values. Flags assumed to be of the form `--flag-name value`.
@@ -86,6 +111,7 @@ namespace isaSpace {
 	 * \return map of tags to values
 	 */
 	[[gnu::warn_unused_result]] std::unordered_map<std::string, std::string> parseCL(int &argc, char **argv);
+
 	/** \brief Extract parameters from parsed command line interface flags
 	 *
 	 * Extracts needed variable values, indexed by `std::string` encoded variable names.

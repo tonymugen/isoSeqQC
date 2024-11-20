@@ -309,6 +309,27 @@ std::vector< std::pair<float, hts_pos_t> > BAMrecord::getReadCentricMatchStatus(
 	return readMatchStatus;
 }
 
+std::vector<MappedReadInterval> BAMrecord::getPoorlyMappedRegions(const std::vector< std::pair<float, hts_pos_t> >::difference_type &windowSize) const {
+	std::vector<MappedReadInterval> result;
+	if (windowSize < 1) {
+		return result;
+	}
+	constexpr std::array<float, 2> binomialProbabilities{0.25, 0.99};
+	std::vector< std::array<float, 2> > windowLlikelihoods;
+	const auto readMatchStatus{this->getReadCentricMatchStatus()};
+	const auto realWindowSize{std::min( windowSize, std::distance( readMatchStatus.cbegin(), readMatchStatus.cend() ) )};
+	auto windowBeginIt = readMatchStatus.cbegin();
+	auto windowEndIt   = windowBeginIt + realWindowSize;
+	/*
+	windowLlikelihoods.emplace_back(
+		binomialLogDensity( windowBeginIt, windowEndIt, binomialProbabilities.at(0) ),
+		binomialLogDensity( windowBeginIt, windowEndIt, binomialProbabilities.at(1) )
+	);
+	*/
+
+	return result;
+}
+
 // BAMtoGenome methods
 constexpr char     BAMtoGenome::gffDelimiter_{'\t'};
 constexpr char     BAMtoGenome::attrDelimiter_{';'};
