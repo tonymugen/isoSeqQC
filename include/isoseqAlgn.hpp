@@ -43,8 +43,11 @@ namespace isaSpace {
 
 	struct BamAndGffFiles;
 	struct TokenAttibuteListPair;
+	struct MappedReadInterval;
+	struct BinomialWindowParameters;
 	struct ReadExonCoverage;
 	class  ExonGroup;
+	class  ReadMatchWindowBIC;
 	class  BAMrecord;
 	class  BAMtoGenome;
 
@@ -76,6 +79,19 @@ namespace isaSpace {
 		hts_pos_t referenceStart{-1};
 		/** \brief Base-1 end position on the reference */
 		hts_pos_t referenceEnd{-1};
+	};
+	/** \brief Binomial window parameters */
+	struct BinomialWindowParameters {
+		/** \brief Probability of success up to this window */
+		float currentProbability{0.0F};
+		/** \brief Probability of success to consider as an alternative 
+		 *
+		 * Test for a switch to this probability when assessing evidence for a change point 
+		 * between mapped and unmapped regions of a read.
+		 */
+		float alternativeProbability{0.0F};
+		/** \brief Window size */
+		std::vector< std::pair<float, hts_pos_t> >::difference_type windowSize{0};
 	};
 	/** \brief Exons covered by a read
 	 *
@@ -333,6 +349,70 @@ namespace isaSpace {
 		std::vector< std::pair<hts_pos_t, hts_pos_t> >::iterator firstExonIt_;
 		// TODO: to implement tracking transcripts, additional vector of iterators pointing to the next exon
 		// Keep the number the same and equal to the number of transcripts listed in the GFF
+	};
+
+	/** \brief Binomial BIC for a read window
+	 *
+	 * Estimates of the Bayesian information criterion for a window of the read-centric match status vector.
+	 * The BIC compares the model with the same success probability as the previous window to a change.
+	 * The success probabilities reflect identity between unrelated or matching sequences.
+	 */
+	class ReadMatchWindowBIC {
+	public:
+		/** \brief Default constructor */
+		ReadMatchWindowBIC() = default;
+		/** \brief Constructor with a read match vector window 
+		 *
+		 * \param[in] windowBegin start of a read match status vector
+		 * \param[in] windowParameters binomial probability parameters of the window
+		 */
+		ReadMatchWindowBIC(const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin, const BinomialWindowParameters &windowParameters);
+		/** \brief Copy constructor
+		 *
+		 * \param[in] toCopy object to copy
+		 */
+		ReadMatchWindowBIC(const ReadMatchWindowBIC &toCopy) = default;
+		/** \brief Copy assignment operator
+		 *
+		 * \param[in] toCopy object to copy
+		 * \return `ReadMatchWindowBIC` object
+		 */
+		ReadMatchWindowBIC& operator=(const ReadMatchWindowBIC &toCopy) = default;
+		/** \brief Move constructor
+		 *
+		 * \param[in] toMove object to move
+		 */
+		ReadMatchWindowBIC(ReadMatchWindowBIC &&toMove) noexcept = default;
+		/** \brief Move assignment operator
+		 *
+		 * \param[in] toMove object to move
+		 * \return `ReadMatchWindowBIC` object
+		 */
+		ReadMatchWindowBIC& operator=(ReadMatchWindowBIC &&toMove) noexcept = default;
+		/** \brief Destructor */
+		~ReadMatchWindowBIC() = default;
+
+		/** \brief Get BIC difference 
+		 *
+		 * Reports the BIC difference between the model with the same mapping quality
+		 * as the previous window and a model with a switch to a different quality.
+		 *
+		 * \return evidence for a switch in mapping quality
+		 */
+	 	[[gnu::warn_unused_result]] float getBICdifference() const noexcept;
+	private:
+		/** \brief Success probability for the previous window */
+		float leftProbability_{0.0F};
+		/** \brief Potential success probability for the current window 
+		 *
+		 * If the `leftProbability_` corresponds to an unmapped region,
+		 * takes the value of the mapped region probability and vice versa.
+		 */
+		float rightProbability_{0.0F};
+		/** \brief Read to reference match count */
+		float kSuccesses_{0.0F};
+		/** \brief Window size */
+		float nTrials_{0.0F};
 	};
 
 	/** \brief Summary of a BAM record set

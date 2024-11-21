@@ -76,23 +76,6 @@ bool isaSpace::rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &
 	return ( candidateBAM.getMapStart() <= geneInfo.lastExonEnd ) && ( candidateBAM.getMapEnd() >= geneInfo.firstExonStart );
 }
 
-float isaSpace::binomialLogDensity(
-			const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin,
-			const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowEnd,
-			const float &probability) {
-
-	const auto nTrials = static_cast<float>( std::distance(windowBegin, windowEnd) );
-	const auto kSuccesses = std::accumulate(
-		windowBegin,
-		windowEnd,
-		0.0F,
-		[](float currentValue, const std::pair<float, hts_pos_t> &eachElement) {
-			return currentValue + eachElement.first;
-		}
-	);
-	return kSuccesses * logf(probability) + (nTrials - kSuccesses) * logf(1.0F - probability);
-}
-
 std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separator) {
 	std::string coverages = std::accumulate(
 		readRecord.exonCoverageScores.cbegin(),

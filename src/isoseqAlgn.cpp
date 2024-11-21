@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 #include <memory>
 #include <iterator>
 #include <numeric>
@@ -212,7 +213,27 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const BAMrecord &alignment)
 	return qualityScores;
 }
 
-//BAMrecord methods
+// ReadMatchWindowBIC methods
+ReadMatchWindowBIC::ReadMatchWindowBIC(const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin, const BinomialWindowParameters &windowParameters) :
+						leftProbability_{windowParameters.currentProbability}, rightProbability_{windowParameters.alternativeProbability}, nTrials_{static_cast<float>(windowParameters.windowSize)} {
+	kSuccesses_ = std::accumulate(
+		windowBegin,
+		windowBegin + windowParameters.windowSize,
+		0.0F,
+		[](float currentValue, const std::pair<float, hts_pos_t> &eachElement) {
+			return currentValue + eachElement.first;
+		}
+	);
+}
+
+float ReadMatchWindowBIC::getBICdifference() const noexcept {
+	const float jFailures = nTrials_ - kSuccesses_;
+	const float leftLlik  = kSuccesses_ * logf(leftProbability_) + jFailures * logf(1.0F - leftProbability_);
+	const float rightLlik = kSuccesses_ * logf(rightProbability_) + jFailures * logf(1.0F - rightProbability_);
+    return logf(nTrials_) + 2.0F * (rightLlik - leftLlik);
+};
+
+// BAMrecord methods
 constexpr uint16_t BAMrecord::sequenceMask_{0x00FF};
 constexpr uint16_t BAMrecord::qualityShift_{8};
 constexpr uint16_t BAMrecord::suppSecondaryAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};

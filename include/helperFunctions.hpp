@@ -33,8 +33,6 @@
 #include <utility> // for std::pair
 #include <vector>
 
-#include "htslib/hts.h"
-
 #include "isoseqAlgn.hpp"
 
 namespace isaSpace {
@@ -55,24 +53,6 @@ namespace isaSpace {
 	 * \return `true` if there is overlap
 	 */
 	[[gnu::warn_unused_result]] bool rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &candidateBAM) noexcept;
-
-	/** \brief Simplified binomial log density 
-	 *
-	 * Calculates a simplified binomial log density for a given window and probability.
-	 * The iterator pair should point to a vector of match status and reference position pairs.
-	 * The log-density estimate excludes the constant \f$n \choose k \f$ element because the value
-	 * will only be used for BIC difference.
-	 *
-	 * \param[in] windowBegin iterator to window start
-	 * \param[in] windowEnd iterator to one past the window end
-	 * \param[in] probability probability of success
-	 *
-	 * \return log-density value
-	 */
-	[[gnu::warn_unused_result]] float binomialLogDensity(
-			const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin,
-			const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowEnd,
-			const float &probability);
 
 	/** \brief Convert `ReadExonCoverage` to string
 	 *

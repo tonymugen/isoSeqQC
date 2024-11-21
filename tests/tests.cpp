@@ -142,26 +142,6 @@ TEST_CASE("Helper functions work") {
 		REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
 	}
 
-	SECTION("Simplified binomial log density") {
-		constexpr size_t vecLength{20};
-		constexpr std::vector< std::pair<float, hts_pos_t> >::difference_type subWindow{5};
-		constexpr float hiProb{0.99F};
-		constexpr float loProb{0.25F};
-		constexpr float correctLBDhi{-92.1034};
-		constexpr float correctLBDlo{-11.2467};
-        std::vector< std::pair<float, hts_pos_t> > window(vecLength, {0.0F, 0});
-
-        REQUIRE( isaSpace::binomialLogDensity(window.cbegin(), window.cend(), hiProb) == Catch::Approx(correctLBDhi) );
-		std::for_each(
-			window.begin(),
-			window.begin() + subWindow,
-			[](std::pair<float, hts_pos_t> &eachPair) {
-				eachPair.first = 1.0F;
-			}
-		);
-        REQUIRE( isaSpace::binomialLogDensity(window.cbegin(), window.cend(), loProb) == Catch::Approx(correctLBDlo) );
-	}
-
 	SECTION("Stringify functions") {
 		const std::string correctStatsLine(
 			"m54312U_201215_225530/460252/ccs	NC_052529.2	+	2983523	2988359	2983523	2988359	0	2	2	0	"
@@ -581,6 +561,36 @@ TEST_CASE("Exon range extraction works") {
 		isaSpace::ExonGroup(testGeneName, strand, emptyExonSet),
 		Catch::Matchers::StartsWith("ERROR: set of exons is empty in")
 	);
+}
+
+TEST_CASE("Read match window statistics work") {
+	constexpr size_t vecLength{20};
+	constexpr std::vector< std::pair<float, hts_pos_t> >::difference_type subWindow{5};
+	constexpr float hiProb{0.99F};
+	constexpr float loProb{0.25F};
+	isaSpace::BinomialWindowParameters windowParameters;
+	windowParameters.alternativeProbability = loProb;
+	windowParameters.currentProbability     = hiProb;
+	windowParameters.windowSize             = vecLength;
+
+	constexpr float correctBIChi{118.758};
+	constexpr float correctBIClo{-112.767};
+	std::vector< std::pair<float, hts_pos_t> > window(vecLength, {0.0F, 0});
+	std::for_each(
+		window.begin(),
+		window.begin() + subWindow,
+		[](std::pair<float, hts_pos_t> &eachPair) {
+			eachPair.first = 1.0F;
+		}
+	);
+
+	isaSpace::ReadMatchWindowBIC hiProbSwitch(window.cbegin(), windowParameters);
+	REQUIRE( hiProbSwitch.getBICdifference() == Catch::Approx(correctBIChi) );
+
+	windowParameters.currentProbability     = loProb;
+	windowParameters.alternativeProbability = hiProb;
+	isaSpace::ReadMatchWindowBIC loProbSwitch(window.cbegin(), windowParameters);
+	REQUIRE( loProbSwitch.getBICdifference() == Catch::Approx(correctBIClo) );
 }
 
 TEST_CASE("Reading individual BAM records works") {
