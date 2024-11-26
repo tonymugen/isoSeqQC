@@ -54,6 +54,17 @@ namespace isaSpace {
 	 */
 	[[gnu::warn_unused_result]] bool rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &candidateBAM) noexcept;
 
+	/** \brief Identify peaks in numerical data 
+	 *
+	 * Returns iterators to the elements in a vector that correspond to peaks above the provided threshold.
+	 *
+	 * \param[in] values vector of values
+	 * \param[in] threshold value that must be exceed for a peak call
+	 * \return vector of iterators to peak elements
+	 *
+	 */
+	[[gnu::warn_unused_result]] std::vector<std::vector<float>::const_iterator> getPeaks(const std::vector<float> &values, const float &threshold);
+
 	/** \brief Convert `ReadExonCoverage` to string
 	 *
 	 * \param[in] readRecord individual read record

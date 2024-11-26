@@ -142,6 +142,17 @@ TEST_CASE("Helper functions work") {
 		REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
 	}
 
+	SECTION("Peak and valley functions") {
+		// Peaks function
+		// one peak
+        const std::vector<float> values = {1.0F, 2.0F, 3.0F, 4.0F, 5.0F, 4.0F, 3.0F, 2.0F, 1.0F};
+        constexpr float threshold{3.0F};
+		constexpr float correctPeakValue1{5.0F};
+        std::vector<std::vector<float>::const_iterator> peaks1{isaSpace::getPeaks(values, threshold)};
+        REQUIRE(peaks1.size() == 1);
+        REQUIRE(*peaks1.front() == correctPeakValue1);
+	}
+
 	SECTION("Stringify functions") {
 		const std::string correctStatsLine(
 			"m54312U_201215_225530/460252/ccs	NC_052529.2	+	2983523	2988359	2983523	2988359	0	2	2	0	"

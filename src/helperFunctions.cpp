@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iterator>
 #include <numeric>
 #include <string>
@@ -74,6 +75,22 @@ std::string isaSpace::extractAttributeName(const TokenAttibuteListPair &tokenAnd
 
 bool isaSpace::rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &candidateBAM) noexcept {
 	return ( candidateBAM.getMapStart() <= geneInfo.lastExonEnd ) && ( candidateBAM.getMapEnd() >= geneInfo.firstExonStart );
+}
+
+std::vector<std::vector<float>::const_iterator> isaSpace::getPeaks(const std::vector<float> &values, const float &threshold) {
+	std::vector<std::vector<float>::const_iterator> result;
+	auto peakIt = values.cbegin();
+	while ( peakIt != values.cend() ) {
+		const auto peakBeginIt = std::find_if(peakIt,      values.cend(), [&threshold](float value){return value >= threshold;});
+		const auto peakEndIt   = std::find_if(peakBeginIt, values.cend(), [&threshold](float value){return value < threshold;});
+		auto peakIt            = std::max_element(peakBeginIt, peakEndIt);
+		if ( peakIt != values.cend() ) {
+			result.push_back(peakIt);
+		}
+		peakIt = peakEndIt;
+	}
+
+	return result;
 }
 
 std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separator) {

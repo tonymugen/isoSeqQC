@@ -330,23 +330,40 @@ std::vector< std::pair<float, hts_pos_t> > BAMrecord::getReadCentricMatchStatus(
 	return readMatchStatus;
 }
 
-std::vector<MappedReadInterval> BAMrecord::getPoorlyMappedRegions(const std::vector< std::pair<float, hts_pos_t> >::difference_type &windowSize) const {
+std::vector<MappedReadInterval> BAMrecord::getPoorlyMappedRegions(const BinomialWindowParameters &windowParameters) const {
 	std::vector<MappedReadInterval> result;
-	if (windowSize < 1) {
+	if (windowParameters.windowSize < 1) {
 		return result;
 	}
-	constexpr std::array<float, 2> binomialProbabilities{0.25, 0.99};
-	std::vector< std::array<float, 2> > windowLlikelihoods;
 	const auto readMatchStatus{this->getReadCentricMatchStatus()};
-	const auto realWindowSize{std::min( windowSize, std::distance( readMatchStatus.cbegin(), readMatchStatus.cend() ) )};
+	const float unmappedProbability{std::min(windowParameters.currentProbability, windowParameters.alternativeProbability)};
+	const float mappedProbability{std::max(windowParameters.currentProbability, windowParameters.alternativeProbability)};
+	const auto actualWindowSize{std::min( windowParameters.windowSize, std::distance( readMatchStatus.cbegin(), readMatchStatus.cend() ) )};
+
 	auto windowBeginIt = readMatchStatus.cbegin();
-	auto windowEndIt   = windowBeginIt + realWindowSize;
-	/*
-	windowLlikelihoods.emplace_back(
-		binomialLogDensity( windowBeginIt, windowEndIt, binomialProbabilities.at(0) ),
-		binomialLogDensity( windowBeginIt, windowEndIt, binomialProbabilities.at(1) )
-	);
-	*/
+	BinomialWindowParameters currentWindowParameters;
+	currentWindowParameters.currentProbability     = unmappedProbability;
+	currentWindowParameters.alternativeProbability = mappedProbability;
+	currentWindowParameters.windowSize             = actualWindowSize;
+	ReadMatchWindowBIC initialWindowBIC(windowBeginIt, currentWindowParameters);
+	const float initialBICdiff{initialWindowBIC.getBICdifference()};
+
+	std::vector<float> windowBICdiffs;
+	windowBICdiffs.push_back(initialBICdiff);
+	const auto lastWindowIt = readMatchStatus.cend() - actualWindowSize;
+	while (windowBeginIt != lastWindowIt) {
+		ReadMatchWindowBIC currentWindowBIC(windowBeginIt, currentWindowParameters);
+		windowBICdiffs.push_back( currentWindowBIC.getBICdifference() );
+		++windowBeginIt;
+	}
+
+	// Calculate BIC differences with a window size lag. Peaks and valleys will correspond to change points.
+	const auto actualBICwindowSize{std::min( actualWindowSize, std::distance( windowBICdiffs.cbegin(), windowBICdiffs.cend() ) )};
+	const auto lastBICwindowIt = windowBICdiffs.cend() - actualBICwindowSize;
+	std::vector<float> windowDeltaBICdiffs;
+	for (auto windowBICdiffsIt = windowBICdiffs.begin(); windowBICdiffsIt != lastBICwindowIt; ++windowBICdiffsIt) {
+		windowBICdiffs.push_back( *windowBICdiffsIt - *std::next(windowBICdiffsIt, actualWindowSize) );
+	}
 
 	return result;
 }

@@ -90,6 +90,8 @@ namespace isaSpace {
 		 * between mapped and unmapped regions of a read.
 		 */
 		float alternativeProbability{0.0F};
+		/** \brief Minimum difference in BIC between windows with current and alternative probabilities */
+		float bicDifferenceCutOff{0.0F};
 		/** \brief Window size */
 		std::vector< std::pair<float, hts_pos_t> >::difference_type windowSize{0};
 	};
@@ -546,14 +548,12 @@ namespace isaSpace {
 		/** \brief Identify unmapped portions of the read 
 		 *
 		 * Returns a vector of poorly mapped portions of the read. Vector is empty if the read is mapped.
-		 * Uses a sliding window with a simple binomial model assuming 0.25 probability of identity between unrelated
-		 * and 0.99 between matching sequences per site.
 		 *
-		 * \param[in] windowSize size of the sliding window
+		 * \param[in] windowParameters window parameters: size and the mapped/unmapped region binomial probabilities 
 		 *
 		 * \return vector of poorly mapped region coordinates
 		 */
-		[[gnu::warn_unused_result]] std::vector<MappedReadInterval> getPoorlyMappedRegions(const std::vector< std::pair<float, hts_pos_t> >::difference_type &windowSize) const;
+		[[gnu::warn_unused_result]] std::vector<MappedReadInterval> getPoorlyMappedRegions(const BinomialWindowParameters &windowParameters) const;
 	private:
 		/** \brief Mask isolating the sequence byte */
 		static const uint16_t sequenceMask_;
