@@ -59,11 +59,22 @@ namespace isaSpace {
 	 * Returns iterators to the elements in a vector that correspond to peaks above the provided threshold.
 	 *
 	 * \param[in] values vector of values
-	 * \param[in] threshold value that must be exceed for a peak call
+	 * \param[in] threshold value that must be exceeded for a peak call
 	 * \return vector of iterators to peak elements
 	 *
 	 */
 	[[gnu::warn_unused_result]] std::vector<std::vector<float>::const_iterator> getPeaks(const std::vector<float> &values, const float &threshold);
+
+	/** \brief Identify valleys in numerical data 
+	 *
+	 * Returns iterators to the elements in a vector that correspond to valleys below the provided threshold.
+	 *
+	 * \param[in] values vector of values
+	 * \param[in] threshold value that must exceed the valley values
+	 * \return vector of iterators to valley elements
+	 *
+	 */
+	[[gnu::warn_unused_result]] std::vector<std::vector<float>::const_iterator> getValleys(const std::vector<float> &values, const float &threshold);
 
 	/** \brief Convert `ReadExonCoverage` to string
 	 *

@@ -29,7 +29,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <functional>
 #include <iterator>
 #include <numeric>
 #include <string>
@@ -83,9 +82,25 @@ std::vector<std::vector<float>::const_iterator> isaSpace::getPeaks(const std::ve
 	while ( peakIt != values.cend() ) {
 		const auto peakBeginIt = std::find_if(peakIt,      values.cend(), [&threshold](float value){return value >= threshold;});
 		const auto peakEndIt   = std::find_if(peakBeginIt, values.cend(), [&threshold](float value){return value < threshold;});
-		auto peakIt            = std::max_element(peakBeginIt, peakEndIt);
-		if ( peakIt != values.cend() ) {
-			result.push_back(peakIt);
+		auto localPeakIt            = std::max_element(peakBeginIt, peakEndIt);
+		if ( localPeakIt != values.cend() ) {
+			result.push_back(localPeakIt);
+		}
+		peakIt = peakEndIt;
+	}
+
+	return result;
+}
+
+std::vector<std::vector<float>::const_iterator> isaSpace::getValleys(const std::vector<float> &values, const float &threshold) {
+	std::vector<std::vector<float>::const_iterator> result;
+	auto peakIt = values.cbegin();
+	while ( peakIt != values.cend() ) {
+		const auto peakBeginIt = std::find_if(peakIt,      values.cend(), [&threshold](float value){return value <= threshold;});
+		const auto peakEndIt   = std::find_if(peakBeginIt, values.cend(), [&threshold](float value){return value > threshold;});
+		auto localPeakIt            = std::min_element(peakBeginIt, peakEndIt);
+		if ( localPeakIt != values.cend() ) {
+			result.push_back(localPeakIt);
 		}
 		peakIt = peakEndIt;
 	}
