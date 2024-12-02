@@ -57,6 +57,7 @@ namespace isaSpace {
 	/** \brief Identify peaks in numerical data 
 	 *
 	 * Returns iterators to the elements in a vector that correspond to peaks above the provided threshold.
+	 * Last element is the `const_iterator` to the end of the vector unless it is empty, and is the only element if there are no peaks.
 	 *
 	 * \param[in] values vector of values
 	 * \param[in] threshold value that must be exceeded for a peak call
@@ -68,6 +69,7 @@ namespace isaSpace {
 	/** \brief Identify valleys in numerical data 
 	 *
 	 * Returns iterators to the elements in a vector that correspond to valleys below the provided threshold.
+	 * Last element is the `const_iterator` to the end of the vector unless it is empty, and is the only element if there are no valleys.
 	 *
 	 * \param[in] values vector of values
 	 * \param[in] threshold value that must exceed the valley values

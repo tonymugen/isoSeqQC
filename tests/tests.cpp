@@ -149,22 +149,25 @@ TEST_CASE("Helper functions work") {
         constexpr float threshold1{3.0F};
 		constexpr float correctPeakValue1{5.0F};
         std::vector<std::vector<float>::const_iterator> peaks1{isaSpace::getPeaks(values1, threshold1)};
-        REQUIRE(peaks1.size() == 1);
+        REQUIRE(peaks1.size()   == 2);
         REQUIRE(*peaks1.front() == correctPeakValue1);
+		REQUIRE( peaks1.back()  == values1.cend() );
 
 		// multiple peaks
         const std::vector<float> values2 = {1.0F, 2.0F, 3.0F, 4.0F, 5.0F, 4.0F, 3.0F, 6.0F, 7.0F, 6.0F, 5.0F, 4.0F, 3.0F, 2.0F, 1.0F};
         constexpr float threshold2{4.0F};
 		constexpr std::array<float, 2> correctPeakValues2{5.0F, 7.0F};
         std::vector<std::vector<float>::const_iterator> peaks2 = isaSpace::getPeaks(values2, threshold2);
-        REQUIRE( peaks2.size() == correctPeakValues2.size() );
+        REQUIRE(peaks2.size()  == correctPeakValues2.size() + 1);
         REQUIRE( *peaks2.at(0) == correctPeakValues2.at(0) );
         REQUIRE( *peaks2.at(1) == correctPeakValues2.at(1) );
+		REQUIRE( peaks2.back() == values2.cend() );
 
 		// no peaks above the threshold
 		constexpr float highThreshold{10.0F};
         std::vector<std::vector<float>::const_iterator> peaks3{isaSpace::getPeaks(values1, highThreshold)};
-		REQUIRE( peaks3.empty() );
+		REQUIRE(peaks3.size() == 1);
+		REQUIRE( peaks3.back() == values1.cend() );
 
 		// empty input vector
 		const std::vector<float> emptyValues;
@@ -177,22 +180,25 @@ TEST_CASE("Helper functions work") {
         constexpr float vThreshold1{-3.0F};
 		constexpr float correctValleyValue1{-5.0F};
         std::vector<std::vector<float>::const_iterator> valleys1{isaSpace::getValleys(vValues1, vThreshold1)};
-        REQUIRE(valleys1.size() == 1);
+        REQUIRE(valleys1.size()   == 2);
         REQUIRE(*valleys1.front() == correctValleyValue1);
+        REQUIRE( valleys1.back()  == vValues1.cend() );
 
 		// multiple peaks
         const std::vector<float> vValues2 = {-1.0F, -2.0F, -3.0F, -4.0F, -5.0F, -4.0F, -3.0F, -6.0F, -7.0F, -6.0F, -5.0F, -4.0F, -3.0F, -2.0F, -1.0F};
         constexpr float vThreshold2{-4.0F};
 		constexpr std::array<float, 2> correctValleyValues2{-5.0F, -7.0F};
         std::vector<std::vector<float>::const_iterator> valleys2 = isaSpace::getValleys(vValues2, vThreshold2);
-        REQUIRE( valleys2.size() == correctValleyValues2.size() );
+        REQUIRE(valleys2.size()  == correctValleyValues2.size() + 1);
         REQUIRE( *valleys2.at(0) == correctValleyValues2.at(0) );
         REQUIRE( *valleys2.at(1) == correctValleyValues2.at(1) );
+        REQUIRE( valleys2.back()  == vValues2.cend() );
 
 		// no peaks above the threshold
 		constexpr float lowThreshold{-10.0F};
         std::vector<std::vector<float>::const_iterator> valleys3{isaSpace::getValleys(vValues1, lowThreshold)};
-		REQUIRE( valleys3.empty() );
+		REQUIRE(valleys3.size() == 1);
+		REQUIRE( valleys3.back() == vValues1.cend() );
 
 		// empty input vector
         std::vector<std::vector<float>::const_iterator> valleys4{isaSpace::getValleys(emptyValues, vThreshold1)};
