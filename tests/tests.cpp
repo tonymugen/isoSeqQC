@@ -632,8 +632,8 @@ TEST_CASE("Read match window statistics work") {
 	constexpr float hiProb{0.99F};
 	constexpr float loProb{0.25F};
 	isaSpace::BinomialWindowParameters windowParameters;
-	windowParameters.alternativeProbability = loProb;
-	windowParameters.currentProbability     = hiProb;
+	windowParameters.currentProbability     = loProb;
+	windowParameters.alternativeProbability = hiProb;
 	windowParameters.windowSize             = vecLength;
 
 	constexpr float correctBIChi{118.758};
@@ -650,8 +650,8 @@ TEST_CASE("Read match window statistics work") {
 	isaSpace::ReadMatchWindowBIC hiProbSwitch(window.cbegin(), windowParameters);
 	REQUIRE( hiProbSwitch.getBICdifference() == Catch::Approx(correctBIChi) );
 
-	windowParameters.currentProbability     = loProb;
-	windowParameters.alternativeProbability = hiProb;
+	windowParameters.currentProbability     = hiProb;
+	windowParameters.alternativeProbability = loProb;
 	isaSpace::ReadMatchWindowBIC loProbSwitch(window.cbegin(), windowParameters);
 	REQUIRE( loProbSwitch.getBICdifference() == Catch::Approx(correctBIClo) );
 }
@@ -919,6 +919,41 @@ TEST_CASE("Reading individual BAM records works") {
 			[](const std::pair<float, hts_pos_t> &eachPair){return eachPair.second > 1;}
 		) == correctNjumpsSoft
 	);
+
+	// Poorly mapped region at the front
+	const std::string longSoftClipBAMname("../tests/longSC.bam");
+	std::unique_ptr<BGZF, void(*)(BGZF *)> longSoftClipBAMfile(
+		bgzf_open(longSoftClipBAMname.c_str(), &openMode),
+		[](BGZF *bamFile) {
+			bgzf_close(bamFile);
+		}
+	);
+	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> longSoftClipBAMheader(
+		bam_hdr_read( longSoftClipBAMfile.get() ),
+		[](sam_hdr_t *samHeader) {
+			sam_hdr_destroy(samHeader);
+		}
+	);
+	std::unique_ptr<bam1_t, void(*)(bam1_t *)> longSoftClipRecordPtr(
+		bam_init1(),
+		[](bam1_t *bamRecord){
+			bam_destroy1(bamRecord);
+		}
+	);
+	nBytes = bam_read1( longSoftClipBAMfile.get(), longSoftClipRecordPtr.get() );
+	isaSpace::BAMrecord longSoftClipBAM( longSoftClipRecordPtr.get(), longSoftClipBAMheader.get() );
+	isaSpace::BinomialWindowParameters binomialParams;
+	binomialParams.windowSize             = 50;     // NOLINT
+	binomialParams.currentProbability     = 0.25F;  // NOLINT
+	binomialParams.alternativeProbability = 0.99F;  // NOLINT
+	binomialParams.bicDifferenceThreshold = 200.0F; // NOLINT
+
+	constexpr hts_pos_t correctSoftClipSize{258};
+	const auto poorlyMappedRegion{longSoftClipBAM.getPoorlyMappedRegions(binomialParams)};
+	REQUIRE(poorlyMappedRegion.size() == 1);
+	REQUIRE(poorlyMappedRegion.front().referenceStart == poorlyMappedRegion.front().referenceEnd);
+	REQUIRE(poorlyMappedRegion.front().readStart == 0);
+	REQUIRE(poorlyMappedRegion.front().readEnd == correctSoftClipSize);
 }
 
 /*

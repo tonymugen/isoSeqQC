@@ -27,9 +27,9 @@
  *
  */
 
-#include <algorithm>
 #include <cstring>
 #include <cmath>
+#include <algorithm>
 #include <memory>
 #include <iterator>
 #include <numeric>
@@ -228,9 +228,9 @@ ReadMatchWindowBIC::ReadMatchWindowBIC(const std::vector< std::pair<float, hts_p
 
 float ReadMatchWindowBIC::getBICdifference() const noexcept {
 	const float jFailures = nTrials_ - kSuccesses_;
-	const float leftLlik  = kSuccesses_ * logf(leftProbability_) + jFailures * logf(1.0F - leftProbability_);
+	const float leftLlik  = kSuccesses_ * logf(leftProbability_)  + jFailures * logf(1.0F - leftProbability_);
 	const float rightLlik = kSuccesses_ * logf(rightProbability_) + jFailures * logf(1.0F - rightProbability_);
-    return logf(nTrials_) + 2.0F * (rightLlik - leftLlik);
+    return logf(nTrials_) + 2.0F * (leftLlik - rightLlik);
 };
 
 // BAMrecord methods
@@ -332,10 +332,11 @@ std::vector< std::pair<float, hts_pos_t> > BAMrecord::getReadCentricMatchStatus(
 
 std::vector<MappedReadInterval> BAMrecord::getPoorlyMappedRegions(const BinomialWindowParameters &windowParameters) const {
 	std::vector<MappedReadInterval> result;
-	if (windowParameters.windowSize < 1) {
+	const auto readMatchStatus{this->getReadCentricMatchStatus()};
+	if ( (windowParameters.windowSize < 1) || ( readMatchStatus.empty() ) ) {
 		return result;
 	}
-	const auto readMatchStatus{this->getReadCentricMatchStatus()};
+
 	const float unmappedProbability{std::min(windowParameters.currentProbability, windowParameters.alternativeProbability)};
 	const float mappedProbability{std::max(windowParameters.currentProbability, windowParameters.alternativeProbability)};
 	const auto actualWindowSize{std::min( windowParameters.windowSize, std::distance( readMatchStatus.cbegin(), readMatchStatus.cend() ) )};
@@ -362,9 +363,49 @@ std::vector<MappedReadInterval> BAMrecord::getPoorlyMappedRegions(const Binomial
 	const auto lastBICwindowIt = windowBICdiffs.cend() - actualBICwindowSize;
 	std::vector<float> windowDeltaBICdiffs;
 	for (auto windowBICdiffsIt = windowBICdiffs.begin(); windowBICdiffsIt != lastBICwindowIt; ++windowBICdiffsIt) {
-		windowBICdiffs.push_back( *windowBICdiffsIt - *std::next(windowBICdiffsIt, actualWindowSize) );
+		windowDeltaBICdiffs.push_back( *windowBICdiffsIt - *std::next(windowBICdiffsIt, actualWindowSize) );
 	}
 
+	// find change points
+	const auto bicDiffPeaks{getPeaks(windowDeltaBICdiffs, windowParameters.bicDifferenceThreshold)};
+	const auto bicDiffValleys{getValleys(windowDeltaBICdiffs, -windowParameters.bicDifferenceThreshold)};
+
+	// use the change points to find misaligned regions
+	auto peaksIt               = bicDiffPeaks.cbegin();
+	auto valleysIt             = bicDiffValleys.cbegin();
+	auto currentPeakDistance   = std::distance(windowDeltaBICdiffs.cbegin(), *peaksIt);
+	auto currentValleyDistance = std::distance(windowDeltaBICdiffs.cbegin(), *valleysIt);
+	auto minDistance           = std::min(currentPeakDistance, currentValleyDistance);
+	MappedReadInterval currentInterval;
+	currentInterval.readStart      = 0;
+	currentInterval.readEnd        = this->getReadLength();
+	currentInterval.referenceStart = this->getMapStart();
+	currentInterval.referenceEnd   = this->getMapEnd();
+	while ( minDistance < windowDeltaBICdiffs.size() ) {
+		if (minDistance == currentPeakDistance) {
+			currentInterval.readEnd      = minDistance + actualBICwindowSize - 1;                         // subtracting 1 to not get past the end
+			currentInterval.referenceEnd = readMatchStatus[minDistance + actualBICwindowSize - 1].second;
+			result.push_back(currentInterval);
+			std::advance(peaksIt, 1);
+			currentPeakDistance = std::distance(windowDeltaBICdiffs.cbegin(), *peaksIt);
+			minDistance         = std::min(currentPeakDistance, currentValleyDistance);
+			continue;
+		}
+		currentInterval.readStart      = minDistance + actualBICwindowSize - 1;
+		currentInterval.referenceStart = readMatchStatus[minDistance + actualBICwindowSize - 1].second;
+		std::advance(valleysIt, 1);
+		currentValleyDistance = std::distance(windowDeltaBICdiffs.cbegin(), *valleysIt);
+		minDistance           = std::min(currentPeakDistance, currentValleyDistance);
+	}
+
+	// if the last change point goes to misalignment
+	if (currentInterval.readStart != 0) {
+		currentInterval.readEnd      = this->getReadLength();
+		currentInterval.referenceEnd = this->getMapEnd();
+		result.push_back(currentInterval);
+	}
+
+	// if no change points, return an empty vector
 	return result;
 }
 

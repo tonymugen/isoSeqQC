@@ -91,7 +91,7 @@ namespace isaSpace {
 		 */
 		float alternativeProbability{0.0F};
 		/** \brief Minimum difference in BIC between windows with current and alternative probabilities */
-		float bicDifferenceCutOff{0.0F};
+		float bicDifferenceThreshold{0.0F};
 		/** \brief Window size */
 		std::vector< std::pair<float, hts_pos_t> >::difference_type windowSize{0};
 	};
