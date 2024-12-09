@@ -674,6 +674,12 @@ TEST_CASE("Reading individual BAM records works") {
 	constexpr size_t    correctRefMatchLength{6250};
 	constexpr std::vector< std::pair<float, hts_pos_t> >::difference_type correctNjumps{8};
 
+	isaSpace::BinomialWindowParameters binomialParams;
+	binomialParams.windowSize             = 50;     // NOLINT
+	binomialParams.currentProbability     = 0.25F;  // NOLINT
+	binomialParams.alternativeProbability = 0.99F;  // NOLINT
+	binomialParams.bicDifferenceThreshold = 200.0F; // NOLINT
+
 	// read one record from the BAM file
 	constexpr char openMode{'r'};
 	std::unique_ptr<BGZF, void(*)(BGZF *)> orBAMfile(
@@ -708,6 +714,9 @@ TEST_CASE("Reading individual BAM records works") {
 	REQUIRE(bamRecord.getMapEnd()      == correctMapEndPosition);
 	REQUIRE(bamRecord.getReadLength()  == correctReadLength);
 	REQUIRE(bamRecord.getCIGARstring() == correctCIGAR);
+
+	const auto bamRecordBadAln{bamRecord.getPoorlyMappedRegions(binomialParams)};
+	REQUIRE( bamRecordBadAln.empty() );
 
 	const std::vector<uint32_t> cigarVec{bamRecord.getCIGARvector()};
 	REQUIRE(
@@ -794,6 +803,9 @@ TEST_CASE("Reading individual BAM records works") {
 	REQUIRE(bamRecordRev.getReadLength()    == correctRevReadLength);
 	REQUIRE(bamRecordRev.getCIGARstring()   == correctCIGARrev);
 	REQUIRE(bamRecordRev.getReferenceName() == correctRevReferenceName);
+
+	const auto bamRecordBadAlnRev{bamRecordRev.getPoorlyMappedRegions(binomialParams)};
+	REQUIRE( bamRecordBadAlnRev.empty() );
 
 	const std::vector<uint32_t> cigarVecRev{bamRecordRev.getCIGARvector()};
 	REQUIRE(
@@ -883,6 +895,9 @@ TEST_CASE("Reading individual BAM records works") {
 	REQUIRE(bamRecordSoft.getCIGARstring()   == correctCIGARsoft);
 	REQUIRE(bamRecordSoft.getReferenceName() == correctSoftReferenceName);
 
+	const auto bamRecordBadAlnSoft{bamRecordSoft.getPoorlyMappedRegions(binomialParams)};
+	REQUIRE( bamRecordBadAlnSoft.empty() );
+
 	const std::vector<uint32_t> cigarVecSoft{bamRecordSoft.getCIGARvector()};
 	REQUIRE(
 		std::equal( cigarVecSoft.cbegin(), cigarVecSoft.cend(), correctCIGVsoft.cbegin() )
@@ -942,11 +957,6 @@ TEST_CASE("Reading individual BAM records works") {
 	);
 	nBytes = bam_read1( longSoftClipBAMfile.get(), longSoftClipRecordPtr.get() );
 	isaSpace::BAMrecord longSoftClipBAM( longSoftClipRecordPtr.get(), longSoftClipBAMheader.get() );
-	isaSpace::BinomialWindowParameters binomialParams;
-	binomialParams.windowSize             = 50;     // NOLINT
-	binomialParams.currentProbability     = 0.25F;  // NOLINT
-	binomialParams.alternativeProbability = 0.99F;  // NOLINT
-	binomialParams.bicDifferenceThreshold = 200.0F; // NOLINT
 
 	constexpr hts_pos_t correctSoftClipSize{258};
 	const auto poorlyMappedRegion{longSoftClipBAM.getPoorlyMappedRegions(binomialParams)};
@@ -954,6 +964,69 @@ TEST_CASE("Reading individual BAM records works") {
 	REQUIRE(poorlyMappedRegion.front().referenceStart == poorlyMappedRegion.front().referenceEnd);
 	REQUIRE(poorlyMappedRegion.front().readStart == 0);
 	REQUIRE(poorlyMappedRegion.front().readEnd == correctSoftClipSize);
+
+	// Poorly mapped region at the end
+	const std::string longSoftClipEndBAMname("../tests/longSCrc.bam");
+	std::unique_ptr<BGZF, void(*)(BGZF *)> longSoftClipEndBAMfile(
+		bgzf_open(longSoftClipEndBAMname.c_str(), &openMode),
+		[](BGZF *bamFile) {
+			bgzf_close(bamFile);
+		}
+	);
+	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> longSoftClipEndBAMheader(
+		bam_hdr_read( longSoftClipEndBAMfile.get() ),
+		[](sam_hdr_t *samHeader) {
+			sam_hdr_destroy(samHeader);
+		}
+	);
+	std::unique_ptr<bam1_t, void(*)(bam1_t *)> longSoftClipEndRecordPtr(
+		bam_init1(),
+		[](bam1_t *bamRecord){
+			bam_destroy1(bamRecord);
+		}
+	);
+	nBytes = bam_read1( longSoftClipEndBAMfile.get(), longSoftClipEndRecordPtr.get() );
+	isaSpace::BAMrecord longSoftClipEndBAM( longSoftClipEndRecordPtr.get(), longSoftClipEndBAMheader.get() );
+
+	constexpr hts_pos_t correctSoftClipEndSize{215};
+	const auto poorlyMappedEndRegion{longSoftClipEndBAM.getPoorlyMappedRegions(binomialParams)};
+	REQUIRE(poorlyMappedEndRegion.size() == 1);
+	REQUIRE(poorlyMappedEndRegion.front().referenceStart == poorlyMappedEndRegion.front().referenceEnd);
+	REQUIRE( (poorlyMappedEndRegion.front().readEnd - poorlyMappedEndRegion.front().readStart) == correctSoftClipEndSize );
+	REQUIRE( poorlyMappedEndRegion.front().readEnd == longSoftClipEndBAM.getReadLength() );
+
+	// Poorly mapped region in the middle
+	const std::string longSoftClipMidBAMname("../tests/longSCmid.bam");
+	std::unique_ptr<BGZF, void(*)(BGZF *)> longSoftClipMidBAMfile(
+		bgzf_open(longSoftClipMidBAMname.c_str(), &openMode),
+		[](BGZF *bamFile) {
+			bgzf_close(bamFile);
+		}
+	);
+	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> longSoftClipMidBAMheader(
+		bam_hdr_read( longSoftClipMidBAMfile.get() ),
+		[](sam_hdr_t *samHeader) {
+			sam_hdr_destroy(samHeader);
+		}
+	);
+	std::unique_ptr<bam1_t, void(*)(bam1_t *)> longSoftClipMidRecordPtr(
+		bam_init1(),
+		[](bam1_t *bamRecord){
+			bam_destroy1(bamRecord);
+		}
+	);
+	nBytes = bam_read1( longSoftClipMidBAMfile.get(), longSoftClipMidRecordPtr.get() );
+	isaSpace::BAMrecord longSoftClipMidBAM( longSoftClipMidRecordPtr.get(), longSoftClipMidBAMheader.get() );
+
+	constexpr hts_pos_t correctSoftClipMidSize{258};
+	constexpr hts_pos_t correctSoftClipMidStart{741};
+	constexpr hts_pos_t correctSoftClipMidEnd{999};
+	const auto poorlyMappedMidRegion{longSoftClipMidBAM.getPoorlyMappedRegions(binomialParams)};
+	REQUIRE(poorlyMappedMidRegion.size() == 1);
+	REQUIRE(poorlyMappedMidRegion.front().referenceStart == poorlyMappedMidRegion.front().referenceEnd);
+	REQUIRE( (poorlyMappedMidRegion.front().readEnd - poorlyMappedMidRegion.front().readStart) == correctSoftClipMidSize );
+	REQUIRE(poorlyMappedMidRegion.front().readStart == correctSoftClipMidStart);
+	REQUIRE(poorlyMappedMidRegion.front().readEnd   == correctSoftClipMidEnd);
 }
 
 /*

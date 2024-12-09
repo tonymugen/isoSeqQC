@@ -387,8 +387,9 @@ std::vector<MappedReadInterval> BAMrecord::getPoorlyMappedRegions(const Binomial
 			currentInterval.referenceEnd = readMatchStatus[minDistance + actualBICwindowSize - 1].second;
 			result.push_back(currentInterval);
 			std::advance(peaksIt, 1);
-			currentPeakDistance = std::distance(windowDeltaBICdiffs.cbegin(), *peaksIt);
-			minDistance         = std::min(currentPeakDistance, currentValleyDistance);
+			currentPeakDistance       = std::distance(windowDeltaBICdiffs.cbegin(), *peaksIt);
+			minDistance               = std::min(currentPeakDistance, currentValleyDistance);
+			currentInterval.readStart = 0; // reset to make sure the post-loop test works
 			continue;
 		}
 		currentInterval.readStart      = minDistance + actualBICwindowSize - 1;
