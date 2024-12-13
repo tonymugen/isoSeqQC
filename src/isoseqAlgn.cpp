@@ -39,7 +39,6 @@
 #include <unordered_set>
 #include <array>
 #include <string>
-#include <sstream>
 #include <fstream>
 #include <future>
 #include <thread>
@@ -64,6 +63,17 @@ ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pai
 		std::back_inserter(exonRanges_)
 	);
 	firstExonIt_ = ( isNegativeStrand_ ? std::prev( exonRanges_.end() ) : exonRanges_.begin() );
+}
+
+ std::pair<hts_pos_t, hts_pos_t> ExonGroup::geneSpan() const noexcept {
+	return ( exonRanges_.empty() ?
+				std::pair<hts_pos_t, hts_pos_t>{-1, -1} :
+				std::pair<hts_pos_t, hts_pos_t>{exonRanges_.front().first, exonRanges_.back().second} 
+			);
+}
+
+std::pair<hts_pos_t, hts_pos_t> ExonGroup::firstExonSpan() const noexcept {
+	return ( exonRanges_.empty() ? std::pair<hts_pos_t, hts_pos_t>(-1, -1): *firstExonIt_);
 }
 
 uint32_t ExonGroup::firstExonAfter(const hts_pos_t &position) const noexcept {
@@ -252,7 +262,12 @@ constexpr std::array<float, 10> BAMrecord::sequenceMatch_{
 
 BAMrecord::BAMrecord(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader) :
 			isRev_{bam_is_rev(alignmentRecord)}, mapStart_{alignmentRecord->core.pos + 1}, mapEnd_{bam_endpos(alignmentRecord) + 1},
-			isPrimary_{(alignmentRecord->core.flag & suppSecondaryAlgn_) == 0}, isMapped_{ (alignmentRecord->core.flag & BAM_FUNMAP) == 0 } {
+			isMapped_{ (alignmentRecord->core.flag & BAM_FUNMAP) == 0 } {
+
+	if ( (alignmentRecord->core.flag & suppSecondaryAlgn_) != 0 ) {
+		throw std::string("ERROR: source BAM alignment record is not primary in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
 
 	readName_      = std::string{bam_get_qname(alignmentRecord)};
 	referenceName_ = std::string( sam_hdr_tid2name(samHeader, alignmentRecord->core.tid) );
@@ -265,6 +280,41 @@ BAMrecord::BAMrecord(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader) 
 		const uint16_t sequenceByte{bam_seqi(bam_get_seq(alignmentRecord), iSeq)};
 		sequenceAndQuality_.push_back( (qualityByte << qualityShift_) | sequenceByte );
 	}
+}
+
+void BAMrecord::addSecondaryAlignment(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader) {
+	if ( (alignmentRecord->core.flag & suppSecondaryAlgn_) == 0 ) {
+		throw std::string("ERROR: source BAM alignment record is not secondary in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+	const auto currentReadName = std::string{bam_get_qname(alignmentRecord)};
+	if (currentReadName != readName_) {
+		return;
+	}
+	const auto currentReferenceName = std::string( sam_hdr_tid2name(samHeader, alignmentRecord->core.tid) );
+	const bool currentIsRev         = bam_is_rev(alignmentRecord);
+	if (currentReferenceName != referenceName_) {
+		++totalSecondaryAlignmentCount_;
+		return;
+	}
+	BAMsecondary newSecondary;
+	newSecondary.mapStart      = alignmentRecord->core.pos + 1;
+	newSecondary.mapEnd        = bam_endpos(alignmentRecord) + 1;
+	newSecondary.sameAsPrimary = (isRev_ != currentIsRev);
+    newSecondary.cigar         = std::move( std::vector<uint32_t>(bam_get_cigar(alignmentRecord), bam_get_cigar(alignmentRecord) + alignmentRecord->core.n_cigar) );
+
+	++totalSecondaryAlignmentCount_;
+	localSecondaryAlignments_.emplace_back( std::move(newSecondary) );
+}
+
+uint16_t BAMrecord::localReversedSecondaryAlignmentCount() const noexcept {
+	return std::count_if(
+		localSecondaryAlignments_.cbegin(),
+		localSecondaryAlignments_.cend(),
+		[](const BAMsecondary &secondary) {
+			return !secondary.sameAsPrimary;
+		}
+	);
 }
 
 std::string BAMrecord::getCIGARstring() const {
@@ -290,6 +340,13 @@ std::string BAMrecord::getCIGARstring() const {
 	);
 
 	return cigar;
+}
+
+uint32_t BAMrecord::getFirstCIGAR() const noexcept {
+	if ( cigar_.empty() ) {
+		return 0;
+	}
+	return ( this->isRev_ ? cigar_.back() : cigar_.front() );
 }
 
 std::vector<float> BAMrecord::getReferenceMatchStatus() const {
@@ -411,17 +468,12 @@ std::vector<MappedReadInterval> BAMrecord::getPoorlyMappedRegions(const Binomial
 }
 
 // BAMtoGenome methods
-constexpr char     BAMtoGenome::gffDelimiter_{'\t'};
-constexpr char     BAMtoGenome::attrDelimiter_{';'};
-constexpr size_t   BAMtoGenome::strandIDidx_{6UL};
-constexpr size_t   BAMtoGenome::spanStart_{3UL};
-constexpr size_t   BAMtoGenome::spanEnd_{4UL};
 constexpr uint16_t BAMtoGenome::suppSecondaryAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
 
 BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
-	parseGFF_(bamGFFfilePairNames.gffFileName);
+	const auto gffExonGroups{parseGFF(bamGFFfilePairNames.gffFileName)};
 
-	if ( gffExonGroups_.empty() ) {
+	if ( gffExonGroups.empty() ) {
 		throw std::string("ERROR: no mRNAs with exons found in the ")
 			+ bamGFFfilePairNames.gffFileName + std::string(" GFF file in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
@@ -456,6 +508,13 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 	std::vector<std::string> outputLines; // gene information, if any, for each alignment to save
 	// keeping track of the latest iterators pointing to identified exon groups, one per chromosome/reference sequence
 	std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> latestExonGroupIts;
+	std::for_each(
+		gffExonGroups.cbegin(),
+		gffExonGroups.cend(),
+		[&latestExonGroupIts](const std::pair<std::string, std::vector<ExonGroup> > &eachChromosome){
+			latestExonGroupIts[eachChromosome.first] = eachChromosome.second.cbegin();
+		}
+	);
 	while (true) {
 		std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr(
 			bam_init1(),
@@ -470,28 +529,32 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 		if (nBytes < -1) {
 			continue;
 		}
-		BAMrecord currentBAM( bamRecordPtr.get(), bamHeader.get() );
-		std::string referenceName{currentBAM.getReferenceName()};
-		// I want primary reads only with reverse-complement flag possibly set
-		if ( currentBAM.isPrimaryMap() ) {
-			processPrimaryAlignment_(referenceName, currentBAM, latestExonGroupIts);
+		// Is this a secondary alignment?
+		if ( ( (bamRecordPtr->core.flag & suppSecondaryAlgn_) != 0 ) && !readsAndExons_.empty() ) {
+			readsAndExons_.back().first.addSecondaryAlignment( bamRecordPtr.get(), bamHeader.get() );
 			continue;
 		}
-		// This is not a primary alignment. See if it is a good secondary and process if yes.
-		if ( ( !readCoverageStats_.empty() ) && currentBAM.isSecondaryMap() ) {
-			processSecondaryAlignment_(referenceName, currentBAM, latestExonGroupIts);
+		BAMrecord currentBAM( bamRecordPtr.get(), bamHeader.get() );
+		std::string referenceName{currentBAM.getReferenceName()};
+		const char strandID = (currentBAM.isRevComp() ? '-' : '+');
+		referenceName.push_back(strandID);
+		// BAM chromosome not in GFF
+		if ( gffExonGroups.find(referenceName) == gffExonGroups.end() ) {
+			ExonGroup empty;
+			readsAndExons_.emplace_back(currentBAM, empty);
+			continue;
 		}
+		latestExonGroupIts.at(referenceName) = findOverlappingGene_(gffExonGroups.at(referenceName), latestExonGroupIts.at(referenceName), currentBAM);
 	}
 }
 
 size_t BAMtoGenome::nChromosomes() const noexcept {
 	std::unordered_set<std::string> chromosomes;
 	std::for_each(
-		gffExonGroups_.cbegin(),
-		gffExonGroups_.cend(),
-		[&chromosomes](const std::pair< std::string, std::vector<ExonGroup> > &currStrandedChromosome) {
-			std::string chrName = currStrandedChromosome.first;
-			chrName.pop_back();
+		readsAndExons_.cbegin(),
+		readsAndExons_.cend(),
+		[&chromosomes](const std::pair<BAMrecord, ExonGroup> &currentReadEG) {
+			std::string chrName = currentReadEG.first.getReadName();
 			chromosomes.insert(chrName);
 		}
 	);
@@ -501,20 +564,30 @@ size_t BAMtoGenome::nChromosomes() const noexcept {
 
 size_t BAMtoGenome::nExonSets() const noexcept {
 	return std::accumulate(
-		gffExonGroups_.cbegin(),
-		gffExonGroups_.cend(),
+		readsAndExons_.cbegin(),
+		readsAndExons_.cend(),
 		0UL,
-		[](const size_t &sum, const std::pair< std::string, std::vector<ExonGroup> > &eachLnkGrp) {
-			return sum + eachLnkGrp.second.size(); 
+		[](const size_t &sum, const std::pair<BAMrecord, ExonGroup> &currentReadEG) {
+			return sum + static_cast<size_t>(currentReadEG.second.nExons() > 0); 
 		}
 	);
 }
 
+/*
 void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const size_t &nThreads) const {
 	size_t actualNthreads = std::min( nThreads, static_cast<size_t>( std::thread::hardware_concurrency() ) );
-	actualNthreads        = std::min( actualNthreads, readCoverageStats_.size() );
+	actualNthreads        = std::min( actualNthreads, readsAndExons_.size() );
 	actualNthreads        = std::max(actualNthreads, 1UL);
 
+	//Processing alignment records
+	//	if ( currentBAM.isPrimaryMap() ) {
+	//		processPrimaryAlignment_(referenceName, currentBAM, latestExonGroupIts);
+	//		continue;
+	//	}
+		// This is not a primary alignment. See if it is a good secondary and process if yes.
+	//	if ( ( !readCoverageStats_.empty() ) && currentBAM.isSecondaryMap() ) {
+	//		processSecondaryAlignment_(referenceName, currentBAM, latestExonGroupIts);
+	//	}
 	const auto threadRanges{makeThreadRanges(readCoverageStats_, actualNthreads)};
 	std::vector<std::string> threadOutStrings(actualNthreads);
 	std::vector< std::future<void> > tasks;
@@ -550,78 +623,63 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 	}
 	outStream.close();
 };
+*/
 
-void BAMtoGenome::parseGFF_(const std::string &gffFileName) {
-	std::string gffLine;
-	std::fstream gffStream(gffFileName, std::ios::in);
-	std::set< std::pair<hts_pos_t, hts_pos_t> > exonSpans;
-	std::array<std::string, nGFFfields> activeGFFfields;   // fields from the gene tracked up to now
-	std::array<std::string, nGFFfields> newGFFfields;      // fields from the currently read line
-	while ( std::getline(gffStream, gffLine) ) {
-		if ( gffLine.empty() || (gffLine.at(0) == '#') ) {
-			continue;
-		}
-		std::stringstream currLineStream(gffLine);
-		size_t iField{0};
-		while ( (iField < nGFFfields) && std::getline(currLineStream, newGFFfields.at(iField), gffDelimiter_) ) {
-			++iField;
-		}
-		// skip incomplete lines
-		if (iField < nGFFfields) {
-			continue;
-		}
-		if (newGFFfields.at(2) == "mRNA") {
-			mRNAfromGFF_(newGFFfields, activeGFFfields, exonSpans);
-			continue;
-		}
-		if ( (newGFFfields.at(2) == "exon") && ( !activeGFFfields.back().empty() ) ) {
-			const auto exonStart = static_cast<hts_pos_t>( stol( newGFFfields.at(spanStart_) ) );
-			const auto exonEnd   = static_cast<hts_pos_t>( stol( newGFFfields.at(spanEnd_) ) );
-			exonSpans.insert({exonStart, exonEnd});
-		}
-	}
-	if ( !activeGFFfields.back().empty() && !exonSpans.empty() ) {
-		const char strandID                  = (activeGFFfields.at(strandIDidx_) == "-" ? '-' : '+');
-		const std::string strandedChromosome = activeGFFfields.front() + strandID;
-		gffExonGroups_[strandedChromosome].emplace_back(activeGFFfields.back(), activeGFFfields.at(strandIDidx_).front(), exonSpans);
-	}
-}
+void BAMtoGenome::saveUnmappedRegions(const std::string &outFileName, const size_t &nThreads) const {
+};
 
-void BAMtoGenome::mRNAfromGFF_(std::array<std::string, nGFFfields> &currentGFFline, std::array<std::string, nGFFfields> &previousGFFfields, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet) {
-	std::stringstream attributeStream( currentGFFline.back() );
-	std::string attrField;
-	TokenAttibuteListPair tokenPair;
-	while ( std::getline(attributeStream, attrField, attrDelimiter_) ) {
-		tokenPair.attributeList.emplace_back(attrField);
-	}
-	tokenPair.tokenName = parentToken_;
+std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const std::vector<ExonGroup> &chromosomeExonGroups,
+		const std::vector<ExonGroup>::const_iterator &exonGroupSearchStart, BAMrecord &alignedRead) {
+	auto searchIt = exonGroupSearchStart;
 
-	std::string parentName{extractAttributeName(tokenPair)};
-	std::swap(currentGFFline.back(), parentName);
-	if ( currentGFFline.back() == previousGFFfields.back() ) { // both could be empty
-		return;
-	}
-	if ( currentGFFline.back().empty() ) {
-		if ( !exonSpanSet.empty() ) {
-			const char strandID                  = (previousGFFfields.at(strandIDidx_) == "-" ? '-' : '+');
-			const std::string strandedChromosome = previousGFFfields.front() + strandID;
-			gffExonGroups_[strandedChromosome].emplace_back(previousGFFfields.back(), previousGFFfields.at(strandIDidx_).front(), exonSpanSet);
-			exonSpanSet.clear();
+	// if the BAM file is not sorted, we may have to backtrack
+	// looking for the first gene end that is after the read map start
+	if (alignedRead.getMapStart() < exonGroupSearchStart->geneSpan().first) {
+		auto reverseLEGI = std::make_reverse_iterator(searchIt);
+		reverseLEGI      = std::lower_bound(
+			reverseLEGI,
+			chromosomeExonGroups.crend(),
+			alignedRead.getMapStart(),
+			[](const ExonGroup &currGroup, const hts_pos_t bamStart) {
+				return  (currGroup.geneSpan().first > bamStart);
+			}
+		);
+		if ( ( reverseLEGI == chromosomeExonGroups.crend() ) || ( reverseLEGI->geneSpan().second < alignedRead.getMapStart() ) ) {
+			ExonGroup emptyGroup;
+			readsAndExons_.emplace_back(alignedRead, emptyGroup);
+			// if we are back past the first mRNA or the read does not overlap a gene, do not update the latest iterator
+			return searchIt;
 		}
-		previousGFFfields.back().clear();
-		previousGFFfields.front().clear();
-		return;
+		// convert back to the forward iterator using the reverse/forward relationship
+		// safe to increment the reverse iterator here due to the test above
+		searchIt = std::next(reverseLEGI).base();
+	} else {
+		searchIt = std::lower_bound(
+			exonGroupSearchStart,
+			chromosomeExonGroups.cend(),
+			alignedRead.getMapStart(),
+			[](const ExonGroup &currGroup, const hts_pos_t bamStart) {
+				return  (currGroup.geneSpan().second < bamStart);
+			}
+		);
+		if ( searchIt == chromosomeExonGroups.cend() ) {
+			ExonGroup emptyGroup;
+			readsAndExons_.emplace_back(alignedRead, emptyGroup);
+			// return the iterator to a valid record
+			std::advance(searchIt, -1);
+			return searchIt;
+		}
+		if (alignedRead.getMapStart() < searchIt->geneSpan().first) { // no overlap with a known gene
+			ExonGroup emptyGroup;
+			readsAndExons_.emplace_back(alignedRead, emptyGroup);
+			// do not update the iterator if no overlap
+			return exonGroupSearchStart;
+		}
 	}
-	// neither is empty and are not the same
-	if ( !exonSpanSet.empty() ) {
-		const char strandID                  = (previousGFFfields.at(strandIDidx_) == "-" ? '-' : '+');
-		const std::string strandedChromosome = previousGFFfields.front() + strandID;
-		gffExonGroups_[strandedChromosome].emplace_back(previousGFFfields.back(), previousGFFfields.at(strandIDidx_).front(), exonSpanSet);
-		exonSpanSet.clear();
-	}
-	std::copy( currentGFFline.cbegin(), currentGFFline.cend(), previousGFFfields.begin() );
-}
-
+	readsAndExons_.emplace_back(alignedRead, *searchIt);
+	return searchIt;
+};
+/*
 void BAMtoGenome::findOverlappingGene_(const std::string &referenceName, std::vector<ExonGroup>::const_iterator &gffExonGroupStart, ReadExonCoverage &readCoverageInfo) {
 	// if the BAM file is not sorted, we may have to backtrack
 	// looking for the first gene end that is after the read map start
@@ -698,6 +756,9 @@ void BAMtoGenome::findOverlappingGene_(const std::string &referenceName, std::ve
 	readCoverageInfo.firstExonStart  = gffExonGroupStart->geneSpan().first;
 	readCoverageInfo.lastExonEnd     = gffExonGroupStart->geneSpan().second;
 }
+*/
+
+/*
 void BAMtoGenome::processPrimaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts) {
 	const char strandID                   = (alignmentRecord.isRevComp() ? '-' : '+' );
 	const std::string strandReferenceName = referenceName + strandID;
@@ -731,7 +792,9 @@ void BAMtoGenome::processPrimaryAlignment_(const std::string &referenceName, con
 	}
 	readCoverageStats_.emplace_back( std::move(currentAlignmentInfo) );
 }
+*/
 
+/*
 void BAMtoGenome::processSecondaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, const std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts) {
 	readCoverageStats_.back().nSecondaryAlignments++;
 	const bool overlapsCurrentGene =
@@ -767,3 +830,4 @@ void BAMtoGenome::processSecondaryAlignment_(const std::string &referenceName, c
 		return;
 	}
 }
+*/

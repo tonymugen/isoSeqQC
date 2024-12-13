@@ -39,13 +39,12 @@
 #include "htslib/sam.h"
 
 namespace isaSpace {
-	constexpr size_t nGFFfields{9UL};
-
 	struct BamAndGffFiles;
 	struct TokenAttibuteListPair;
 	struct MappedReadInterval;
 	struct BinomialWindowParameters;
 	struct ReadExonCoverage;
+	struct BAMsecondary;
 	class  ExonGroup;
 	class  ReadMatchWindowBIC;
 	class  BAMrecord;
@@ -196,6 +195,20 @@ namespace isaSpace {
 		 */
 		std::vector<float> bestExonCoverageScores;
 	};
+	/** \brief BAM secondary alignment
+	 *
+	 * Only secondary alignments on the same reference and strand are used.
+	 */
+	struct BAMsecondary {
+		/** Base-1 map start position on the reference */
+		hts_pos_t mapStart{-1};
+		/** Base-1 map end position on the reference */
+		hts_pos_t mapEnd{-1};
+		/** \brief Is it the same strand as the primary? */
+		bool sameAsPrimary{false};
+		/** \brief CIGAR string */
+		std::vector<uint32_t> cigar;
+	};
 
 	/** \brief Group of exons from the same gene
 	 *
@@ -241,6 +254,11 @@ namespace isaSpace {
 		/** \brief Destructor */
 		~ExonGroup() = default;
 
+		/** \brief Is the object empty?
+		 *
+		 * \return true is the object has no exons
+		 */
+		[[gnu::warn_unused_result]] bool empty() const noexcept { return exonRanges_.empty(); };
 		/** \brief Report the gene name 
 		 *
 		 * \return gene name
@@ -270,9 +288,7 @@ namespace isaSpace {
 		 *
 		 * \return first and last nucleotide position (1-based) of the gene
 		 */
-		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> geneSpan() const {
-			return std::pair<hts_pos_t, hts_pos_t>{exonRanges_.front().first, exonRanges_.back().second};
-		};
+		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> geneSpan() const noexcept;
 		/** \brief First exon span 
 		 *
 		 * Returns the position of the first exon, depends on the strand.
@@ -281,7 +297,7 @@ namespace isaSpace {
 		 *
 		 * \return first exon nucleotide position pair (1-based)
 		 */
-		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> firstExonSpan() const { return *firstExonIt_; };
+		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> firstExonSpan() const noexcept;
 		/** \brief Index of the first exon after a given position
 		 * 
 		 * 0-based index of the first exon found entirely after the given position.
@@ -342,13 +358,13 @@ namespace isaSpace {
 		std::string geneName_;
 		/** \brief Is the mRNA on the negative strand? */
 		bool isNegativeStrand_{false};
+		/** \brief Iterator pointing to the first exon */
+		std::vector< std::pair<hts_pos_t, hts_pos_t> >::iterator firstExonIt_;
 		/** \brief Start and end positions of each exon in order
 		 *
 		 * `hts_pos_t` is `int64_t`
 		 */
 		std::vector< std::pair<hts_pos_t, hts_pos_t> > exonRanges_;
-		/** \brief Iterator pointing to the first exon */
-		std::vector< std::pair<hts_pos_t, hts_pos_t> >::iterator firstExonIt_;
 		// TODO: to implement tracking transcripts, additional vector of iterators pointing to the next exon
 		// Keep the number the same and equal to the number of transcripts listed in the GFF
 	};
@@ -458,7 +474,16 @@ namespace isaSpace {
 		/** \brief Destructor */
 		~BAMrecord() = default;
 
-		/** \brief Output read name 
+		/** \brief Add a secondary alignment record
+		 *
+		 * Adds information from a secondary alignment record if it is a local secondary alignment.
+		 * Otherwise, only increments the total number of secondary alignments.
+		 *
+		 * \param[in] alignmentRecord pointer to a read alignment record
+		 * \param[in] samHeader pointer to the corresponding BAM/SAM header
+		 */
+		void addSecondaryAlignment(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader);
+		/** \brief Output read name
 		 *
 		 * \return read name
 		 */
@@ -491,16 +516,31 @@ namespace isaSpace {
 		 * \return true if the read is reverse-complemented
 		 */
 		[[gnu::warn_unused_result]] bool isRevComp() const noexcept { return isRev_; };
-		/** \brief Is this the primary alignment?
+		/** \brief Are there any secondary alignments?
 		 *
-		 * \return true if the alignment is primary
+		 * \return true if there are any secondary alignments
 		 */
-		[[gnu::warn_unused_result]] bool isPrimaryMap() const noexcept { return isPrimary_ && isMapped_; };
-		/** \brief Is this a valid secondary alignment?
+		[[gnu::warn_unused_result]] bool hasSecondaryAlignments() const noexcept { return totalSecondaryAlignmentCount_ > 0; };
+		/** \brief Count of all secondary alignments regardless of position
+		 * 
+		 * \return Total secondary alignment count
+		 */
+		[[gnu::warn_unused_result]] uint16_t secondaryAlignmentCount() const noexcept { return totalSecondaryAlignmentCount_; };
+		/** \brief Are there any local secondary alignments?
 		 *
-		 * \return true if the read is mapped and the alignment is secondary
+		 * \return true if there are any local secondary alignments
 		 */
-		[[gnu::warn_unused_result]] bool isSecondaryMap() const noexcept { return (!isPrimary_) && isMapped_; };
+		[[gnu::warn_unused_result]] bool hasLocalSecondaryAlignments() const noexcept { return localSecondaryAlignments_.size() > 0; };
+		/** \brief Count of local secondary alignments
+		 * 
+		 * \return Local secondary alignment count
+		 */
+		[[gnu::warn_unused_result]] uint16_t localSecondaryAlignmentCount() const noexcept { return localSecondaryAlignments_.size(); };
+		/** \brief Count of local reversed secondary alignments
+		 * 
+		 * \return Local reversed secondary alignment count
+		 */
+		[[gnu::warn_unused_result]] uint16_t localReversedSecondaryAlignmentCount() const noexcept;
 		/** \brief Read length 
 		 *
 		 * \return read length in bases
@@ -520,6 +560,11 @@ namespace isaSpace {
 		 * \return CIGAR string
 		 */
 		[[gnu::warn_unused_result]] std::string getCIGARstring() const;
+		/** \brief Get the first cigar element with strand reversal
+		 *
+		 * \return first CIGAR vector element or 0 if none
+		 */
+		[[gnu::warn_unused_result]] uint32_t getFirstCIGAR() const noexcept;
 		/** \brief Get reference name 
 		 *
 		 * Reference sequence (e.g., chromosome) name. If absent, returns `*` like samtools.
@@ -576,12 +621,15 @@ namespace isaSpace {
 		 * Can be indexed into using the CIGAR operation bit field. 
 		 */
 		static const std::array<float, 10> sequenceMatch_;
-		/** \brief Is this the primary alignment? */
-		bool isPrimary_{true};
 		/** \brief Is the read mapped? */
 		bool isMapped_{false};
 		/** \brief Is the read reverse-complemented? */
 		bool isRev_{false};
+		/** \brief Secondary alignment count
+		 *
+		 * Includes secondary alignments that are not on the same reference and strand.
+		 */
+		uint16_t totalSecondaryAlignmentCount_{0};
 		/** \brief Map start 
 		 *
 		 * Base-1 position on the reference where the read alignment starts.
@@ -606,6 +654,11 @@ namespace isaSpace {
 		 * higher byte the BAM (no +33 adjustment) quality score.
 		 */
 		std::vector<uint16_t> sequenceAndQuality_;
+		/** \brief Secondary alignments 
+		 *
+		 * Only secondary alignments that are on the same reference and strand.
+		 */
+		std::vector<BAMsecondary> localSecondaryAlignments_;
 	};
 
 	/** \brief Relate BAM alignments to exons
@@ -673,58 +726,38 @@ namespace isaSpace {
 		 * \param[in] nThreads number of concurrent threads
 		 */
 		void saveReadCoverageStats(const std::string &outFileName, const size_t &nThreads) const;
+		/** \brief Save unmapped portions of reads to file
+		 *
+		 * Only considers reads that are at least partially well mapped,
+		 * but have some interval(s) with low alignment quality.
+		 * If a file with the same name exists it is overwritten.
+		 *
+		 * \param[in] outFileName output file name
+		 * \param[in] nThreads number of concurrent threads
+		 */
+		void saveUnmappedRegions(const std::string &outFileName, const size_t &nThreads) const;
 	private:
-		/** \brief GFF file column delimiter */
-		static const char gffDelimiter_;
-		/** \brief GFF file attribute list delimiter */
-		static const char attrDelimiter_;
-		/** \brief Strand ID position */
-		static const size_t strandIDidx_;
-		/** \brief Span start position */
-		static const size_t spanStart_;
-		/** \brief Span end position */
-		static const size_t spanEnd_;
 		/** \brief Flag testing the two possible secondary alignment markers */
 		static const uint16_t suppSecondaryAlgn_;
 
-		/** \brief GFF file parent record identifier token */
-		std::string parentToken_{"Parent="};
+		/** \brief Vector of BAM records and corresponding annotated genes
+		 *
+		 * If there is no annotated gene, the `ExonGroup` object is empty.
+		 */
+		std::vector< std::pair<BAMrecord, ExonGroup> > readsAndExons_;
 
-		/** \brief Vector of exon groups (one group per gene)
-		 *
-		 * The map keys are linkage groups, scaffolds, or chromosomes plus strand ID.
-		 */
-		std::unordered_map< std::string, std::vector<ExonGroup> > gffExonGroups_;
-		/** \brief Vector of abridged SAM/BAM records */
-		std::vector<ReadExonCoverage> readCoverageStats_;
-
-		/** \brief Parse a GFF file
-		 *
-		 * Extract exons from a GFF file and group them by gene.
-		 *
-		 * \param[in] gffFileName GFF file name
-		 */
-		void parseGFF_(const std::string &gffFileName);
-		/** \brief Extract mRNA information from GFF 
-		 *
-		 * Extract information from a GFF line that has mRNA data.
-		 * Changes the latest gene name if the parent of the current mRNA is different and updates the exon groups vector if necessary.
-		 *
-		 * \param[in,out] currentGFFline fields from the GFF file line just read
-		 * \param[in,out] previousGFFfields GFF fields from previous lines; the attribute field only has the current gene ID
-		 * \param[in,out] exonSpanSet set of unique exon start/end pairs
-		 */
-		void mRNAfromGFF_(std::array<std::string, nGFFfields> &currentGFFline, std::array<std::string, nGFFfields> &previousGFFfields, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet);
 		/** \brief Find the gene overlapping the read
 		 *
 		 * Finds the collection of exons belonging to a gene that is covered by the current isoSeq read.
-		 * Updates the GFF iterator and the coverage statistics object.
+		 * Updates the GFF iterator to the search start.
 		 *
-		 * \param[in] referenceName the name of the reference sequence (chromosome, linkage group, or contig)
-		 * \param[in,out] gffExonGroupStart the iterator to start the search
-		 * \param[in,out] readCoverageInfo the object with read coverage information
+		 * \param[in] chromosomeExonGroups exon groups on a given chromosome and strand
+		 * \param[in] exonGroupSearchStart the iterator to start the search
+		 * \param[in,out] alignmentRecord aligned read to find an overlapping gene for; consumed during execution
+		 * \return iterator to the new search start position
 		 */
-		void findOverlappingGene_(const std::string &referenceName, std::vector<ExonGroup>::const_iterator &gffExonGroupStart, ReadExonCoverage &readCoverageInfo);
+		[[gnu::warn_unused_result]] std::vector<ExonGroup>::const_iterator findOverlappingGene_(const std::vector<ExonGroup> &chromosomeExonGroups,
+				const std::vector<ExonGroup>::const_iterator &exonGroupSearchStart, BAMrecord &alignedRead);
 		/** \brief Process a primary alignment 
 		 *
 		 * \param[in] referenceName reference sequence name

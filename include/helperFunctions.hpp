@@ -36,6 +36,9 @@
 #include "isoseqAlgn.hpp"
 
 namespace isaSpace {
+	constexpr size_t nGFFfields{9UL};
+	using bamGFFvector = std::vector< std::pair<BAMrecord, ExonGroup> >;
+
 	/** \brief Extract a name 
 	 *
 	 * Extract a token name from GFF attributes.
@@ -53,6 +56,28 @@ namespace isaSpace {
 	 * \return `true` if there is overlap
 	 */
 	[[gnu::warn_unused_result]] bool rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &candidateBAM) noexcept;
+
+	/** \brief Extract mRNA information from GFF 
+	 *
+	 * Extract information from a GFF line that has mRNA data.
+	 * Changes the latest gene name if the parent of the current mRNA is different and updates the exon groups vector if necessary.
+	 *
+	 * \param[in,out] currentGFFline fields from the GFF file line just read
+	 * \param[in,out] previousGFFfields GFF fields from previous lines; the attribute field only has the current gene ID
+	 * \param[in,out] exonSpanSet set of unique exon start/end pairs
+	 * \return `ExonGroup` object
+	 */
+	[[gnu::warn_unused_result]] ExonGroup mRNAfromGFF(std::array<std::string, nGFFfields> &currentGFFline, std::array<std::string, nGFFfields> &previousGFFfields, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet);
+
+	/** \brief Parse a GFF file
+	 *
+	 * Extract exons from a GFF file and group them by gene and chromosome/linkage group.
+	 * The map keys are linkage groups, scaffolds, or chromosomes plus strand ID.
+	 *
+	 * \param[in] gffFileName GFF file name
+	 * \return collection of exon group vectors by chromosome and strand
+	 */
+	[[gnu::warn_unused_result]] std::unordered_map< std::string, std::vector<ExonGroup> > parseGFF(const std::string &gffFileName);
 
 	/** \brief Identify peaks in numerical data 
 	 *
@@ -78,6 +103,13 @@ namespace isaSpace {
 	 */
 	[[gnu::warn_unused_result]] std::vector<std::vector<float>::const_iterator> getValleys(const std::vector<float> &values, const float &threshold);
 
+	/** \brief Extract exon coverage statistics for a read 
+	 *
+	 * \param[in] readAndExons read alignment with the corresponding exon group
+	 * \return exon coverage object
+	 */
+	[[gnu::warn_unused_result]] ReadExonCoverage getExonCoverageStats(const std::pair<BAMrecord, ExonGroup> &readAndExons);
+
 	/** \brief Convert `ReadExonCoverage` to string
 	 *
 	 * \param[in] readRecord individual read record
@@ -94,7 +126,7 @@ namespace isaSpace {
 	 */
 	[[gnu::warn_unused_result]] std::string stringifyRCSrange(const std::vector<ReadExonCoverage>::const_iterator &begin, const std::vector<ReadExonCoverage>::const_iterator &end);
 
-	/** \brief Make per-thread `ReadExonCoverage` vector ranges
+	/** \brief Make per-thread alignment record/annotation vector ranges
 	 *
 	 * Constructs a vector of iterator pairs bracketing chunks of a vector to be processed in parallel.
 	 *
@@ -103,8 +135,8 @@ namespace isaSpace {
 	 *
 	 * \return vector of iterator pairs for each thread
 	 */
-	[[gnu::warn_unused_result]] std::vector< std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vector<ReadExonCoverage>::const_iterator> > 
-		makeThreadRanges(const std::vector<ReadExonCoverage> &targetVector, const size_t &threadCount);
+	[[gnu::warn_unused_result]] std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
+		makeThreadRanges(const bamGFFvector &targetVector, const size_t &threadCount);
 
 	/** \brief Command line parser
 	 *

@@ -32,6 +32,8 @@
 #include <iterator>
 #include <numeric>
 #include <string>
+#include <sstream>
+#include <fstream>
 #include <utility>
 
 #include "helperFunctions.hpp"
@@ -76,6 +78,91 @@ bool isaSpace::rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &
 	return ( candidateBAM.getMapStart() <= geneInfo.lastExonEnd ) && ( candidateBAM.getMapEnd() >= geneInfo.firstExonStart );
 }
 
+ExonGroup isaSpace::mRNAfromGFF(std::array<std::string, nGFFfields> &currentGFFline, std::array<std::string, nGFFfields> &previousGFFfields, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet) {
+	const std::string parentToken{"Parent="};
+	constexpr char attrDelimiter{';'};
+	constexpr size_t strandIDidx{6UL};
+	ExonGroup result;
+	std::stringstream attributeStream( currentGFFline.back() );
+	std::string attrField;
+	TokenAttibuteListPair tokenPair;
+	while ( std::getline(attributeStream, attrField, attrDelimiter) ) {
+		tokenPair.attributeList.emplace_back(attrField);
+	}
+	tokenPair.tokenName = parentToken;
+
+	std::string parentName{extractAttributeName(tokenPair)};
+	std::swap(currentGFFline.back(), parentName);
+	if ( currentGFFline.back() == previousGFFfields.back() ) { // both could be empty
+		return result;
+	}
+	if ( currentGFFline.back().empty() ) {
+		if ( !exonSpanSet.empty() ) {
+			const char strandID                  = (previousGFFfields.at(strandIDidx) == "-" ? '-' : '+');
+			const std::string strandedChromosome = previousGFFfields.front() + strandID;
+			result = ExonGroup(previousGFFfields.back(), previousGFFfields.at(strandIDidx).front(), exonSpanSet);
+			exonSpanSet.clear();
+		}
+		previousGFFfields.back().clear();
+		previousGFFfields.front().clear();
+		return result;
+	}
+	// neither is empty and are not the same
+	if ( !exonSpanSet.empty() ) {
+		const char strandID                  = (previousGFFfields.at(strandIDidx) == "-" ? '-' : '+');
+		const std::string strandedChromosome = previousGFFfields.front() + strandID;
+		result = ExonGroup(previousGFFfields.back(), previousGFFfields.at(strandIDidx).front(), exonSpanSet);
+		exonSpanSet.clear();
+	}
+	std::copy( currentGFFline.cbegin(), currentGFFline.cend(), previousGFFfields.begin() );
+	return result;
+}
+
+std::unordered_map< std::string, std::vector<ExonGroup> > isaSpace::parseGFF(const std::string &gffFileName) {
+	constexpr size_t strandIDidx{6UL};
+	constexpr char   gffDelimiter{'\t'};
+	constexpr size_t spanStart{3UL};
+	constexpr size_t spanEnd{4UL};
+
+	std::unordered_map< std::string, std::vector<ExonGroup> > result;
+	std::string gffLine;
+	std::fstream gffStream(gffFileName, std::ios::in);
+	std::set< std::pair<hts_pos_t, hts_pos_t> > exonSpans;
+	std::array<std::string, nGFFfields> activeGFFfields;   // fields from the gene tracked up to now
+	std::array<std::string, nGFFfields> newGFFfields;      // fields from the currently read line
+	while ( std::getline(gffStream, gffLine) ) {
+		if ( gffLine.empty() || (gffLine.at(0) == '#') ) {
+			continue;
+		}
+		std::stringstream currLineStream(gffLine);
+		size_t iField{0};
+		while ( (iField < nGFFfields) && std::getline(currLineStream, newGFFfields.at(iField), gffDelimiter) ) {
+			++iField;
+		}
+		// skip incomplete lines
+		if (iField < nGFFfields) {
+			continue;
+		}
+		if (newGFFfields.at(2) == "mRNA") {
+			const char strandID                  = (activeGFFfields.at(strandIDidx) == "-" ? '-' : '+');
+			const std::string strandedChromosome = activeGFFfields.front() + strandID;
+			result[strandedChromosome].emplace_back( mRNAfromGFF(newGFFfields, activeGFFfields, exonSpans) );
+			continue;
+		}
+		if ( (newGFFfields.at(2) == "exon") && ( !activeGFFfields.back().empty() ) ) {
+			const auto exonStart = static_cast<hts_pos_t>( stol( newGFFfields.at(spanStart) ) );
+			const auto exonEnd   = static_cast<hts_pos_t>( stol( newGFFfields.at(spanEnd) ) );
+			exonSpans.insert({exonStart, exonEnd});
+		}
+	}
+	if ( !activeGFFfields.back().empty() && !exonSpans.empty() ) {
+		const char strandID                  = (activeGFFfields.at(strandIDidx) == "-" ? '-' : '+');
+		const std::string strandedChromosome = activeGFFfields.front() + strandID;
+		result[strandedChromosome].emplace_back(activeGFFfields.back(), activeGFFfields.at(strandIDidx).front(), exonSpans);
+	}
+	return result;
+}
+
 std::vector<std::vector<float>::const_iterator> isaSpace::getPeaks(const std::vector<float> &values, const float &threshold) {
 	std::vector<std::vector<float>::const_iterator> result;
 	auto peakIt = values.cbegin();
@@ -102,6 +189,29 @@ std::vector<std::vector<float>::const_iterator> isaSpace::getValleys(const std::
 	}
 
 	return result;
+}
+
+ReadExonCoverage isaSpace::getExonCoverageStats(const std::pair<BAMrecord, ExonGroup> &readAndExons) {
+	const char strandID = (readAndExons.first.isRevComp() ? '-' : '+' );
+	const auto firstCIGAR{readAndExons.first.getFirstCIGAR()};
+
+	ReadExonCoverage currentAlignmentInfo;
+	currentAlignmentInfo.readName                 = readAndExons.first.getReadName();
+	currentAlignmentInfo.chromosomeName           = readAndExons.first.getReferenceName();
+	currentAlignmentInfo.strand                   = strandID;
+	currentAlignmentInfo.alignmentStart           = readAndExons.first.getMapStart();
+	currentAlignmentInfo.alignmentEnd             = readAndExons.first.getMapEnd();
+	currentAlignmentInfo.bestAlignmentStart       = readAndExons.first.getMapStart();
+	currentAlignmentInfo.bestAlignmentEnd         = readAndExons.first.getMapEnd();
+	currentAlignmentInfo.firstSoftClipLength      = bam_cigar_oplen(firstCIGAR) * static_cast<uint32_t>(bam_cigar_opchr(firstCIGAR) == 'S');
+	currentAlignmentInfo.nSecondaryAlignments     = readAndExons.first.secondaryAlignmentCount();
+	currentAlignmentInfo.nLocalReversedAlignments = readAndExons.first.localReversedSecondaryAlignmentCount();
+	currentAlignmentInfo.nGoodSecondaryAlignments = readAndExons.first.localSecondaryAlignmentCount();
+	currentAlignmentInfo.exonCoverageScores       = readAndExons.second.getExonCoverageQuality(readAndExons.first);
+	// TODO: add secondary alignment processing
+	currentAlignmentInfo.bestExonCoverageScores   = currentAlignmentInfo.exonCoverageScores;
+
+	return currentAlignmentInfo;
 }
 
 std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separator) {
@@ -156,23 +266,23 @@ std::string isaSpace::stringifyRCSrange(const std::vector<ReadExonCoverage>::con
 	return outString;
 }
 
-std::vector< std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vector<ReadExonCoverage>::const_iterator> > 
-											isaSpace::makeThreadRanges(const std::vector<ReadExonCoverage> &targetVector, const size_t &threadCount) {
-	std::vector<std::vector<ReadExonCoverage>::difference_type> chunkSizes(
+std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
+											isaSpace::makeThreadRanges(const bamGFFvector &targetVector, const size_t &threadCount) {
+	std::vector<bamGFFvector::difference_type> chunkSizes(
 		threadCount,
-		static_cast<std::vector<ReadExonCoverage>::difference_type>(targetVector.size() / threadCount)
+		static_cast<bamGFFvector::difference_type>(targetVector.size() / threadCount)
 	);
 	// spread the left over elements among chunks
 	std::for_each(
 		chunkSizes.begin(),
 		chunkSizes.begin() +
-			static_cast<std::vector<ReadExonCoverage>::difference_type >(targetVector.size() % threadCount),
-		[](std::vector<ReadExonCoverage>::difference_type &currSize) {return ++currSize;}
+			static_cast<bamGFFvector::difference_type >(targetVector.size() % threadCount),
+		[](bamGFFvector::difference_type &currSize) {return ++currSize;}
 	);
 	std::vector<
 		std::pair<
-			std::vector<ReadExonCoverage>::const_iterator,
-			std::vector<ReadExonCoverage>::const_iterator
+			bamGFFvector::const_iterator,
+			bamGFFvector::const_iterator
 		>
 	> threadRanges;
 	auto chunkBeginIt = targetVector.cbegin();
@@ -180,10 +290,10 @@ std::vector< std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vecto
 	std::for_each(
 		chunkSizes.cbegin(),
 		chunkSizes.cend(),
-		[&chunkBeginIt, &threadRanges](std::vector<ReadExonCoverage>::difference_type currDiff) {
+		[&chunkBeginIt, &threadRanges](bamGFFvector::difference_type currDiff) {
 			std::pair<
-				std::vector<ReadExonCoverage>::const_iterator,
-				std::vector<ReadExonCoverage>::const_iterator
+				bamGFFvector::const_iterator,
+				bamGFFvector::const_iterator
 			> currItPair{chunkBeginIt, chunkBeginIt + currDiff};
 			chunkBeginIt = currItPair.second;
 			threadRanges.emplace_back( std::move(currItPair) );
