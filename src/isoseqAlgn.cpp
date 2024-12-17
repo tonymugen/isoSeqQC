@@ -192,7 +192,7 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const BAMrecord &alignment)
 
 	// vector that tracks reference match/mismatch status for each reference position covered by CIGAR
 	const std::vector<uint32_t> cigar{alignment.getCIGARvector()};
-	std::vector<float> referenceMatchStatus{alignment.getReferenceMatchStatus()};
+	std::vector<float> referenceMatchStatus{getReferenceMatchStatus(cigar)};
 	std::for_each(
 		exonRangeIt,
 		exonRanges_.cend(),
@@ -293,26 +293,36 @@ void BAMrecord::addSecondaryAlignment(const bam1_t *alignmentRecord, const sam_h
 	}
 	const auto currentReferenceName = std::string( sam_hdr_tid2name(samHeader, alignmentRecord->core.tid) );
 	const bool currentIsRev         = bam_is_rev(alignmentRecord);
-	if (currentReferenceName != referenceName_) {
-		++totalSecondaryAlignmentCount_;
-		return;
-	}
 	BAMsecondary newSecondary;
-	newSecondary.mapStart      = alignmentRecord->core.pos + 1;
-	newSecondary.mapEnd        = bam_endpos(alignmentRecord) + 1;
-	newSecondary.sameAsPrimary = (isRev_ != currentIsRev);
-    newSecondary.cigar         = std::move( std::vector<uint32_t>(bam_get_cigar(alignmentRecord), bam_get_cigar(alignmentRecord) + alignmentRecord->core.n_cigar) );
+	newSecondary.mapStart            = alignmentRecord->core.pos + 1;
+	newSecondary.mapEnd              = bam_endpos(alignmentRecord) + 1;
+	newSecondary.sameStrandAsPrimary = (isRev_ == currentIsRev);
+	newSecondary.referenceName       = currentReferenceName;
+    newSecondary.cigar               = std::move( std::vector<uint32_t>(bam_get_cigar(alignmentRecord), bam_get_cigar(alignmentRecord) + alignmentRecord->core.n_cigar) );
 
-	++totalSecondaryAlignmentCount_;
-	localSecondaryAlignments_.emplace_back( std::move(newSecondary) );
+	secondaryAlignments_.emplace_back( std::move(newSecondary) );
 }
 
-uint16_t BAMrecord::localReversedSecondaryAlignmentCount() const noexcept {
+uint16_t BAMrecord::overlapSecondaryAlignmentCount(const ExonGroup &geneInfo) const noexcept {
 	return std::count_if(
-		localSecondaryAlignments_.cbegin(),
-		localSecondaryAlignments_.cend(),
-		[](const BAMsecondary &secondary) {
-			return !secondary.sameAsPrimary;
+		secondaryAlignments_.cbegin(),
+		secondaryAlignments_.cend(),
+		[&geneInfo](const BAMsecondary &secondary) {
+			return (secondary.mapStart <= geneInfo.geneSpan().second) && (secondary.mapEnd >= geneInfo.geneSpan().first);
+		}
+	);
+}
+
+uint16_t BAMrecord::overlapReversedSecondaryAlignmentCount(const ExonGroup &geneInfo) const noexcept {
+	return std::count_if(
+		secondaryAlignments_.cbegin(),
+		secondaryAlignments_.cend(),
+		[&geneInfo](const BAMsecondary &secondary) {
+			const bool isOverlapping{
+				(secondary.mapStart <= geneInfo.geneSpan().second) &&
+				(secondary.mapEnd >= geneInfo.geneSpan().first)
+			};
+			return isOverlapping && !secondary.sameStrandAsPrimary;
 		}
 	);
 }
@@ -349,16 +359,20 @@ uint32_t BAMrecord::getFirstCIGAR() const noexcept {
 	return ( this->isRev_ ? cigar_.back() : cigar_.front() );
 }
 
-std::vector<float> BAMrecord::getReferenceMatchStatus() const {
-	std::vector<float> referenceMatchStatus;
-	for (const auto &eachCIGAR : cigar_) {
-		const std::vector<float> currCIGARfield(
-			bam_cigar_oplen(eachCIGAR) * referenceConsumption_.at( bam_cigar_op(eachCIGAR) ),
-			sequenceMatch_.at( bam_cigar_op(eachCIGAR) )
-		);
-		std::copy( currCIGARfield.cbegin(), currCIGARfield.cend(), std::back_inserter(referenceMatchStatus) );
-	}
-	return referenceMatchStatus;
+std::vector< std::vector<uint32_t> > BAMrecord::getSecondaryCIGARs() const {
+	std::vector< std::vector<uint32_t> > result;
+
+	std::for_each(
+		secondaryAlignments_.cbegin(),
+		secondaryAlignments_.cend(),
+		[&result](const BAMsecondary &eachSecondary){
+			std::vector<uint32_t> localResult;
+			std::copy( eachSecondary.cigar.begin(), eachSecondary.cigar.end(), std::back_inserter(localResult) ) ;
+			result.emplace_back(localResult);
+		}
+	);
+
+	return result;
 }
 
 std::vector< std::pair<float, hts_pos_t> > BAMrecord::getReadCentricMatchStatus() const {

@@ -103,6 +103,17 @@ namespace isaSpace {
 	 */
 	[[gnu::warn_unused_result]] std::vector<std::vector<float>::const_iterator> getValleys(const std::vector<float> &values, const float &threshold);
 
+	/** \brief Read match status along the reference
+	 *
+	 * Parses CIGAR to track read (query) match/mismatch (1.0 for match, 0.0 for mismatch) status along the reference.
+	 * This means that insertions in the read are ignored.
+	 * The vector start begins at the position closest to the first exon start regardless of strand.
+	 *
+	 * \param[in] cigar CIGAR vector
+	 * \return vector of match status
+	 */
+	[[gnu::warn_unused_result]] std::vector<float> getReferenceMatchStatus(const std::vector<uint32_t> &cigar);
+
 	/** \brief Extract exon coverage statistics for a read 
 	 *
 	 * \param[in] readAndExons read alignment with the corresponding exon group

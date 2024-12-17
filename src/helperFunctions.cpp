@@ -191,6 +191,26 @@ std::vector<std::vector<float>::const_iterator> isaSpace::getValleys(const std::
 	return result;
 }
 
+std::vector<float> isaSpace::getReferenceMatchStatus(const std::vector<uint32_t> &cigar) {
+	constexpr std::array<hts_pos_t, 10> referenceConsumption{
+		1, 0, 1, 1, 0,
+		0, 0, 1, 1, 0
+	};
+	constexpr std::array<float, 10> sequenceMatch{
+		1.0, 0.0, 0.0, 0.0, 0.0,
+		0.0, 0.0, 1.0, 0.0, 0.0
+	};
+	std::vector<float> referenceMatchStatus;
+	for (const auto &eachCIGAR : cigar) {
+		const std::vector<float> currCIGARfield(
+			bam_cigar_oplen(eachCIGAR) * referenceConsumption.at( bam_cigar_op(eachCIGAR) ),
+			sequenceMatch.at( bam_cigar_op(eachCIGAR) )
+		);
+		std::copy( currCIGARfield.cbegin(), currCIGARfield.cend(), std::back_inserter(referenceMatchStatus) );
+	}
+	return referenceMatchStatus;
+}
+
 ReadExonCoverage isaSpace::getExonCoverageStats(const std::pair<BAMrecord, ExonGroup> &readAndExons) {
 	const char strandID = (readAndExons.first.isRevComp() ? '-' : '+' );
 	const auto firstCIGAR{readAndExons.first.getFirstCIGAR()};
@@ -205,8 +225,8 @@ ReadExonCoverage isaSpace::getExonCoverageStats(const std::pair<BAMrecord, ExonG
 	currentAlignmentInfo.bestAlignmentEnd         = readAndExons.first.getMapEnd();
 	currentAlignmentInfo.firstSoftClipLength      = bam_cigar_oplen(firstCIGAR) * static_cast<uint32_t>(bam_cigar_opchr(firstCIGAR) == 'S');
 	currentAlignmentInfo.nSecondaryAlignments     = readAndExons.first.secondaryAlignmentCount();
-	currentAlignmentInfo.nLocalReversedAlignments = readAndExons.first.localReversedSecondaryAlignmentCount();
-	currentAlignmentInfo.nGoodSecondaryAlignments = readAndExons.first.localSecondaryAlignmentCount();
+	currentAlignmentInfo.nLocalReversedAlignments = readAndExons.first.overlapReversedSecondaryAlignmentCount(readAndExons.second);
+	currentAlignmentInfo.nGoodSecondaryAlignments = readAndExons.first.overlapSecondaryAlignmentCount(readAndExons.second) - currentAlignmentInfo.nLocalReversedAlignments;
 	currentAlignmentInfo.exonCoverageScores       = readAndExons.second.getExonCoverageQuality(readAndExons.first);
 	// TODO: add secondary alignment processing
 	currentAlignmentInfo.bestExonCoverageScores   = currentAlignmentInfo.exonCoverageScores;
