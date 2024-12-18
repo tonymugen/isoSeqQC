@@ -49,13 +49,13 @@ namespace isaSpace {
 
 	/** \brief Test for range overlap
 	 *
-	 * Checks if the BAM record overlaps the nucleotide range covered by a gene.
+	 * The first position in each range need not be before the second in the same range.
 	 *
-	 * \param[in] geneInfo gene information
-	 * \param[in] candidateBAM BAM record
+	 * \param[in] range1 first range
+	 * \param[in] range2 second range
 	 * \return `true` if there is overlap
 	 */
-	[[gnu::warn_unused_result]] bool rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &candidateBAM) noexcept;
+	[[gnu::warn_unused_result]] bool rangesOverlap(const std::pair<hts_pos_t, hts_pos_t> &range1, const std::pair<hts_pos_t, hts_pos_t> &range2) noexcept;
 
 	/** \brief Extract mRNA information from GFF 
 	 *

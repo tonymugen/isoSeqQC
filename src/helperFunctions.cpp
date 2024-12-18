@@ -74,8 +74,10 @@ std::string isaSpace::extractAttributeName(const TokenAttibuteListPair &tokenAnd
 	return attributeField;
 }
 
-bool isaSpace::rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &candidateBAM) noexcept {
-	return ( candidateBAM.getMapStart() <= geneInfo.lastExonEnd ) && ( candidateBAM.getMapEnd() >= geneInfo.firstExonStart );
+bool isaSpace::rangesOverlap(const std::pair<hts_pos_t, hts_pos_t> &range1, const std::pair<hts_pos_t, hts_pos_t> &range2) noexcept {
+	const auto local1 = std::minmax(range1.first, range1.second);
+	const auto local2 = std::minmax(range2.first, range2.second);
+	return (local2.first <= local1.second) && (local2.second >= local1.first);
 }
 
 ExonGroup isaSpace::mRNAfromGFF(std::array<std::string, nGFFfields> &currentGFFline, std::array<std::string, nGFFfields> &previousGFFfields, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet) {
@@ -225,8 +227,8 @@ ReadExonCoverage isaSpace::getExonCoverageStats(const std::pair<BAMrecord, ExonG
 	currentAlignmentInfo.bestAlignmentEnd         = readAndExons.first.getMapEnd();
 	currentAlignmentInfo.firstSoftClipLength      = bam_cigar_oplen(firstCIGAR) * static_cast<uint32_t>(bam_cigar_opchr(firstCIGAR) == 'S');
 	currentAlignmentInfo.nSecondaryAlignments     = readAndExons.first.secondaryAlignmentCount();
-	currentAlignmentInfo.nLocalReversedAlignments = readAndExons.first.overlapReversedSecondaryAlignmentCount(readAndExons.second);
-	currentAlignmentInfo.nGoodSecondaryAlignments = readAndExons.first.overlapSecondaryAlignmentCount(readAndExons.second) - currentAlignmentInfo.nLocalReversedAlignments;
+	currentAlignmentInfo.nLocalReversedAlignments = readAndExons.first.localReversedSecondaryAlignmentCount();
+	currentAlignmentInfo.nGoodSecondaryAlignments = readAndExons.first.localSecondaryAlignmentCount() - currentAlignmentInfo.nLocalReversedAlignments;
 	currentAlignmentInfo.exonCoverageScores       = readAndExons.second.getExonCoverageQuality(readAndExons.first);
 	// TODO: add secondary alignment processing
 	currentAlignmentInfo.bestExonCoverageScores   = currentAlignmentInfo.exonCoverageScores;

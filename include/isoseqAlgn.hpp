@@ -206,8 +206,6 @@ namespace isaSpace {
 		hts_pos_t mapEnd{-1};
 		/** \brief Is it the same strand as the primary? */
 		bool sameStrandAsPrimary{false};
-		/** \brief This alignment's reference */
-		std::string referenceName;
 		/** \brief CIGAR string */
 		std::vector<uint32_t> cigar;
 	};
@@ -515,33 +513,34 @@ namespace isaSpace {
 		};
 		/** \brief Is the read reverse-complemented?
 		 *
-		 * \return true if the read is reverse-complemented
+		 * \return `true` if the read is reverse-complemented
 		 */
 		[[gnu::warn_unused_result]] bool isRevComp() const noexcept { return isRev_; };
 		/** \brief Are there any secondary alignments?
 		 *
-		 * \return true if there are any secondary alignments
+		 * \return `true` if there are any secondary alignments
 		 */
-		[[gnu::warn_unused_result]] bool hasSecondaryAlignments() const noexcept { return !secondaryAlignments_.empty(); };
+		[[gnu::warn_unused_result]] bool hasSecondaryAlignments() const noexcept { return secondaryAlignmentCount_ > 0; };
+		/** \brief Are there any local secondary alignments?
+		 *
+		 * \return `true` if there are any secondary alignments overlapping the primary
+		 */
+		[[gnu::warn_unused_result]] bool hasLocalSecondaryAlignments() const noexcept { return !localSecondaryAlignments_.empty(); };
 		/** \brief Count of all secondary alignments regardless of position
 		 * 
 		 * \return Secondary alignment count
 		 */
-		[[gnu::warn_unused_result]] uint16_t secondaryAlignmentCount() const noexcept { return secondaryAlignments_.size(); };
-		/** \brief Count of secondary alignments overlapping a gene
+		[[gnu::warn_unused_result]] uint16_t secondaryAlignmentCount() const noexcept { return secondaryAlignmentCount_; };
+		/** \brief Count of secondary alignments overlapping the primary
 		 *
-		 * Only count the ones on the same strand.
-		 * 
-		 * \param[in] gene exon collection to test
-		 * \return Overlapping secondary alignment count
+		 * \return Local secondary alignment count
 		 */
-		[[gnu::warn_unused_result]] uint16_t overlapSecondaryAlignmentCount(const ExonGroup &geneInfo) const noexcept;
-		/** \brief Count of reversed secondary alignments overlapping a gene
+		[[gnu::warn_unused_result]] uint16_t localSecondaryAlignmentCount() const noexcept { return localSecondaryAlignments_.size(); };
+		/** \brief Count of reversed secondary alignments overlapping the primary
 		 * 
-		 * \param[in] gene exon collection to test
-		 * \return Overlapping reversed secondary alignment count
+		 * \return Local reversed secondary alignment count
 		 */
-		[[gnu::warn_unused_result]] uint16_t overlapReversedSecondaryAlignmentCount(const ExonGroup &geneInfo) const noexcept;
+		[[gnu::warn_unused_result]] uint16_t localReversedSecondaryAlignmentCount() const noexcept;
 		/** \brief Read length 
 		 *
 		 * \return read length in bases
@@ -566,11 +565,6 @@ namespace isaSpace {
 		 * \return first CIGAR vector element or 0 if none
 		 */
 		[[gnu::warn_unused_result]] uint32_t getFirstCIGAR() const noexcept;
-		/** \brief Get secondary CIGAR vectors
-		 *
-		 * \return vector of secondary CIGAR vectors
-		 */
-		[[gnu::warn_unused_result]] std::vector< std::vector<uint32_t> > getSecondaryCIGARs() const;
 		/** \brief Get reference name 
 		 *
 		 * Reference sequence (e.g., chromosome) name. If absent, returns `*` like samtools.
@@ -578,6 +572,13 @@ namespace isaSpace {
 		 * \return reference name
 		 */ 
 		[[gnu::warn_unused_result]] std::string getReferenceName() const {return referenceName_; };
+		/** \brief Best reference-centric match status
+		 *
+		 * For each position, best match among all primary and secondary alignments.
+		 *
+		 * \return vector of match status/reference position pairs
+		 */
+		[[gnu::warn_unused_result]] std::vector< std::pair<float, hts_pos_t> > getBestReferenceMatchStatus() const;
 		/** \brief Reference match status along the read 
 		 *
 		 * Parses CIGAR to track reference match/mismatch (1.0 for match, 0.0 for mismatch) status along the read,
@@ -622,6 +623,8 @@ namespace isaSpace {
 		bool isMapped_{false};
 		/** \brief Is the read reverse-complemented? */
 		bool isRev_{false};
+		/** \brief Total secondary alignment count */
+		uint16_t secondaryAlignmentCount_{0};
 		/** \brief Map start 
 		 *
 		 * Base-1 position on the reference where the read alignment starts.
@@ -646,8 +649,8 @@ namespace isaSpace {
 		 * higher byte the BAM (no +33 adjustment) quality score.
 		 */
 		std::vector<uint16_t> sequenceAndQuality_;
-		/** \brief Secondary alignments */
-		std::vector<BAMsecondary> secondaryAlignments_;
+		/** \brief Secondary alignments overlapping the primary */
+		std::vector<BAMsecondary> localSecondaryAlignments_;
 	};
 
 	/** \brief Relate BAM alignments to exons

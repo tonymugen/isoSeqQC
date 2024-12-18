@@ -292,37 +292,32 @@ void BAMrecord::addSecondaryAlignment(const bam1_t *alignmentRecord, const sam_h
 		return;
 	}
 	const auto currentReferenceName = std::string( sam_hdr_tid2name(samHeader, alignmentRecord->core.tid) );
-	const bool currentIsRev         = bam_is_rev(alignmentRecord);
+	if (referenceName_ != currentReferenceName) {
+		++secondaryAlignmentCount_;
+		return;
+	}
+
+	const bool currentIsRev{bam_is_rev(alignmentRecord)};
 	BAMsecondary newSecondary;
 	newSecondary.mapStart            = alignmentRecord->core.pos + 1;
 	newSecondary.mapEnd              = bam_endpos(alignmentRecord) + 1;
 	newSecondary.sameStrandAsPrimary = (isRev_ == currentIsRev);
-	newSecondary.referenceName       = currentReferenceName;
     newSecondary.cigar               = std::move( std::vector<uint32_t>(bam_get_cigar(alignmentRecord), bam_get_cigar(alignmentRecord) + alignmentRecord->core.n_cigar) );
 
-	secondaryAlignments_.emplace_back( std::move(newSecondary) );
+	std::pair<hts_pos_t, hts_pos_t> primaryRange(mapStart_, mapEnd_);
+	std::pair<hts_pos_t, hts_pos_t> secondaryRange(newSecondary.mapStart, newSecondary.mapEnd);
+	if ( rangesOverlap(primaryRange, secondaryRange) ) {
+		localSecondaryAlignments_.emplace_back( std::move(newSecondary) );
+	}
+	++secondaryAlignmentCount_;
 }
 
-uint16_t BAMrecord::overlapSecondaryAlignmentCount(const ExonGroup &geneInfo) const noexcept {
+uint16_t BAMrecord::localReversedSecondaryAlignmentCount() const noexcept {
 	return std::count_if(
-		secondaryAlignments_.cbegin(),
-		secondaryAlignments_.cend(),
-		[&geneInfo](const BAMsecondary &secondary) {
-			return (secondary.mapStart <= geneInfo.geneSpan().second) && (secondary.mapEnd >= geneInfo.geneSpan().first);
-		}
-	);
-}
-
-uint16_t BAMrecord::overlapReversedSecondaryAlignmentCount(const ExonGroup &geneInfo) const noexcept {
-	return std::count_if(
-		secondaryAlignments_.cbegin(),
-		secondaryAlignments_.cend(),
-		[&geneInfo](const BAMsecondary &secondary) {
-			const bool isOverlapping{
-				(secondary.mapStart <= geneInfo.geneSpan().second) &&
-				(secondary.mapEnd >= geneInfo.geneSpan().first)
-			};
-			return isOverlapping && !secondary.sameStrandAsPrimary;
+		localSecondaryAlignments_.cbegin(),
+		localSecondaryAlignments_.cend(),
+		[](const BAMsecondary &secondary) {
+			return !secondary.sameStrandAsPrimary;
 		}
 	);
 }
@@ -359,20 +354,26 @@ uint32_t BAMrecord::getFirstCIGAR() const noexcept {
 	return ( this->isRev_ ? cigar_.back() : cigar_.front() );
 }
 
-std::vector< std::vector<uint32_t> > BAMrecord::getSecondaryCIGARs() const {
-	std::vector< std::vector<uint32_t> > result;
-
+std::vector< std::pair<float, hts_pos_t> > BAMrecord::getBestReferenceMatchStatus() const {
+	// first element of the pair will have the map start position for the read
+	std::vector< std::pair< hts_pos_t, std::vector<float> > > matchVectors;
+	matchVectors.emplace_back( mapStart_, getReferenceMatchStatus(cigar_) );
 	std::for_each(
-		secondaryAlignments_.cbegin(),
-		secondaryAlignments_.cend(),
-		[&result](const BAMsecondary &eachSecondary){
-			std::vector<uint32_t> localResult;
-			std::copy( eachSecondary.cigar.begin(), eachSecondary.cigar.end(), std::back_inserter(localResult) ) ;
-			result.emplace_back(localResult);
+		localSecondaryAlignments_.cbegin(),
+		localSecondaryAlignments_.cend(),
+		[&matchVectors](const BAMsecondary &localSecondary) {
+			if (localSecondary.sameStrandAsPrimary) {
+				matchVectors.emplace_back( localSecondary.mapStart, getReferenceMatchStatus(localSecondary.cigar) );
+			}
 		}
 	);
-
-	return result;
+	std::sort(
+		matchVectors.begin(),
+		matchVectors.end(),
+		[](const std::pair< hts_pos_t, std::vector<float> > &firstPair, const std::pair< hts_pos_t, std::vector<float> > &secondPair) {
+			return firstPair.first < secondPair.first;
+		}
+	);
 }
 
 std::vector< std::pair<float, hts_pos_t> > BAMrecord::getReadCentricMatchStatus() const {
