@@ -223,6 +223,52 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const BAMrecord &alignment)
 	return qualityScores;
 }
 
+std::vector<float> ExonGroup::getBestExonCoverageQuality(const BAMrecord &alignment) const {
+	// vector that tracks reference match/mismatch status across all secondary alignments for each reference position covered by CIGAR
+	const auto referenceMatchStatus{alignment.getBestReferenceMatchStatus()};
+	// find the first overlapping exon
+	const auto exonRangeIt = std::lower_bound(
+		exonRanges_.cbegin(),
+		exonRanges_.cend(),
+		referenceMatchStatus.mapStart,
+		[](const std::pair<hts_pos_t, hts_pos_t> &currExonRange, const hts_pos_t &position) {
+			return currExonRange.second < position;
+		}
+	);
+	const auto nLeadingUncoveredExons = std::distance(exonRanges_.cbegin(), exonRangeIt);
+	// alignment quality for all uncovered exons is set to 0.0
+	std::vector<float> qualityScores(nLeadingUncoveredExons, 0.0);
+
+	std::for_each(
+		exonRangeIt,
+		exonRanges_.cend(),
+		[&referenceMatchStatus, &qualityScores](const std::pair<hts_pos_t, hts_pos_t> &currExonSpan) {
+			const hts_pos_t realExonStart{std::max(referenceMatchStatus.mapStart, currExonSpan.first)};
+			const hts_pos_t realExonLength{std::max(static_cast<hts_pos_t>(0), currExonSpan.second - realExonStart + 1)};
+			const auto rmsStartPosition{
+				std::min(
+					static_cast<std::vector<float>::difference_type>(realExonStart - referenceMatchStatus.mapStart),
+					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.matchStatus.size() - 1)
+				)
+			};
+			const auto rmsSpan{
+				std::min(
+					static_cast<std::vector<float>::difference_type>(realExonLength),
+					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.matchStatus.size() - rmsStartPosition)
+				)
+			};
+			const auto rmsBeginIt  = referenceMatchStatus.matchStatus.cbegin() + rmsStartPosition;
+			const float matchCount = std::accumulate(rmsBeginIt, rmsBeginIt + rmsSpan, 0.0F);
+			qualityScores.push_back( matchCount / static_cast<float>(currExonSpan.second - currExonSpan.first + 1) );
+		}
+	);
+
+	if (isNegativeStrand_) {
+		std::reverse( qualityScores.begin(), qualityScores.end() );
+	}
+	return qualityScores;
+}
+
 // ReadMatchWindowBIC methods
 ReadMatchWindowBIC::ReadMatchWindowBIC(const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin, const BinomialWindowParameters &windowParameters) :
 						leftProbability_{windowParameters.currentProbability}, rightProbability_{windowParameters.alternativeProbability}, nTrials_{static_cast<float>(windowParameters.windowSize)} {
@@ -354,7 +400,7 @@ uint32_t BAMrecord::getFirstCIGAR() const noexcept {
 	return ( this->isRev_ ? cigar_.back() : cigar_.front() );
 }
 
-std::vector< std::pair<float, hts_pos_t> > BAMrecord::getBestReferenceMatchStatus() const {
+MappedReadMatchStatus BAMrecord::getBestReferenceMatchStatus() const {
 	// first element of the pair will have the map start position for the read
 	std::vector< std::pair< hts_pos_t, std::vector<float> > > matchVectors;
 	matchVectors.emplace_back( mapStart_, getReferenceMatchStatus(cigar_) );
@@ -368,12 +414,41 @@ std::vector< std::pair<float, hts_pos_t> > BAMrecord::getBestReferenceMatchStatu
 		}
 	);
 	std::sort(
-		matchVectors.begin(),
-		matchVectors.end(),
+		matchVectors.cbegin(),
+		matchVectors.cend(),
 		[](const std::pair< hts_pos_t, std::vector<float> > &firstPair, const std::pair< hts_pos_t, std::vector<float> > &secondPair) {
 			return firstPair.first < secondPair.first;
 		}
 	);
+	MappedReadMatchStatus bestMatch;
+	bestMatch.mapStart     = matchVectors.front().first;
+	hts_pos_t lastMapStart = matchVectors.front().first;
+	std::for_each(
+		std::next( matchVectors.cbegin() ),
+		matchVectors.cend(),
+		[&bestMatch, &lastMapStart](const std::pair< hts_pos_t, std::vector<float> > &eachPair) {
+			auto bestBeginIt = bestMatch.matchStatus.begin();
+			std::advance(bestBeginIt, eachPair.first - lastMapStart); // the advance must be non-negative because the vector is sorted
+			auto bestEndIt = bestMatch.matchStatus.begin();
+			std::advance(bestEndIt,
+				std::min(
+					std::distance( bestBeginIt, bestMatch.matchStatus.end() ),
+					std::distance( eachPair.second.cbegin(), eachPair.second.cend() )
+				) 
+			);
+			auto currentIt = eachPair.second.cbegin();
+			std::for_each(
+				bestBeginIt,
+				bestEndIt,
+				[&currentIt](float &bestElement) {
+					bestElement = std::max(bestElement, *currentIt);
+					++currentIt;
+				}
+			);
+			std::copy( currentIt, eachPair.second.cend(), std::back_inserter(bestMatch.matchStatus) );
+		}
+	);
+	return bestMatch;
 }
 
 std::vector< std::pair<float, hts_pos_t> > BAMrecord::getReadCentricMatchStatus() const {
@@ -588,22 +663,12 @@ size_t BAMtoGenome::nExonSets() const noexcept {
 	);
 }
 
-/*
 void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const size_t &nThreads) const {
 	size_t actualNthreads = std::min( nThreads, static_cast<size_t>( std::thread::hardware_concurrency() ) );
 	actualNthreads        = std::min( actualNthreads, readsAndExons_.size() );
 	actualNthreads        = std::max(actualNthreads, 1UL);
 
-	//Processing alignment records
-	//	if ( currentBAM.isPrimaryMap() ) {
-	//		processPrimaryAlignment_(referenceName, currentBAM, latestExonGroupIts);
-	//		continue;
-	//	}
-		// This is not a primary alignment. See if it is a good secondary and process if yes.
-	//	if ( ( !readCoverageStats_.empty() ) && currentBAM.isSecondaryMap() ) {
-	//		processSecondaryAlignment_(referenceName, currentBAM, latestExonGroupIts);
-	//	}
-	const auto threadRanges{makeThreadRanges(readCoverageStats_, actualNthreads)};
+	const auto threadRanges{makeThreadRanges(readsAndExons_, actualNthreads)};
 	std::vector<std::string> threadOutStrings(actualNthreads);
 	std::vector< std::future<void> > tasks;
 	tasks.reserve(actualNthreads);
@@ -611,11 +676,11 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 	std::for_each(
 		threadRanges.cbegin(),
 		threadRanges.cend(),
-		[&iThread, &tasks, &threadOutStrings](const std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vector<ReadExonCoverage>::const_iterator> &eachRange) {
+		[&iThread, &tasks, &threadOutStrings](const std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> &eachRange) {
 			tasks.emplace_back(
 				std::async(
 					[iThread, eachRange, &threadOutStrings] {
-						threadOutStrings.at(iThread) = stringifyRCSrange(eachRange.first, eachRange.second);
+						threadOutStrings.at(iThread) = stringifyAlignementRange(eachRange.first, eachRange.second);
 					}
 				)
 			);
@@ -638,10 +703,11 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 	}
 	outStream.close();
 };
-*/
 
+/*
 void BAMtoGenome::saveUnmappedRegions(const std::string &outFileName, const size_t &nThreads) const {
 };
+*/
 
 std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const std::vector<ExonGroup> &chromosomeExonGroups,
 		const std::vector<ExonGroup>::const_iterator &exonGroupSearchStart, BAMrecord &alignedRead) {

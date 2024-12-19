@@ -230,13 +230,12 @@ ReadExonCoverage isaSpace::getExonCoverageStats(const std::pair<BAMrecord, ExonG
 	currentAlignmentInfo.nLocalReversedAlignments = readAndExons.first.localReversedSecondaryAlignmentCount();
 	currentAlignmentInfo.nGoodSecondaryAlignments = readAndExons.first.localSecondaryAlignmentCount() - currentAlignmentInfo.nLocalReversedAlignments;
 	currentAlignmentInfo.exonCoverageScores       = readAndExons.second.getExonCoverageQuality(readAndExons.first);
-	// TODO: add secondary alignment processing
-	currentAlignmentInfo.bestExonCoverageScores   = currentAlignmentInfo.exonCoverageScores;
+	currentAlignmentInfo.bestExonCoverageScores   = readAndExons.second.getBestExonCoverageQuality(readAndExons.first);
 
 	return currentAlignmentInfo;
 }
 
-std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separator) {
+std::string isaSpace::stringifyExonCoverage(const ReadExonCoverage &readRecord, char separator) {
 	std::string coverages = std::accumulate(
 		readRecord.exonCoverageScores.cbegin(),
 		readRecord.exonCoverageScores.cend(),
@@ -276,13 +275,16 @@ std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separat
 	return result;
 }
 
-std::string isaSpace::stringifyRCSrange(const std::vector<ReadExonCoverage>::const_iterator &begin, const std::vector<ReadExonCoverage>::const_iterator &end) {
+std::string isaSpace::stringifyAlignementRange(
+		const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &begin,
+		const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &end) {
 	std::string outString;
 	std::for_each(
 		begin,
 		end,
-		[&outString](const ReadExonCoverage &currStat) {
-			outString += stringify(currStat) + "\n";
+		[&outString](const  std::pair<BAMrecord, ExonGroup>  &currentAlignment) {
+			const ReadExonCoverage exonCoverage = getExonCoverageStats(currentAlignment);
+			outString += stringifyExonCoverage(exonCoverage) + "\n";
 		}
 	);
 	return outString;

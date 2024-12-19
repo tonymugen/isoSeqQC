@@ -42,6 +42,7 @@ namespace isaSpace {
 	struct BamAndGffFiles;
 	struct TokenAttibuteListPair;
 	struct MappedReadInterval;
+	struct MappedReadMatchStatus;
 	struct BinomialWindowParameters;
 	struct ReadExonCoverage;
 	struct BAMsecondary;
@@ -78,6 +79,13 @@ namespace isaSpace {
 		hts_pos_t referenceStart{-1};
 		/** \brief Base-1 end position on the reference */
 		hts_pos_t referenceEnd{-1};
+	};
+	/** \brief Read match and map start */
+	struct MappedReadMatchStatus {
+		/** \brief Map start */
+		hts_pos_t mapStart{-1};
+        /** \brief Match status vector */
+		std::vector<float> matchStatus;
 	};
 	/** \brief Binomial window parameters */
 	struct BinomialWindowParameters {
@@ -353,6 +361,16 @@ namespace isaSpace {
 		 *
 		 */
 		[[gnu::warn_unused_result]] std::vector<float> getExonCoverageQuality(const BAMrecord &alignment) const;
+		/** \brief Get best read coverage quality per exon 
+		 *
+		 * Use CIGAR information, adding local secondary alignments, to extract alignment quality for each exon.
+		 * Quality is the fraction of reference nucleotides covered by matching read bases.
+		 *
+		 * \param[in] alignment BAM alignment record
+		 * \return vector best alignment qualities, one per exon
+		 *
+		 */
+		[[gnu::warn_unused_result]] std::vector<float> getBestExonCoverageQuality(const BAMrecord &alignment) const;
 	private:
 		/** \brief Gene name */
 		std::string geneName_;
@@ -576,9 +594,9 @@ namespace isaSpace {
 		 *
 		 * For each position, best match among all primary and secondary alignments.
 		 *
-		 * \return vector of match status/reference position pairs
+		 * \return match status with map start
 		 */
-		[[gnu::warn_unused_result]] std::vector< std::pair<float, hts_pos_t> > getBestReferenceMatchStatus() const;
+		[[gnu::warn_unused_result]] MappedReadMatchStatus getBestReferenceMatchStatus() const;
 		/** \brief Reference match status along the read 
 		 *
 		 * Parses CIGAR to track reference match/mismatch (1.0 for match, 0.0 for mismatch) status along the read,

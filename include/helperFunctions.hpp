@@ -127,15 +127,17 @@ namespace isaSpace {
 	 * \param[in] separator field separator
 	 * \return `std::string` with the read record elements, without a new line at the end
 	 */
-	[[gnu::warn_unused_result]] std::string stringify(const ReadExonCoverage &readRecord, char separator = '\t');
+	[[gnu::warn_unused_result]] std::string stringifyExonCoverage(const ReadExonCoverage &readRecord, char separator = '\t');
 
-	/** \brief Produce a string from a range of `ReadExonCoverage` elements
+	/** \brief Produce a string from a range of read alignments
 	 *
 	 * \param[in] begin start iterator
 	 * \param[in] end end iterator
 	 * \return string with coverage information
 	 */
-	[[gnu::warn_unused_result]] std::string stringifyRCSrange(const std::vector<ReadExonCoverage>::const_iterator &begin, const std::vector<ReadExonCoverage>::const_iterator &end);
+	[[gnu::warn_unused_result]] std::string stringifyAlignementRange(
+		const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &begin,
+		const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &end);
 
 	/** \brief Make per-thread alignment record/annotation vector ranges
 	 *
