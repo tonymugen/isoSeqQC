@@ -553,7 +553,7 @@ namespace isaSpace {
 		 *
 		 * \return Local secondary alignment count
 		 */
-		[[gnu::warn_unused_result]] uint16_t localSecondaryAlignmentCount() const noexcept { return localSecondaryAlignments_.size(); };
+		[[gnu::warn_unused_result]] uint16_t localSecondaryAlignmentCount() const noexcept { return static_cast<uint16_t>( localSecondaryAlignments_.size() ); };
 		/** \brief Count of reversed secondary alignments overlapping the primary
 		 * 
 		 * \return Local reversed secondary alignment count

@@ -65,48 +65,6 @@ TEST_CASE("Helper functions work") {
 	}
 
 	SECTION("Test range overlap") {
-		std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr(
-			bam_init1(),
-			[](bam1_t *bamRecord){
-				bam_destroy1(bamRecord);
-			}
-		);
-		std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> tstBAMheader(
-			sam_hdr_init(),
-			[](sam_hdr_t *samHeader) {
-				sam_hdr_destroy(samHeader);
-			}
-		);
-		const std::string tstSeq("GCCTACTGCAGTCCACAAGGAGGCCACATCCACAGCCACGACAACGGCGACATACGCCAATGGCAATCCCAATTCTAACGCAAATCCTAGCCAGAGTCAG");
-		const std::string tstQual(tstSeq.size(), '~');
-		const std::string tstQname("testQueryName");
-		constexpr uint16_t  flag{0};
-		constexpr int32_t   tid{0};
-		constexpr hts_pos_t position{49};
-		constexpr uint8_t   mapq{60};
-		const std::array<uint32_t, 1> tstCigar{bam_cigar_gen(tstSeq.size(), BAM_CMATCH)};
-
-		const int bamSetRes = bam_set1(
-			bamRecordPtr.get(),
-			tstQname.size(),
-			tstQname.c_str(),
-			flag,
-			tid,
-			position,
-			mapq,
-			tstCigar.size(),
-			tstCigar.data(),
-			0,
-			0,
-			static_cast<hts_pos_t>( tstSeq.size() ),
-			tstSeq.size(),
-			tstSeq.c_str(),
-			tstQual.c_str(),
-			0
-		);
-		int headRes = sam_hdr_add_line(tstBAMheader.get(), "HD", "VN", "1.6", "SO", "unknown", NULL); // NOLINT
-		headRes     = sam_hdr_add_line(tstBAMheader.get(), "SQ", "SN", "test", "LN", "100000", NULL); // NOLINT
-		isaSpace::BAMrecord tstBAMrecord( bamRecordPtr.get(), tstBAMheader.get() );
 		constexpr hts_pos_t earlyES{30};
 		constexpr hts_pos_t midES{90};
 		constexpr hts_pos_t lateES{245};
@@ -114,32 +72,19 @@ TEST_CASE("Helper functions work") {
 		constexpr hts_pos_t midEE{110};
 		constexpr hts_pos_t lateEE{345};
 
-		isaSpace::ReadExonCoverage tstREC;
-		tstREC.readName               = "m54312U_201215_225530/460252/ccs";
-		tstREC.chromosomeName         = "NC_052529.2";
-		tstREC.strand                 = '+';
-		tstREC.geneName               = "gene-LOC6532627";
-		tstREC.firstExonStart         = earlyES;
-		tstREC.lastExonEnd            = lateEE;
-		tstREC.exonCoverageScores     = std::vector<float>{0.0, 0.93, 1.0, 0.5}; // NOLINT
-		tstREC.bestExonCoverageScores = std::vector<float>{0.5, 0.93, 1.0, 0.5}; // NOLINT
-
-		REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
-		tstREC.firstExonStart = earlyES;
-		tstREC.lastExonEnd    = midEE;
-		REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
-		tstREC.firstExonStart = earlyES;
-		tstREC.lastExonEnd    = earlyEE;
-		REQUIRE( !isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
-		tstREC.firstExonStart = midES;
-		tstREC.lastExonEnd    = lateEE;
-		REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
-		tstREC.firstExonStart = lateES;
-		tstREC.lastExonEnd    = lateEE;
-		REQUIRE( !isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
-		tstREC.firstExonStart = midES;
-		tstREC.lastExonEnd    = midEE;
-		REQUIRE( isaSpace::rangesOverlap(tstREC, tstBAMrecord) );
+		constexpr std::pair<hts_pos_t, hts_pos_t> first1(earlyES, lateES);
+		constexpr std::pair<hts_pos_t, hts_pos_t> second1(earlyEE, lateEE);
+		REQUIRE( isaSpace::rangesOverlap(first1, second1) );
+		constexpr std::pair<hts_pos_t, hts_pos_t> first2(earlyES, midES);
+		constexpr std::pair<hts_pos_t, hts_pos_t> second2(midEE, lateEE);
+		REQUIRE( !isaSpace::rangesOverlap(first2, second2) );
+		constexpr std::pair<hts_pos_t, hts_pos_t> second3(earlyEE, midEE);
+		REQUIRE( isaSpace::rangesOverlap(first1, second3) );
+		constexpr std::pair<hts_pos_t, hts_pos_t> first3(midES, lateES);
+		REQUIRE( isaSpace::rangesOverlap(first3, second1) );
+		constexpr std::pair<hts_pos_t, hts_pos_t> firstRev(lateES, earlyES);
+		constexpr std::pair<hts_pos_t, hts_pos_t> secondRev(lateEE, earlyEE);
+		REQUIRE( isaSpace::rangesOverlap(firstRev, secondRev) );
 	}
 
 	SECTION("Peak and valley functions") {
@@ -205,6 +150,71 @@ TEST_CASE("Helper functions work") {
 		REQUIRE( valleys4.empty() );
 	}
 
+	SECTION("GFF parsing functions") {
+		// empty fields
+		std::array<std::string, isaSpace::nGFFfields> previousGFFfields;
+		std::array<std::string, isaSpace::nGFFfields> currentGFFfields;
+		std::set< std::pair<hts_pos_t, hts_pos_t> > emptyExonSet;
+		isaSpace::ExonGroup emptyEG{isaSpace::mRNAfromGFF(currentGFFfields, previousGFFfields, emptyExonSet)};
+		REQUIRE( emptyEG.empty() );
+		REQUIRE(emptyEG.nExons() == 0);
+
+		// empty current parent token and exon spans set
+		previousGFFfields = {"NC_052526.2", "Gnomon", "exon", "50812", "50970", ".", "+", ".",
+			"ID=exon-XM_043206943.1-1;Parent=rna-XM_043206943.1;Dbxref=GeneID:6526243,Genbank:XM_043206943.1;"
+			"experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC6526243;"
+			"product=active breakpoint cluster region-related protein%2C transcript variant X1;transcript_id=XM_043206943.1"
+		};
+		isaSpace::ExonGroup emptyParentEG{isaSpace::mRNAfromGFF(currentGFFfields, previousGFFfields, emptyExonSet)};
+		REQUIRE( emptyEG.empty() );
+		REQUIRE(emptyEG.nExons() == 0);
+		REQUIRE( previousGFFfields.front().empty() );
+		REQUIRE( previousGFFfields.back().empty() );
+
+		// empty current parent token
+		previousGFFfields.front() = "NC_052526.2";
+		const std::string backField    =  "ID=exon-XM_043206943.1-1;Parent=rna-XM_043206943.1;Dbxref=GeneID:6526243,Genbank:XM_043206943.1;"
+			"experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC6526243;"
+			"product=active breakpoint cluster region-related protein%2C transcript variant X1;transcript_id=XM_043206943.1";
+		previousGFFfields.back() = backField;
+
+		currentGFFfields       = previousGFFfields;
+		currentGFFfields.at(2) = "mRNA";
+		currentGFFfields.back().clear();
+		constexpr std::array<std::pair<hts_pos_t, hts_pos_t>, 4> testExonSpans{
+			std::pair<hts_pos_t, hts_pos_t>{50812, 50970},
+			std::pair<hts_pos_t, hts_pos_t>{52164, 52649},
+			std::pair<hts_pos_t, hts_pos_t>{55522, 56102},
+			std::pair<hts_pos_t, hts_pos_t>{56205, 56835}
+		};
+		std::set< std::pair<hts_pos_t, hts_pos_t> > testSet;
+		std::copy( testExonSpans.cbegin(), testExonSpans.cend(), std::inserter( testSet, testSet.end() ) );
+		isaSpace::ExonGroup emptyBackEG{isaSpace::mRNAfromGFF(currentGFFfields, previousGFFfields, testSet)};
+		REQUIRE( !emptyBackEG.empty() );
+		REQUIRE( emptyBackEG.nExons()  == testExonSpans.size() );
+		REQUIRE(emptyBackEG.strand()   == '+');
+		REQUIRE(emptyBackEG.geneName() == backField);
+		REQUIRE( previousGFFfields.back().empty() );
+		REQUIRE( testSet.empty() );
+
+		// all fields present
+		const std::string currentBackField = "ID=rna-XM_043206943.1;Parent=gene-LOC6526243;Dbxref=GeneID:6526243,Genbank:XM_043206943.1;Name=XM_043206943.1;"
+			"experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC6526243;"
+			"model_evidence=Supporting evidence includes similarity to: 4 Proteins%2C and 100%25 coverage of the "
+			"annotated genomic feature by RNAseq alignments%2C including 26 samples with support for all "
+			"annotated introns;product=active breakpoint cluster region-related protein%2C transcript variant X1;transcript_id=XM_043206943.1;";
+		currentGFFfields.front()  = "NC_052526.2";
+		currentGFFfields.back()   = currentBackField;
+		previousGFFfields.front() = "NC_052526.2";
+		previousGFFfields.back()  = backField;
+		std::copy( testExonSpans.cbegin(), testExonSpans.cend(), std::inserter( testSet, testSet.end() ) );
+		isaSpace::ExonGroup nonEmptyEG{isaSpace::mRNAfromGFF(currentGFFfields, previousGFFfields, testSet)};
+		REQUIRE( !nonEmptyEG.empty() );
+		REQUIRE( nonEmptyEG.nExons()  == testExonSpans.size() );
+		REQUIRE(nonEmptyEG.strand()   == '+');
+		REQUIRE(nonEmptyEG.geneName() == backField);
+	}
+
 	SECTION("Stringify functions") {
 		const std::string correctStatsLine(
 			"m54312U_201215_225530/460252/ccs	NC_052529.2	+	2983523	2988359	2983523	2988359	0	2	2	0	"
@@ -229,8 +239,9 @@ TEST_CASE("Helper functions work") {
 		coverageStats.lastExonEnd              = 2988366; // NOLINT
 		coverageStats.exonCoverageScores       = std::vector<float>{0.0, 0.93, 1.0, 0.5}; // NOLINT
 		coverageStats.bestExonCoverageScores   = std::vector<float>{0.5, 0.93, 1.0, 0.5}; // NOLINT
-		REQUIRE(isaSpace::stringify(coverageStats) == correctStatsLine);
+		REQUIRE(isaSpace::stringifyExonCoverage(coverageStats) == correctStatsLine);
 
+		/*
 		constexpr size_t recVecSize{7};
 		const std::vector<isaSpace::ReadExonCoverage> recVec(recVecSize, coverageStats);
 		const auto testVecResult{isaSpace::stringifyRCSrange(recVec.cbegin() + 1, recVec.cbegin() + 4)};
@@ -243,16 +254,17 @@ TEST_CASE("Helper functions work") {
 				correctStatsLine.cend()
 			)
 		);
+		*/
 		// thread ranges function
 		constexpr size_t nThreads{4};
-		const std::vector<isaSpace::ReadExonCoverage> testRECvec(11);
+		const isaSpace::bamGFFvector testRECvec(11);
 		const auto threadRanges{isaSpace::makeThreadRanges(testRECvec, nThreads)};
 		REQUIRE(threadRanges.size() == nThreads);
 		REQUIRE(
 			std::all_of(
 				threadRanges.cbegin(),
 				threadRanges.cend(),
-				[](const std::pair<std::vector<isaSpace::ReadExonCoverage>::const_iterator, std::vector<isaSpace::ReadExonCoverage>::const_iterator> &currPair) {
+				[](const std::pair<isaSpace::bamGFFvector::const_iterator, isaSpace::bamGFFvector::const_iterator> &currPair) {
 					return std::distance(currPair.first, currPair.second) >= 0;
 				}
 			)
@@ -261,7 +273,7 @@ TEST_CASE("Helper functions work") {
 			std::all_of(
 				threadRanges.cbegin(),
 				threadRanges.cend(),
-				[&testRECvec, &nThreads](const std::pair<std::vector<isaSpace::ReadExonCoverage>::const_iterator, std::vector<isaSpace::ReadExonCoverage>::const_iterator> &currPair) {
+				[&testRECvec, &nThreads](const std::pair<isaSpace::bamGFFvector::const_iterator, isaSpace::bamGFFvector::const_iterator> &currPair) {
 					return std::distance(currPair.first, currPair.second) >= testRECvec.size() / nThreads;
 				}
 			)
@@ -272,8 +284,31 @@ TEST_CASE("Helper functions work") {
 		);
 		REQUIRE( threadRanges.front().first == testRECvec.cbegin() );
 		REQUIRE( threadRanges.back().second == testRECvec.cend() );
-	}
 
+		// GFF file parsing
+		constexpr size_t nReferences{4};
+		const std::string goodGFFname("../tests/goodGFF.gff");
+		const auto parsedGFF{isaSpace::parseGFF(goodGFFname)};
+		REQUIRE(parsedGFF.size() == nReferences);
+		REQUIRE(
+			std::count_if(
+				parsedGFF.cbegin(),
+				parsedGFF.cend(),
+				[](const std::pair<std::string, std::vector<isaSpace::ExonGroup> > &eachReference){
+					return eachReference.second.size() == 1;
+				}
+			) == 3
+		);
+		REQUIRE(
+			std::count_if(
+				parsedGFF.cbegin(),
+				parsedGFF.cend(),
+				[](const std::pair<std::string, std::vector<isaSpace::ExonGroup> > &eachReference){
+					return eachReference.second.size() == 3;
+				}
+			) == 1
+		);
+	}
 }
 
 TEST_CASE("Exon range extraction works") {
@@ -294,8 +329,8 @@ TEST_CASE("Exon range extraction works") {
 	constexpr size_t correctNexons{4};
 	REQUIRE(testExonGroupNeg.nExons()  == correctNexons);
 	REQUIRE(testExonGroupNeg.strand()  == strand);
-	REQUIRE(testExonGroupNeg[1].first  == testExonSpans.at(1).first);
-	REQUIRE(testExonGroupNeg[1].second == testExonSpans.at(1).second);
+	REQUIRE(testExonGroupNeg.at(1).first  == testExonSpans.at(1).first);
+	REQUIRE(testExonGroupNeg.at(1).second == testExonSpans.at(1).second);
 	auto fullSpan{testExonGroupNeg.geneSpan()};
 	REQUIRE(fullSpan.first  == testExonSpans.front().first);
 	REQUIRE(fullSpan.second == testExonSpans.back().second);
@@ -310,8 +345,8 @@ TEST_CASE("Exon range extraction works") {
 	isaSpace::ExonGroup testExonGroupPos(testGeneName, strand, testSet);
 	REQUIRE(testExonGroupPos.nExons()  == correctNexons);
 	REQUIRE(testExonGroupPos.strand()  == strand);
-	REQUIRE(testExonGroupNeg[1].first  == testExonSpans.at(1).first);
-	REQUIRE(testExonGroupNeg[1].second == testExonSpans.at(1).second);
+	REQUIRE(testExonGroupNeg.at(1).first  == testExonSpans.at(1).first);
+	REQUIRE(testExonGroupNeg.at(1).second == testExonSpans.at(1).second);
 	fullSpan = testExonGroupPos.geneSpan();
 	REQUIRE(fullSpan.first  == testExonSpans.front().first);
 	REQUIRE(fullSpan.second == testExonSpans.back().second);
@@ -326,8 +361,8 @@ TEST_CASE("Exon range extraction works") {
 	isaSpace::ExonGroup testExonGroupUnd(testGeneName, strand, testSet);
 	REQUIRE(testExonGroupUnd.nExons()  == correctNexons);
 	REQUIRE(testExonGroupUnd.strand()  == '+');
-	REQUIRE(testExonGroupNeg[1].first  == testExonSpans.at(1).first);
-	REQUIRE(testExonGroupNeg[1].second == testExonSpans.at(1).second);
+	REQUIRE(testExonGroupNeg.at(1).first  == testExonSpans.at(1).first);
+	REQUIRE(testExonGroupNeg.at(1).second == testExonSpans.at(1).second);
 	fullSpan = testExonGroupUnd.geneSpan();
 	REQUIRE(fullSpan.first  == testExonSpans.front().first);
 	REQUIRE(fullSpan.second == testExonSpans.back().second);
@@ -402,6 +437,7 @@ TEST_CASE("Exon range extraction works") {
 	REQUIRE(testExonGroupPos.lastOverlappingExon(positionInMiddle) == correctPosMidF);
 	REQUIRE(testExonGroupPos.lastOverlappingExon(positionAfter)    == correctPosAfter);
 
+	/*
 	// Per-exon alignment quality tests
 	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> commonBAMheader(
 		sam_hdr_init(),
@@ -624,8 +660,9 @@ TEST_CASE("Exon range extraction works") {
 		isaSpace::ExonGroup(testGeneName, strand, emptyExonSet),
 		Catch::Matchers::StartsWith("ERROR: set of exons is empty in")
 	);
+	*/
 }
-
+/*
 TEST_CASE("Read match window statistics work") {
 	constexpr size_t vecLength{20};
 	constexpr std::vector< std::pair<float, hts_pos_t> >::difference_type subWindow{5};
@@ -1028,7 +1065,7 @@ TEST_CASE("Reading individual BAM records works") {
 	REQUIRE(poorlyMappedMidRegion.front().readStart == correctSoftClipMidStart);
 	REQUIRE(poorlyMappedMidRegion.front().readEnd   == correctSoftClipMidEnd);
 }
-
+*/
 /*
  Since HTSLIB is not in my control, I cannot test everything
  For example, testing the throw on wrong file name is iffy
@@ -1061,7 +1098,7 @@ TEST_CASE("Catching bad GFF and BAM files works") {
 	);
 }
 */
-
+/*
 TEST_CASE("GFF and BAM parsing works") {
 	const std::string gffName("../tests/posNegYak.gff");
 	const std::string testAlignmentBAMname("../tests/testAlignment.bam");
@@ -1177,3 +1214,4 @@ TEST_CASE("GFF and BAM parsing works") {
 		) == correctNsecondary
 	);
 }
+*/

@@ -54,9 +54,6 @@ using namespace isaSpace;
 
 ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSet) :
 												geneName_{std::move(geneName)}, isNegativeStrand_{strand == '-'} { // only affirmatively negative strand is marked as such
-	if ( exonSet.empty() ) {
-		throw std::string("ERROR: set of exons is empty in ") + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
 	std::copy(
 		exonSet.cbegin(),
 		exonSet.cend(),
@@ -414,8 +411,8 @@ MappedReadMatchStatus BAMrecord::getBestReferenceMatchStatus() const {
 		}
 	);
 	std::sort(
-		matchVectors.cbegin(),
-		matchVectors.cend(),
+		matchVectors.begin(),
+		matchVectors.end(),
 		[](const std::pair< hts_pos_t, std::vector<float> > &firstPair, const std::pair< hts_pos_t, std::vector<float> > &secondPair) {
 			return firstPair.first < secondPair.first;
 		}
