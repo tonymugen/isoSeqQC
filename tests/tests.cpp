@@ -150,6 +150,10 @@ TEST_CASE("Helper functions work") {
 		REQUIRE( valleys4.empty() );
 	}
 
+	/*
+	 * Reference match status function tests are in the BAM record section
+	 */
+
 	SECTION("GFF parsing functions") {
 		// empty fields
 		std::array<std::string, isaSpace::nGFFfields> previousGFFfields;
@@ -437,7 +441,6 @@ TEST_CASE("Exon range extraction works") {
 	REQUIRE(testExonGroupPos.lastOverlappingExon(positionInMiddle) == correctPosMidF);
 	REQUIRE(testExonGroupPos.lastOverlappingExon(positionAfter)    == correctPosAfter);
 
-	/*
 	// Per-exon alignment quality tests
 	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> commonBAMheader(
 		sam_hdr_init(),
@@ -653,16 +656,8 @@ TEST_CASE("Exon range extraction works") {
 	REQUIRE(
 		std::count_if(exonCoverage.cbegin(), exonCoverage.cend(), [&qsCutOff](float val) {return val > qsCutOff;}) == 3
 	);
-
-	// throwing on empty set
-	std::set< std::pair<hts_pos_t, hts_pos_t> > emptyExonSet;
-	REQUIRE_THROWS_WITH(
-		isaSpace::ExonGroup(testGeneName, strand, emptyExonSet),
-		Catch::Matchers::StartsWith("ERROR: set of exons is empty in")
-	);
-	*/
 }
-/*
+
 TEST_CASE("Read match window statistics work") {
 	constexpr size_t vecLength{20};
 	constexpr std::vector< std::pair<float, hts_pos_t> >::difference_type subWindow{5};
@@ -743,8 +738,6 @@ TEST_CASE("Reading individual BAM records works") {
 	isaSpace::BAMrecord bamRecord( bamRecordPtr.get(), orBAMheader.get() );
 	REQUIRE(nBytes > 0);
 	REQUIRE( !bamRecord.isRevComp() );
-	REQUIRE( bamRecord.isPrimaryMap() );
-	REQUIRE( !bamRecord.isSecondaryMap() );
 	REQUIRE(bamRecord.getReadName()    == correctReadName);
 	REQUIRE(bamRecord.getmRNAstart()   == correctMapPosition);
 	REQUIRE(bamRecord.getMapStart()    == correctMapPosition);
@@ -761,7 +754,7 @@ TEST_CASE("Reading individual BAM records works") {
 	);
 	REQUIRE(bamRecord.getReferenceName() == correctReferenceName);
 
-	std::vector<float> referenceMatches{bamRecord.getReferenceMatchStatus()};
+	std::vector<float> referenceMatches{isaSpace::getReferenceMatchStatus( bamRecord.getCIGARvector() )};
 	REQUIRE(referenceMatches.size() == correctRefMatchLength);
 	float matchSum = std::accumulate(referenceMatches.cbegin(), referenceMatches.cend(), 0.0F);
 	REQUIRE( matchSum == static_cast<float>(correctReadLength) );
@@ -849,7 +842,7 @@ TEST_CASE("Reading individual BAM records works") {
 		std::equal( cigarVecRev.cbegin(), cigarVecRev.cend(), correctCIGVrev.cbegin() )
 	);
 
-	referenceMatches = bamRecordRev.getReferenceMatchStatus();
+	referenceMatches = isaSpace::getReferenceMatchStatus( bamRecordRev.getCIGARvector() );
 	REQUIRE(referenceMatches.size() == correctRevRefMatchLength);
 	matchSum = std::accumulate(referenceMatches.cbegin(), referenceMatches.cend(), 0.0F);
 	REQUIRE( matchSum == static_cast<float>(correctRevReadLength) );
@@ -940,7 +933,7 @@ TEST_CASE("Reading individual BAM records works") {
 		std::equal( cigarVecSoft.cbegin(), cigarVecSoft.cend(), correctCIGVsoft.cbegin() )
 	);
 
-	referenceMatches = bamRecordSoft.getReferenceMatchStatus();
+	referenceMatches = isaSpace::getReferenceMatchStatus( bamRecordSoft.getCIGARvector() );
 	REQUIRE(referenceMatches.size() == correctSoftRefMatchLength);
 	matchSum = std::accumulate(referenceMatches.cbegin(), referenceMatches.cend(), 0.0F);
 	REQUIRE(matchSum == correctSoftMatchCount);
@@ -1065,7 +1058,7 @@ TEST_CASE("Reading individual BAM records works") {
 	REQUIRE(poorlyMappedMidRegion.front().readStart == correctSoftClipMidStart);
 	REQUIRE(poorlyMappedMidRegion.front().readEnd   == correctSoftClipMidEnd);
 }
-*/
+
 /*
  Since HTSLIB is not in my control, I cannot test everything
  For example, testing the throw on wrong file name is iffy
