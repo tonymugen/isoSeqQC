@@ -155,6 +155,9 @@ add_executable(exoncoverage
 target_include_directories(exoncoverage
 	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
 )
+target_include_directories(exoncoverage SYSTEM
+	PRIVATE ${htslib_SOURCE_DIR}/htslib
+)
 target_link_libraries(exoncoverage
 	PRIVATE isoseqAln
 )
@@ -184,6 +187,8 @@ target_link_libraries(isoseqAln
 )
 target_include_directories(isoseqAln
 	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
+)
+target_include_directories(isoseqAln SYSTEM
 	PRIVATE ${htslib_SOURCE_DIR}/htslib
 )
 set_target_properties(isoseqAln PROPERTIES

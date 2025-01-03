@@ -43,9 +43,9 @@
 #include <future>
 #include <thread>
 
-#include "htslib/hts.h"
-#include "htslib/sam.h"
-#include "htslib/bgzf.h"
+#include "hts.h"
+#include "sam.h"
+#include "bgzf.h"
 
 #include "isoseqAlgn.hpp"
 #include "helperFunctions.hpp"
@@ -221,6 +221,10 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const BAMrecord &alignment)
 }
 
 std::vector<float> ExonGroup::getBestExonCoverageQuality(const BAMrecord &alignment) const {
+	if ( !alignment.isMapped() ) {
+		std::vector<float> emptyResult;
+		return emptyResult;
+	}
 	// vector that tracks reference match/mismatch status across all secondary alignments for each reference position covered by CIGAR
 	const auto referenceMatchStatus{alignment.getBestReferenceMatchStatus()};
 	// find the first overlapping exon
@@ -320,7 +324,7 @@ BAMrecord::BAMrecord(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader) 
 					);
 	for (int32_t iSeq = 0; iSeq < alignmentRecord->core.l_qseq; ++iSeq) {
 		const uint16_t qualityByte{*(bam_get_qual(alignmentRecord) + iSeq)};
-		const uint16_t sequenceByte{bam_seqi(bam_get_seq(alignmentRecord), iSeq)};
+		const uint16_t sequenceByte{static_cast<uint16_t>( bam_seqi(bam_get_seq(alignmentRecord), iSeq) )};
 		sequenceAndQuality_.push_back( (qualityByte << qualityShift_) | sequenceByte );
 	}
 }

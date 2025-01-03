@@ -219,7 +219,18 @@ TEST_CASE("Helper functions work") {
 		REQUIRE(nonEmptyEG.geneName() == backField);
 	}
 
-	SECTION("Stringify functions") {
+	SECTION("Exon coverage and stringify functions") {
+		// Exon coverage
+		const std::pair<isaSpace::BAMrecord, isaSpace::ExonGroup> emptyPair;
+		const auto emptyExonCoverage{isaSpace::getExonCoverageStats(emptyPair)};
+		REQUIRE( emptyExonCoverage.geneName.empty() );
+		REQUIRE( emptyExonCoverage.chromosomeName.empty() );
+		REQUIRE( emptyExonCoverage.readName.empty() );
+		REQUIRE( emptyExonCoverage.exonCoverageScores.empty() );
+		REQUIRE( emptyExonCoverage.bestExonCoverageScores.empty() );
+		REQUIRE(emptyExonCoverage.strand == '+');
+
+		// Single stringify function
 		const std::string correctStatsLine(
 			"m54312U_201215_225530/460252/ccs	NC_052529.2	+	2983523	2988359	2983523	2988359	0	2	2	0	"
 			"gene-LOC6532627	4	101	2980697	2988366	{0.000000,0.930000,1.000000,0.500000}	{0.500000,0.930000,1.000000,0.500000}"
@@ -245,20 +256,6 @@ TEST_CASE("Helper functions work") {
 		coverageStats.bestExonCoverageScores   = std::vector<float>{0.5, 0.93, 1.0, 0.5}; // NOLINT
 		REQUIRE(isaSpace::stringifyExonCoverage(coverageStats) == correctStatsLine);
 
-		/*
-		constexpr size_t recVecSize{7};
-		const std::vector<isaSpace::ReadExonCoverage> recVec(recVecSize, coverageStats);
-		const auto testVecResult{isaSpace::stringifyRCSrange(recVec.cbegin() + 1, recVec.cbegin() + 4)};
-		REQUIRE(testVecResult.size() == 3 * correctStatsLine.size() + 3); // the newlines are the extra three characters
-		REQUIRE(
-			std::includes(
-				testVecResult.cbegin(),
-				testVecResult.cend(),
-				correctStatsLine.cbegin(),
-				correctStatsLine.cend()
-			)
-		);
-		*/
 		// thread ranges function
 		constexpr size_t nThreads{4};
 		const isaSpace::bamGFFvector testRECvec(11);
@@ -288,6 +285,19 @@ TEST_CASE("Helper functions work") {
 		);
 		REQUIRE( threadRanges.front().first == testRECvec.cbegin() );
 		REQUIRE( threadRanges.back().second == testRECvec.cend() );
+
+		// Range stringify function
+		const std::vector< std::pair<isaSpace::BAMrecord, isaSpace::ExonGroup> > emptyPairVector{emptyPair, emptyPair};
+		const auto emptyMultipleRecords{isaSpace::stringifyAlignementRange( emptyPairVector.cbegin(), emptyPairVector.cend() )};
+		REQUIRE(
+			std::count_if(
+				emptyMultipleRecords.cbegin(),
+				emptyMultipleRecords.cend(),
+				[](char eachChar) {
+					return eachChar == '\n';
+				}
+			) == emptyPairVector.size()
+		);
 
 		// GFF file parsing
 		constexpr size_t nReferences{4};

@@ -36,6 +36,8 @@
 #include <fstream>
 #include <utility>
 
+#include "sam.h"
+
 #include "helperFunctions.hpp"
 #include "isoseqAlgn.hpp"
 
@@ -216,21 +218,22 @@ std::vector<float> isaSpace::getReferenceMatchStatus(const std::vector<uint32_t>
 ReadExonCoverage isaSpace::getExonCoverageStats(const std::pair<BAMrecord, ExonGroup> &readAndExons) {
 	const char strandID = (readAndExons.first.isRevComp() ? '-' : '+' );
 	const auto firstCIGAR{readAndExons.first.getFirstCIGAR()};
-
 	ReadExonCoverage currentAlignmentInfo;
-	currentAlignmentInfo.readName                 = readAndExons.first.getReadName();
-	currentAlignmentInfo.chromosomeName           = readAndExons.first.getReferenceName();
-	currentAlignmentInfo.strand                   = strandID;
-	currentAlignmentInfo.alignmentStart           = readAndExons.first.getMapStart();
-	currentAlignmentInfo.alignmentEnd             = readAndExons.first.getMapEnd();
-	currentAlignmentInfo.bestAlignmentStart       = readAndExons.first.getMapStart();
-	currentAlignmentInfo.bestAlignmentEnd         = readAndExons.first.getMapEnd();
-	currentAlignmentInfo.firstSoftClipLength      = bam_cigar_oplen(firstCIGAR) * static_cast<uint32_t>(bam_cigar_opchr(firstCIGAR) == 'S');
-	currentAlignmentInfo.nSecondaryAlignments     = readAndExons.first.secondaryAlignmentCount();
-	currentAlignmentInfo.nLocalReversedAlignments = readAndExons.first.localReversedSecondaryAlignmentCount();
-	currentAlignmentInfo.nGoodSecondaryAlignments = readAndExons.first.localSecondaryAlignmentCount() - currentAlignmentInfo.nLocalReversedAlignments;
-	currentAlignmentInfo.exonCoverageScores       = readAndExons.second.getExonCoverageQuality(readAndExons.first);
-	currentAlignmentInfo.bestExonCoverageScores   = readAndExons.second.getBestExonCoverageQuality(readAndExons.first);
+	if ( readAndExons.first.isMapped() && (firstCIGAR > 0) ) {
+		currentAlignmentInfo.readName                 = readAndExons.first.getReadName();
+		currentAlignmentInfo.chromosomeName           = readAndExons.first.getReferenceName();
+		currentAlignmentInfo.strand                   = strandID;
+		currentAlignmentInfo.alignmentStart           = readAndExons.first.getMapStart();
+		currentAlignmentInfo.alignmentEnd             = readAndExons.first.getMapEnd();
+		currentAlignmentInfo.bestAlignmentStart       = readAndExons.first.getMapStart();
+		currentAlignmentInfo.bestAlignmentEnd         = readAndExons.first.getMapEnd();
+		currentAlignmentInfo.firstSoftClipLength      = bam_cigar_oplen(firstCIGAR) * static_cast<uint32_t>(bam_cigar_opchr(firstCIGAR) == 'S');
+		currentAlignmentInfo.nSecondaryAlignments     = readAndExons.first.secondaryAlignmentCount();
+		currentAlignmentInfo.nLocalReversedAlignments = readAndExons.first.localReversedSecondaryAlignmentCount();
+		currentAlignmentInfo.nGoodSecondaryAlignments = readAndExons.first.localSecondaryAlignmentCount() - currentAlignmentInfo.nLocalReversedAlignments;
+		currentAlignmentInfo.exonCoverageScores       = readAndExons.second.getExonCoverageQuality(readAndExons.first);
+		currentAlignmentInfo.bestExonCoverageScores   = readAndExons.second.getBestExonCoverageQuality(readAndExons.first);
+	}
 
 	return currentAlignmentInfo;
 }
@@ -244,7 +247,8 @@ std::string isaSpace::stringifyExonCoverage(const ReadExonCoverage &readRecord, 
 			return std::move(strVal) + std::to_string(val) + ',';
 		}
 	);
-	coverages.back() = '}';
+	coverages.resize(std::max( 2UL, coverages.size() ) - 1);
+	coverages += "}";
 	std::string bestCoverages = std::accumulate(
 		readRecord.bestExonCoverageScores.cbegin(),
 		readRecord.bestExonCoverageScores.cend(),
@@ -253,7 +257,8 @@ std::string isaSpace::stringifyExonCoverage(const ReadExonCoverage &readRecord, 
 			return std::move(strVal) + std::to_string(val) + ',';
 		}
 	);
-	bestCoverages.back() = '}';
+	bestCoverages.resize(std::max( 2UL, bestCoverages.size() ) - 1);
+	bestCoverages += "}";
 	std::string result =  readRecord.readName                                 + separator
 						+ readRecord.chromosomeName                           + separator
 						+ readRecord.strand                                   + separator

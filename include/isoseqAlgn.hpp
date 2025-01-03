@@ -36,7 +36,7 @@
 #include <unordered_map>
 #include <string>
 
-#include "htslib/sam.h"
+#include "sam.h"
 
 namespace isaSpace {
 	struct BamAndGffFiles;
@@ -147,7 +147,7 @@ namespace isaSpace {
 		 */
 		uint32_t firstSoftClipLength{0};
 		/** \brief Number of secondary alignments */
-		uint16_t nSecondaryAlignments;
+		uint16_t nSecondaryAlignments{0};
 		/** \brief Number of good secondary alignments 
 		 *
 		 * Secondary alignments that are on the same strand as
@@ -161,7 +161,7 @@ namespace isaSpace {
 		 */
 		uint16_t nLocalReversedAlignments{0};
 		/** \brief Number of exons */
-		uint16_t nExons;
+		uint16_t nExons{0};
 		/** \brief Gene name
 		 *
 		 * Set to `no_overlap` or `past_last_mRNA` if there is no
@@ -172,7 +172,7 @@ namespace isaSpace {
 		 *
 		 * Must be `+` or `-`.
 		 */
-		char strand{'\0'};
+		char strand{'+'};
 		/** \brief First exon length 
 		 *
 		 * Actual first exon, last in the sequence if the strand is negative.
@@ -534,6 +534,11 @@ namespace isaSpace {
 		 * \return `true` if the read is reverse-complemented
 		 */
 		[[gnu::warn_unused_result]] bool isRevComp() const noexcept { return isRev_; };
+		/** \brief Is the read mapped? 
+		 *
+		 * \return `true` if the read is mapped
+		 */
+		[[gnu::warn_unused_result]] bool isMapped() const noexcept { return isMapped_; };
 		/** \brief Are there any secondary alignments?
 		 *
 		 * \return `true` if there are any secondary alignments

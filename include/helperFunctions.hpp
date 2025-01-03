@@ -136,8 +136,9 @@ namespace isaSpace {
 	 * \return string with coverage information
 	 */
 	[[gnu::warn_unused_result]] std::string stringifyAlignementRange(
-		const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &begin,
-		const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &end);
+			const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &begin,
+			const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &end
+		);
 
 	/** \brief Make per-thread alignment record/annotation vector ranges
 	 *
