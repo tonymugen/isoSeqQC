@@ -499,8 +499,9 @@ namespace isaSpace {
 		 *
 		 * \param[in] alignmentRecord pointer to a read alignment record
 		 * \param[in] samHeader pointer to the corresponding BAM/SAM header
+		 * \param[in] localWindow window size for a secondary alignment to be considered local
 		 */
-		void addSecondaryAlignment(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader);
+		void addSecondaryAlignment(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader, const hts_pos_t localWindow = 500'000);
 		/** \brief Output read name
 		 *
 		 * \return read name

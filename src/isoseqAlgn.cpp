@@ -329,7 +329,7 @@ BAMrecord::BAMrecord(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader) 
 	}
 }
 
-void BAMrecord::addSecondaryAlignment(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader) {
+void BAMrecord::addSecondaryAlignment(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader, const hts_pos_t localWindow) {
 	if ( (alignmentRecord->core.flag & suppSecondaryAlgn_) == 0 ) {
 		throw std::string("ERROR: source BAM alignment record is not secondary in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
@@ -351,7 +351,7 @@ void BAMrecord::addSecondaryAlignment(const bam1_t *alignmentRecord, const sam_h
 	newSecondary.sameStrandAsPrimary = (isRev_ == currentIsRev);
     newSecondary.cigar               = std::move( std::vector<uint32_t>(bam_get_cigar(alignmentRecord), bam_get_cigar(alignmentRecord) + alignmentRecord->core.n_cigar) );
 
-	std::pair<hts_pos_t, hts_pos_t> primaryRange(mapStart_, mapEnd_);
+	std::pair<hts_pos_t, hts_pos_t> primaryRange(std::max(0L, mapStart_ - localWindow), mapEnd_ + localWindow);
 	std::pair<hts_pos_t, hts_pos_t> secondaryRange(newSecondary.mapStart, newSecondary.mapEnd);
 	if ( rangesOverlap(primaryRange, secondaryRange) ) {
 		localSecondaryAlignments_.emplace_back( std::move(newSecondary) );
@@ -621,6 +621,7 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			continue;
 		}
 		// Is this a secondary alignment?
+		/*
 		if ( ( (bamRecordPtr->core.flag & suppSecondaryAlgn_) != 0 ) && !readsAndExons_.empty() ) {
 			readsAndExons_.back().first.addSecondaryAlignment( bamRecordPtr.get(), bamHeader.get() );
 			continue;
@@ -636,6 +637,7 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			continue;
 		}
 		latestExonGroupIts.at(referenceName) = findOverlappingGene_(gffExonGroups.at(referenceName), latestExonGroupIts.at(referenceName), currentBAM);
+		*/
 	}
 }
 
