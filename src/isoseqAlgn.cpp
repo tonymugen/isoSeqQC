@@ -599,13 +599,9 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 	std::vector<std::string> outputLines; // gene information, if any, for each alignment to save
 	// keeping track of the latest iterators pointing to identified exon groups, one per chromosome/reference sequence
 	std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> latestExonGroupIts;
-	std::for_each(
-		gffExonGroups.cbegin(),
-		gffExonGroups.cend(),
-		[&latestExonGroupIts](const std::pair<std::string, std::vector<ExonGroup> > &eachChromosome){
-			latestExonGroupIts[eachChromosome.first] = eachChromosome.second.cbegin();
-		}
-	);
+	for (const auto &eachChromosome : gffExonGroups) {
+		latestExonGroupIts[eachChromosome.first] = eachChromosome.second.cbegin();
+	}
 	while (true) {
 		std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr(
 			bam_init1(),
@@ -621,9 +617,10 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			continue;
 		}
 		// Is this a secondary alignment?
-		/*
-		if ( ( (bamRecordPtr->core.flag & suppSecondaryAlgn_) != 0 ) && !readsAndExons_.empty() ) {
-			readsAndExons_.back().first.addSecondaryAlignment( bamRecordPtr.get(), bamHeader.get() );
+		if ( ( (bamRecordPtr->core.flag & suppSecondaryAlgn_) != 0 ) ) {
+			if ( !readsAndExons_.empty() ) {
+				readsAndExons_.back().first.addSecondaryAlignment( bamRecordPtr.get(), bamHeader.get() );
+			}
 			continue;
 		}
 		BAMrecord currentBAM( bamRecordPtr.get(), bamHeader.get() );
@@ -637,7 +634,6 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			continue;
 		}
 		latestExonGroupIts.at(referenceName) = findOverlappingGene_(gffExonGroups.at(referenceName), latestExonGroupIts.at(referenceName), currentBAM);
-		*/
 	}
 }
 
@@ -680,6 +676,8 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 		threadRanges.cbegin(),
 		threadRanges.cend(),
 		[&iThread, &tasks, &threadOutStrings](const std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> &eachRange) {
+				//threadOutStrings.at(iThread) = stringifyAlignementRange(eachRange.first, eachRange.second);
+		/*
 			tasks.emplace_back(
 				std::async(
 					[iThread, eachRange, &threadOutStrings] {
@@ -687,12 +685,15 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 					}
 				)
 			);
+		*/
 			++iThread;
 		}
 	);
+	/*
 	for (const auto &eachThread : tasks) {
 		eachThread.wait();
 	}
+	*/
 
 	const std::string headerLine = "read_name\tchromosome\tstrand\talignment_start\talignment_end\tbest_alignment_start\tbest_alignment_end\t"
 									"first_soft_clip_length\tn_secondary_alignments\tn_good_secondary_alignments\tn_local_reversed_strand\t"
@@ -737,28 +738,29 @@ std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const s
 		// convert back to the forward iterator using the reverse/forward relationship
 		// safe to increment the reverse iterator here due to the test above
 		searchIt = std::next(reverseLEGI).base();
-	} else {
-		searchIt = std::lower_bound(
-			exonGroupSearchStart,
-			chromosomeExonGroups.cend(),
-			alignedRead.getMapStart(),
-			[](const ExonGroup &currGroup, const hts_pos_t bamStart) {
-				return  (currGroup.geneSpan().second < bamStart);
-			}
-		);
-		if ( searchIt == chromosomeExonGroups.cend() ) {
-			ExonGroup emptyGroup;
-			readsAndExons_.emplace_back(alignedRead, emptyGroup);
-			// return the iterator to a valid record
-			std::advance(searchIt, -1);
-			return searchIt;
+		readsAndExons_.emplace_back(alignedRead, *searchIt);
+		return searchIt;
+	}
+	searchIt = std::lower_bound(
+		exonGroupSearchStart,
+		chromosomeExonGroups.cend(),
+		alignedRead.getMapStart(),
+		[](const ExonGroup &currGroup, const hts_pos_t bamStart) {
+			return  (currGroup.geneSpan().second < bamStart);
 		}
-		if (alignedRead.getMapStart() < searchIt->geneSpan().first) { // no overlap with a known gene
-			ExonGroup emptyGroup;
-			readsAndExons_.emplace_back(alignedRead, emptyGroup);
-			// do not update the iterator if no overlap
-			return exonGroupSearchStart;
-		}
+	);
+	if ( searchIt == chromosomeExonGroups.cend() ) {
+		ExonGroup emptyGroup;
+		readsAndExons_.emplace_back(alignedRead, emptyGroup);
+		// return the iterator to a valid record
+		std::advance(searchIt, -1);
+		return searchIt;
+	}
+	if (alignedRead.getMapStart() < searchIt->geneSpan().first) { // no overlap with a known gene
+		ExonGroup emptyGroup;
+		readsAndExons_.emplace_back(alignedRead, emptyGroup);
+		// do not update the iterator if no overlap
+		return exonGroupSearchStart;
 	}
 	readsAndExons_.emplace_back(alignedRead, *searchIt);
 	return searchIt;

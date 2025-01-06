@@ -30,8 +30,6 @@
 #include <sstream>
 #include <vector>
 
-#include <iostream>
-
 #include "htslib/bgzf.h"
 #include "htslib/sam.h"
 
@@ -300,9 +298,10 @@ TEST_CASE("Helper functions work") {
 				}
 			) == emptyPairVector.size()
 		);
+	}
 
-		// GFF file parsing
-		constexpr size_t nReferences{4};
+	SECTION("GFF parsing") {
+		constexpr size_t nReferences{3};
 		const std::string goodGFFname("../tests/goodGFF.gff");
 		const auto parsedGFF{isaSpace::parseGFF(goodGFFname)};
 		REQUIRE(parsedGFF.size() == nReferences);
@@ -313,7 +312,7 @@ TEST_CASE("Helper functions work") {
 				[](const std::pair<std::string, std::vector<isaSpace::ExonGroup> > &eachReference){
 					return eachReference.second.size() == 1;
 				}
-			) == 3
+			) == 2
 		);
 		REQUIRE(
 			std::count_if(
@@ -1162,8 +1161,8 @@ TEST_CASE("GFF and BAM parsing works") {
 	isaSpace::BamAndGffFiles gffPair;
 	gffPair.gffFileName = gffName;
 	gffPair.bamFileName = testAlignmentBAMname;
-	//isaSpace::BAMtoGenome testBAM(gffPair);
-	//testBAM.saveReadCoverageStats(outFileName, nThreads);
+	isaSpace::BAMtoGenome testBTG(gffPair);
+	testBTG.saveReadCoverageStats(outFileName, nThreads);
 
 	/*
 	std::fstream saveResultFile(outFileName, std::ios::in);

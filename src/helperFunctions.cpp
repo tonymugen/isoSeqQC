@@ -148,6 +148,10 @@ std::unordered_map< std::string, std::vector<ExonGroup> > isaSpace::parseGFF(con
 			continue;
 		}
 		if (newGFFfields.at(2) == "mRNA") {
+			if ( activeGFFfields.front().empty() ) { // this is the first mRNA in the file
+				activeGFFfields = newGFFfields;
+				continue;
+			}
 			const char strandID                  = (activeGFFfields.at(strandIDidx) == "-" ? '-' : '+');
 			const std::string strandedChromosome = activeGFFfields.front() + strandID;
 			result[strandedChromosome].emplace_back( mRNAfromGFF(newGFFfields, activeGFFfields, exonSpans) );
