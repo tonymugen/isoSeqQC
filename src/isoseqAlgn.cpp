@@ -425,15 +425,20 @@ MappedReadMatchStatus BAMrecord::getBestReferenceMatchStatus() const {
 	);
 	MappedReadMatchStatus bestMatch;
 	bestMatch.mapStart     = matchVectors.front().first;
-	hts_pos_t lastMapStart = matchVectors.front().first;
 	bestMatch.matchStatus  = std::move(matchVectors.front().second);
 	std::for_each(
 		std::next( matchVectors.cbegin() ),
 		matchVectors.cend(),
-		[&bestMatch, &lastMapStart](const std::pair< hts_pos_t, std::vector<float> > &eachPair) {
+		[&bestMatch](const std::pair< hts_pos_t, std::vector<float> > &eachPair) {
 			auto bestBeginIt = bestMatch.matchStatus.begin();
-			std::advance(bestBeginIt, eachPair.first - lastMapStart); // the advance must be non-negative because the vector is sorted
-			lastMapStart   = eachPair.first;                          // the new map start is the last one for future iterations
+			// figure out where in the best match vector the current match status starts
+			// this may be past the best match end
+			std::advance(bestBeginIt,
+				std::min(
+					eachPair.first - bestMatch.mapStart,
+					std::distance( bestBeginIt, bestMatch.matchStatus.end() )
+				)
+			);
 			auto bestEndIt = bestMatch.matchStatus.begin();
 			std::advance(bestEndIt,
 				std::min(
@@ -441,18 +446,20 @@ MappedReadMatchStatus BAMrecord::getBestReferenceMatchStatus() const {
 					std::distance( eachPair.second.cbegin(), eachPair.second.cend() )
 				) 
 			);
-			auto currentIt = eachPair.second.cbegin();
+			auto currentMatchIt = eachPair.second.cbegin();
 			std::for_each(
 				bestBeginIt,
 				bestEndIt,
-				[&currentIt](float &bestElement) {
-					bestElement = std::max(bestElement, *currentIt);
-					++currentIt;
+				[&currentMatchIt](float &bestElement) {
+					bestElement = std::max(bestElement, *currentMatchIt);
+					++currentMatchIt;
 				}
 			);
+			// TODO: add 0.0 at the end of bestMatch if there is a gap between it and the current match vector position on the reference
+
 			// if the current match status vector extends beyond the current best match
-			// if not, currentIt will be the end iterator and nothing happens
-			std::copy( currentIt, eachPair.second.cend(), std::back_inserter(bestMatch.matchStatus) );
+			// if not, currentMatchIt will be the end iterator and nothing happens
+			std::copy( currentMatchIt, eachPair.second.cend(), std::back_inserter(bestMatch.matchStatus) );
 		}
 	);
 	return bestMatch;
@@ -689,7 +696,7 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 				eachRange.second,
 				[&locThr](const std::pair<BAMrecord, ExonGroup> &eachPair) {
 					std::cout << ">>>    " << locThr << ": " << eachPair.second.nExons() << "; " << eachPair.first.getReadName() << "; " << eachPair.second.geneName() << "\n";
-					//const auto locTest = getExonCoverageStats(eachPair);
+					const auto locTest = eachPair.first.getBestReferenceMatchStatus();
 					//const auto test = eachPair.second.getBestExonCoverageQuality(eachPair.first);
 					++locThr;
 				}

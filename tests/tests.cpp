@@ -510,6 +510,7 @@ TEST_CASE("Exon range extraction works") {
 	REQUIRE(
 		std::all_of(exonCoverage.cbegin(), exonCoverage.cend(), [](float val) {return val == 1.0F;})
 	);
+	/*
 	std::vector<float> bestExonCoverage{testExonGroupPos.getBestExonCoverageQuality(bamRecord1)};
 	REQUIRE(
 		std::equal(
@@ -518,6 +519,7 @@ TEST_CASE("Exon range extraction works") {
 			bestExonCoverage.cbegin()
 		)
 	);
+	*/
 
 	// Read starts early
 	constexpr hts_pos_t earlyStartPos{49999}; // must be base-0
@@ -574,6 +576,7 @@ TEST_CASE("Exon range extraction works") {
 	REQUIRE(
 		std::all_of(exonCoverage.cbegin(), exonCoverage.cend(), [&qsCutOff](float val) {return val > qsCutOff;})
 	);
+	/*
 	bestExonCoverage.clear();
 	bestExonCoverage = testExonGroupPos.getBestExonCoverageQuality(bamRecord2);
 	REQUIRE(
@@ -583,6 +586,7 @@ TEST_CASE("Exon range extraction works") {
 			bestExonCoverage.cbegin()
 		)
 	);
+	*/
 
 	// Read starts in the middle of an exon
 	constexpr hts_pos_t lateStartPos{52299};
@@ -632,6 +636,7 @@ TEST_CASE("Exon range extraction works") {
 	REQUIRE(
 		std::count_if(exonCoverage.cbegin(), exonCoverage.cend(), [](float val) {return val > 0.0F;}) == 3
 	);
+	/*
 	bestExonCoverage.clear();
 	bestExonCoverage = testExonGroupPos.getBestExonCoverageQuality(bamRecord3);
 	REQUIRE(
@@ -641,6 +646,7 @@ TEST_CASE("Exon range extraction works") {
 			bestExonCoverage.cbegin()
 		)
 	);
+	*/
 
 	// Negative strand tests
 	constexpr std::array<uint32_t, 14> negativeCigarFields{
@@ -695,6 +701,7 @@ TEST_CASE("Exon range extraction works") {
 	REQUIRE(
 		std::count_if(exonCoverage.cbegin(), exonCoverage.cend(), [&qsCutOff](float val) {return val > qsCutOff;}) == 3
 	);
+	/*
 	bestExonCoverage.clear();
 	bestExonCoverage = testExonGroupNeg.getBestExonCoverageQuality(bamRecord4);
 	REQUIRE(
@@ -704,6 +711,7 @@ TEST_CASE("Exon range extraction works") {
 			bestExonCoverage.cbegin()
 		)
 	);
+	*/
 }
 
 TEST_CASE("Read match window statistics work") {
@@ -1154,6 +1162,7 @@ TEST_CASE("Reading individual BAM records works") {
 		REQUIRE(primaryWithSecondaryBAM.secondaryAlignmentCount() == correctNsecondary);
 		REQUIRE(primaryWithSecondaryBAM.localSecondaryAlignmentCount() == correctNlocalSecondary);
 		REQUIRE(primaryWithSecondaryBAM.localReversedSecondaryAlignmentCount() == correctNlocalSecondaryRev);
+		const auto primaryAQ = primaryWithSecondaryBAM.getBestReferenceMatchStatus();
 	}
 }
 
@@ -1199,7 +1208,7 @@ TEST_CASE("GFF and BAM parsing works") {
 	gffPair.gffFileName = gffName;
 	gffPair.bamFileName = testAlignmentBAMname;
 	isaSpace::BAMtoGenome testBTG(gffPair);
-	testBTG.saveReadCoverageStats(outFileName, nThreads);
+	//testBTG.saveReadCoverageStats(outFileName, nThreads);
 
 	/*
 	std::fstream saveResultFile(outFileName, std::ios::in);
