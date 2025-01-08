@@ -284,7 +284,7 @@ std::string isaSpace::stringifyExonCoverage(const ReadExonCoverage &readRecord, 
 	return result;
 }
 
-std::string isaSpace::stringifyAlignementRange(
+std::string isaSpace::stringifyAlignmentRange(
 		const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &begin,
 		const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &end) {
 	std::string outString;

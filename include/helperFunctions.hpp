@@ -135,7 +135,7 @@ namespace isaSpace {
 	 * \param[in] end end iterator
 	 * \return string with coverage information
 	 */
-	[[gnu::warn_unused_result]] std::string stringifyAlignementRange(
+	[[gnu::warn_unused_result]] std::string stringifyAlignmentRange(
 			const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &begin,
 			const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &end
 		);

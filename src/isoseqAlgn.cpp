@@ -43,6 +43,8 @@
 #include <future>
 #include <thread>
 
+#include <iostream>
+
 #include "hts.h"
 #include "sam.h"
 #include "bgzf.h"
@@ -424,12 +426,14 @@ MappedReadMatchStatus BAMrecord::getBestReferenceMatchStatus() const {
 	MappedReadMatchStatus bestMatch;
 	bestMatch.mapStart     = matchVectors.front().first;
 	hts_pos_t lastMapStart = matchVectors.front().first;
+	bestMatch.matchStatus  = std::move(matchVectors.front().second);
 	std::for_each(
 		std::next( matchVectors.cbegin() ),
 		matchVectors.cend(),
 		[&bestMatch, &lastMapStart](const std::pair< hts_pos_t, std::vector<float> > &eachPair) {
 			auto bestBeginIt = bestMatch.matchStatus.begin();
 			std::advance(bestBeginIt, eachPair.first - lastMapStart); // the advance must be non-negative because the vector is sorted
+			lastMapStart   = eachPair.first;                          // the new map start is the last one for future iterations
 			auto bestEndIt = bestMatch.matchStatus.begin();
 			std::advance(bestEndIt,
 				std::min(
@@ -446,6 +450,8 @@ MappedReadMatchStatus BAMrecord::getBestReferenceMatchStatus() const {
 					++currentIt;
 				}
 			);
+			// if the current match status vector extends beyond the current best match
+			// if not, currentIt will be the end iterator and nothing happens
 			std::copy( currentIt, eachPair.second.cend(), std::back_inserter(bestMatch.matchStatus) );
 		}
 	);
@@ -676,12 +682,24 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 		threadRanges.cbegin(),
 		threadRanges.cend(),
 		[&iThread, &tasks, &threadOutStrings](const std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> &eachRange) {
-				//threadOutStrings.at(iThread) = stringifyAlignementRange(eachRange.first, eachRange.second);
+			size_t locThr{0};
+			std::cout << ">>> " << iThread << "; " << std::distance(eachRange.first, eachRange.second) << "\n";
+			std::for_each(
+				eachRange.first,
+				eachRange.second,
+				[&locThr](const std::pair<BAMrecord, ExonGroup> &eachPair) {
+					std::cout << ">>>    " << locThr << ": " << eachPair.second.nExons() << "; " << eachPair.first.getReadName() << "; " << eachPair.second.geneName() << "\n";
+					//const auto locTest = getExonCoverageStats(eachPair);
+					//const auto test = eachPair.second.getBestExonCoverageQuality(eachPair.first);
+					++locThr;
+				}
+			);
+				//threadOutStrings.at(iThread) = stringifyAlignmentRange(eachRange.first, eachRange.second);
 		/*
 			tasks.emplace_back(
 				std::async(
 					[iThread, eachRange, &threadOutStrings] {
-						threadOutStrings.at(iThread) = stringifyAlignementRange(eachRange.first, eachRange.second);
+						threadOutStrings.at(iThread) = stringifyAlignmentRange(eachRange.first, eachRange.second);
 					}
 				)
 			);
@@ -693,7 +711,6 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 	for (const auto &eachThread : tasks) {
 		eachThread.wait();
 	}
-	*/
 
 	const std::string headerLine = "read_name\tchromosome\tstrand\talignment_start\talignment_end\tbest_alignment_start\tbest_alignment_end\t"
 									"first_soft_clip_length\tn_secondary_alignments\tn_good_secondary_alignments\tn_local_reversed_strand\t"
@@ -706,6 +723,7 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 		outStream.write( eachThreadString.c_str(), static_cast<std::streamsize>( eachThreadString.size() ) );
 	}
 	outStream.close();
+	*/
 };
 
 /*
