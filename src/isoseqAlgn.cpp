@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
+ * Copyright (c) 2024-2025 Anthony J. Greenberg and Rebekah Rogers
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
  *
@@ -43,8 +43,6 @@
 #include <future>
 #include <thread>
 
-#include <iostream>
-
 #include "hts.h"
 #include "sam.h"
 #include "bgzf.h"
@@ -54,6 +52,13 @@
 
 using namespace isaSpace;
 
+//ExonGroup constants
+constexpr size_t ExonGroup::strandIDidx_{6UL};
+constexpr char   ExonGroup::gffDelimiter_{'\t'};
+constexpr size_t ExonGroup::spanStart_{3UL};
+constexpr size_t ExonGroup::spanEnd_{4UL};
+
+//ExonGroup methods
 ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSet) :
 												geneName_{std::move(geneName)}, isNegativeStrand_{strand == '-'} { // only affirmatively negative strand is marked as such
 	std::copy(
@@ -61,10 +66,26 @@ ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pai
 		exonSet.cend(),
 		std::back_inserter(exonRanges_)
 	);
-	firstExonIt_ = ( isNegativeStrand_ ? std::prev( exonRanges_.end() ) : exonRanges_.begin() );
 }
 
- std::pair<hts_pos_t, hts_pos_t> ExonGroup::geneSpan() const noexcept {
+ExonGroup::ExonGroup(std::string geneName, const char strand, const std::vector<std::string> &exonLinesFomGFF) {
+	std::set< std::pair<hts_pos_t, hts_pos_t> > uniqueExons;
+	std::for_each(
+		exonLinesFomGFF.cbegin(),
+		exonLinesFomGFF.cend(),
+		[&uniqueExons](const std::string &eachGFFline) {
+			std::array<std::string, nGFFfields> gffFields{parseGFFline(eachGFFline)};
+			if (gffFields.at(0) != "FAIL") {
+				const auto exonStart = static_cast<hts_pos_t>( stol( gffFields.at(spanStart_) ) );
+				const auto exonEnd   = static_cast<hts_pos_t>( stol( gffFields.at(spanEnd_) ) );
+				uniqueExons.insert({exonStart, exonEnd});
+			}
+		}
+	);
+	*this = ExonGroup(std::move(geneName), strand, uniqueExons);
+}
+
+std::pair<hts_pos_t, hts_pos_t> ExonGroup::geneSpan() const noexcept {
 	return ( exonRanges_.empty() ?
 				std::pair<hts_pos_t, hts_pos_t>{-1, -1} :
 				std::pair<hts_pos_t, hts_pos_t>{exonRanges_.front().first, exonRanges_.back().second} 
@@ -72,7 +93,23 @@ ExonGroup::ExonGroup(std::string geneName, const char strand, std::set< std::pai
 }
 
 std::pair<hts_pos_t, hts_pos_t> ExonGroup::firstExonSpan() const noexcept {
-	return ( exonRanges_.empty() ? std::pair<hts_pos_t, hts_pos_t>(-1, -1): *firstExonIt_);
+	if ( exonRanges_.empty() ) {
+		return {-1, -1};
+	}
+	if (isNegativeStrand_) {
+		return exonRanges_.back();
+	}
+	return exonRanges_.front();
+}
+
+hts_pos_t ExonGroup::firstExonLength() const noexcept {
+	if ( exonRanges_.empty() ) {
+		return 0;
+	}
+	if (isNegativeStrand_) {
+		return exonRanges_.back().second - exonRanges_.back().first + 1;
+	}
+	return exonRanges_.front().second - exonRanges_.front().first + 1;
 }
 
 uint32_t ExonGroup::firstExonAfter(const hts_pos_t &position) const noexcept {
@@ -429,24 +466,24 @@ MappedReadMatchStatus BAMrecord::getBestReferenceMatchStatus() const {
 	std::for_each(
 		std::next( matchVectors.cbegin() ),
 		matchVectors.cend(),
-		[&bestMatch](const std::pair< hts_pos_t, std::vector<float> > &eachPair) {
+		[&bestMatch](const std::pair< hts_pos_t, std::vector<float> > &eachSecondaryMatch) {
 			auto bestBeginIt = bestMatch.matchStatus.begin();
 			// figure out where in the best match vector the current match status starts
 			// this may be past the best match end
 			std::advance(bestBeginIt,
 				std::min(
-					eachPair.first - bestMatch.mapStart,
-					std::distance( bestBeginIt, bestMatch.matchStatus.end() )
+					eachSecondaryMatch.first - bestMatch.mapStart,
+					std::distance( bestMatch.matchStatus.begin(), bestMatch.matchStatus.end() )
 				)
 			);
-			auto bestEndIt = bestMatch.matchStatus.begin();
+			auto bestEndIt = bestBeginIt;
 			std::advance(bestEndIt,
 				std::min(
 					std::distance( bestBeginIt, bestMatch.matchStatus.end() ),
-					std::distance( eachPair.second.cbegin(), eachPair.second.cend() )
+					std::distance( eachSecondaryMatch.second.cbegin(), eachSecondaryMatch.second.cend() )
 				) 
 			);
-			auto currentMatchIt = eachPair.second.cbegin();
+			auto currentMatchIt = eachSecondaryMatch.second.cbegin();
 			std::for_each(
 				bestBeginIt,
 				bestEndIt,
@@ -455,11 +492,15 @@ MappedReadMatchStatus BAMrecord::getBestReferenceMatchStatus() const {
 					++currentMatchIt;
 				}
 			);
-			// TODO: add 0.0 at the end of bestMatch if there is a gap between it and the current match vector position on the reference
+			const size_t gapToSecondary = std::max(
+				static_cast<hts_pos_t>(0),
+				eachSecondaryMatch.first - static_cast<hts_pos_t>( bestMatch.mapStart + bestMatch.matchStatus.size() )
+			);
+			bestMatch.matchStatus.resize(gapToSecondary, 0.0F);
 
 			// if the current match status vector extends beyond the current best match
 			// if not, currentMatchIt will be the end iterator and nothing happens
-			std::copy( currentMatchIt, eachPair.second.cend(), std::back_inserter(bestMatch.matchStatus) );
+			std::copy( currentMatchIt, eachSecondaryMatch.second.cend(), std::back_inserter(bestMatch.matchStatus) );
 		}
 	);
 	return bestMatch;
@@ -689,20 +730,6 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 		threadRanges.cbegin(),
 		threadRanges.cend(),
 		[&iThread, &tasks, &threadOutStrings](const std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> &eachRange) {
-			size_t locThr{0};
-			std::cout << ">>> " << iThread << "; " << std::distance(eachRange.first, eachRange.second) << "\n";
-			std::for_each(
-				eachRange.first,
-				eachRange.second,
-				[&locThr](const std::pair<BAMrecord, ExonGroup> &eachPair) {
-					std::cout << ">>>    " << locThr << ": " << eachPair.second.nExons() << "; " << eachPair.first.getReadName() << "; " << eachPair.second.geneName() << "\n";
-					const auto locTest = eachPair.first.getBestReferenceMatchStatus();
-					//const auto test = eachPair.second.getBestExonCoverageQuality(eachPair.first);
-					++locThr;
-				}
-			);
-				//threadOutStrings.at(iThread) = stringifyAlignmentRange(eachRange.first, eachRange.second);
-		/*
 			tasks.emplace_back(
 				std::async(
 					[iThread, eachRange, &threadOutStrings] {
@@ -710,11 +737,9 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 					}
 				)
 			);
-		*/
 			++iThread;
 		}
 	);
-	/*
 	for (const auto &eachThread : tasks) {
 		eachThread.wait();
 	}
@@ -730,7 +755,6 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 		outStream.write( eachThreadString.c_str(), static_cast<std::streamsize>( eachThreadString.size() ) );
 	}
 	outStream.close();
-	*/
 };
 
 /*
@@ -790,155 +814,3 @@ std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const s
 	readsAndExons_.emplace_back(alignedRead, *searchIt);
 	return searchIt;
 };
-/*
-void BAMtoGenome::findOverlappingGene_(const std::string &referenceName, std::vector<ExonGroup>::const_iterator &gffExonGroupStart, ReadExonCoverage &readCoverageInfo) {
-	// if the BAM file is not sorted, we may have to backtrack
-	// looking for the first gene end that is after the read map start
-	if (readCoverageInfo.alignmentStart < gffExonGroupStart->geneSpan().first) {
-		auto reverseLEGI = std::make_reverse_iterator(gffExonGroupStart);
-		reverseLEGI      = std::lower_bound(
-			reverseLEGI,
-			gffExonGroups_[referenceName].crend(),
-			readCoverageInfo.alignmentStart,
-			[](const ExonGroup &currGroup, const hts_pos_t bamStart) {
-				return  (currGroup.geneSpan().first > bamStart);
-			}
-		);
-		if ( reverseLEGI == gffExonGroups_[referenceName].crend() ) {
-			readCoverageInfo.geneName               = "no_overlap";
-			readCoverageInfo.nExons                 =  0;
-			readCoverageInfo.firstExonStart         = -1;
-			readCoverageInfo.lastExonEnd            = -1;
-			readCoverageInfo.firstExonLength        =  0;
-			readCoverageInfo.exonCoverageScores     = std::vector<float>(1, -1.0);
-			readCoverageInfo.bestExonCoverageScores = std::vector<float>(1, -1.0);
-			// if we are back past the first mRNA, give up on this read but do not update the latest iterator
-			return;
-		}
-		if (reverseLEGI->geneSpan().second < readCoverageInfo.alignmentStart) {
-			readCoverageInfo.geneName               = "no_overlap";
-			readCoverageInfo.nExons                 =  0;
-			readCoverageInfo.firstExonStart         = -1;
-			readCoverageInfo.lastExonEnd            = -1;
-			readCoverageInfo.firstExonLength        =  0;
-			readCoverageInfo.exonCoverageScores     = std::vector<float>(1, -1.0);
-			readCoverageInfo.bestExonCoverageScores = std::vector<float>(1, -1.0);
-			// the read does not overlap the gene, give up on this read but do not update the latest iterator
-			return;
-		}
-		// convert back to the forward iterator using the reverse/forward relationship
-		// safe to increment the reverse iterator here due to the test above
-		gffExonGroupStart = std::next(reverseLEGI).base();
-	} else {
-		gffExonGroupStart = std::lower_bound(
-			gffExonGroupStart,
-			gffExonGroups_[referenceName].cend(),
-			readCoverageInfo.alignmentStart,
-			[](const ExonGroup &currGroup, const hts_pos_t bamStart) {
-				return  (currGroup.geneSpan().second < bamStart);
-			}
-		);
-	}
-	if ( gffExonGroupStart == gffExonGroups_[referenceName].cend() ) {
-		readCoverageInfo.geneName               = "past_last_mRNA";
-		readCoverageInfo.nExons                 =  0;
-		readCoverageInfo.firstExonLength        =  0;
-		readCoverageInfo.firstExonStart         = -1;
-		readCoverageInfo.lastExonEnd            = -1;
-		readCoverageInfo.exonCoverageScores     = std::vector<float>(1, -1.0);
-		readCoverageInfo.bestExonCoverageScores = std::vector<float>(1, -1.0);
-		// return the iterator to a valid record
-		std::advance(gffExonGroupStart, -1);
-		return;
-	}
-	if (readCoverageInfo.alignmentStart < gffExonGroupStart->geneSpan().first) { // no overlap with a known gene
-		readCoverageInfo.geneName               = "no_overlap";
-		readCoverageInfo.nExons                 =  0;
-		readCoverageInfo.firstExonLength        =  0;
-		readCoverageInfo.firstExonStart         = -1;
-		readCoverageInfo.lastExonEnd            = -1;
-		readCoverageInfo.exonCoverageScores     = std::vector<float>(1, -1.0);
-		readCoverageInfo.bestExonCoverageScores = std::vector<float>(1, -1.0);
-		return;
-	}
-	readCoverageInfo.geneName        = gffExonGroupStart->geneName();
-	readCoverageInfo.nExons          = gffExonGroupStart->nExons();
-	readCoverageInfo.firstExonLength = gffExonGroupStart->firstExonSpan().second - gffExonGroupStart->firstExonSpan().first + 1;
-	readCoverageInfo.firstExonStart  = gffExonGroupStart->geneSpan().first;
-	readCoverageInfo.lastExonEnd     = gffExonGroupStart->geneSpan().second;
-}
-*/
-
-/*
-void BAMtoGenome::processPrimaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts) {
-	const char strandID                   = (alignmentRecord.isRevComp() ? '-' : '+' );
-	const std::string strandReferenceName = referenceName + strandID;
-	const auto refNameIt = gffExonGroups_.find(strandReferenceName);
-	if ( refNameIt == gffExonGroups_.cend() ) {  // ignore of the chromosome not in the GFF
-		return;
-	}
-	const std::vector<uint32_t> cigarVec{alignmentRecord.getCIGARvector()};
-	const uint32_t firstCIGAR = ( strandID == '+' ? cigarVec.front() : cigarVec.back() );
-
-	ReadExonCoverage currentAlignmentInfo;
-	currentAlignmentInfo.readName                 = alignmentRecord.getReadName();
-	currentAlignmentInfo.chromosomeName           = referenceName;
-	currentAlignmentInfo.strand                   = strandID;
-	currentAlignmentInfo.alignmentStart           = alignmentRecord.getMapStart();
-	currentAlignmentInfo.alignmentEnd             = alignmentRecord.getMapEnd();
-	currentAlignmentInfo.bestAlignmentStart       = alignmentRecord.getMapStart();
-	currentAlignmentInfo.bestAlignmentEnd         = alignmentRecord.getMapEnd();
-	currentAlignmentInfo.firstSoftClipLength      = bam_cigar_oplen(firstCIGAR) * static_cast<uint32_t>(bam_cigar_opchr(firstCIGAR) == 'S');
-	currentAlignmentInfo.nSecondaryAlignments     = 0;
-	currentAlignmentInfo.nLocalReversedAlignments = 0;
-	currentAlignmentInfo.nGoodSecondaryAlignments = 0;
-
-	if ( latestExonGroupIts.find(strandReferenceName) == latestExonGroupIts.cend() ) {
-		latestExonGroupIts[strandReferenceName] = gffExonGroups_[strandReferenceName].cbegin();
-	}
-	findOverlappingGene_(strandReferenceName, latestExonGroupIts[strandReferenceName], currentAlignmentInfo);
-	if (currentAlignmentInfo.firstExonStart > 0) { // if an overlapping gene was found
-		currentAlignmentInfo.exonCoverageScores     = latestExonGroupIts[strandReferenceName]->getExonCoverageQuality(alignmentRecord);
-		currentAlignmentInfo.bestExonCoverageScores = latestExonGroupIts[strandReferenceName]->getExonCoverageQuality(alignmentRecord);
-	}
-	readCoverageStats_.emplace_back( std::move(currentAlignmentInfo) );
-}
-*/
-
-/*
-void BAMtoGenome::processSecondaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, const std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts) {
-	readCoverageStats_.back().nSecondaryAlignments++;
-	const bool overlapsCurrentGene =
-		(referenceName == readCoverageStats_.back().chromosomeName) &&
-		rangesOverlap(readCoverageStats_.back(), alignmentRecord);
-	const bool sameStrand = ( alignmentRecord.isRevComp() == (readCoverageStats_.back().strand == '-') );
-	readCoverageStats_.back().nLocalReversedAlignments += static_cast<uint16_t>(overlapsCurrentGene) * static_cast<uint16_t>(!sameStrand);
-	if (overlapsCurrentGene && sameStrand) {
-		const std::string strandedRefName = referenceName + readCoverageStats_.back().strand;
-		readCoverageStats_.back().nGoodSecondaryAlignments++;
-		const std::vector<uint32_t> cigarVec{alignmentRecord.getCIGARvector()};
-		const std::vector<float> exonCovQuality{latestExonGroupIts.at(strandedRefName)->getExonCoverageQuality(alignmentRecord)};
-		auto ecqIt = exonCovQuality.cbegin();
-		// save the element-wise max quality score
-		std::transform(
-			readCoverageStats_.back().bestExonCoverageScores.cbegin(),
-			readCoverageStats_.back().bestExonCoverageScores.cend(),
-			readCoverageStats_.back().bestExonCoverageScores.begin(),
-			[&ecqIt](float score){
-				const float maxValue = std::max(score, *ecqIt);
-				ecqIt++;
-				return maxValue;
-			}
-		);
-		readCoverageStats_.back().bestAlignmentStart = std::min(
-			readCoverageStats_.back().bestAlignmentStart,
-			alignmentRecord.getMapStart()
-		);
-		readCoverageStats_.back().bestAlignmentEnd = std::max(
-			readCoverageStats_.back().bestAlignmentEnd,
-			alignmentRecord.getMapEnd()
-		);
-		return;
-	}
-}
-*/

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
+ * Copyright (c) 2024-2025 Anthony J. Greenberg and Rebekah Rogers
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
  *
@@ -177,19 +177,19 @@ namespace isaSpace {
 		 *
 		 * Actual first exon, last in the sequence if the strand is negative.
 		 */
-		hts_pos_t firstExonLength{0};
+		hts_pos_t firstExonLength{-1};
 		/** \brief First exon start
 		 *
 		 * Base-1 position of the first exon start from the GFF file.
 		 * End of the last exon if the strand negative.
 		 */
-		hts_pos_t firstExonStart{0};
+		hts_pos_t firstExonStart{-1};
 		/** \brief Last exon end
 		 *
 		 * Base-1 position of the last exon end from the GFF file.
 		 * Start of the first exon if the strand negative.
 		 */
-		hts_pos_t lastExonEnd{0};
+		hts_pos_t lastExonEnd{-1};
 		/** \brief Exon coverage scores
 		 *
 		 * Fraction of reference bases in each exon covered by a matching base
@@ -237,6 +237,15 @@ namespace isaSpace {
 		 * \param[in] exonSet set of exons from the same gene
 		 */
 		ExonGroup(std::string geneName, const char strand, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSet);
+		/** \brief Constructor with exon lines from a GFF file
+		 *
+		 * Uses lines exon from a GFF file that belong to the same gene.
+		 *
+		 * \param[in] geneName gene name
+		 * \param[in] strand mRNA strand
+		 * \param[in] exonLinesFomGFF GFF file exon lines
+		 */
+		ExonGroup(std::string geneName, const char strand, const std::vector<std::string> &exonLinesFomGFF);
 		/** \brief Copy constructor
 		 *
 		 * \param[in] toCopy object to copy
@@ -306,6 +315,11 @@ namespace isaSpace {
 		 * \return first exon nucleotide position pair (1-based)
 		 */
 		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> firstExonSpan() const noexcept;
+		/** \brief First exon length
+		 *
+		 * \return first exon length
+		 */
+		[[gnu::warn_unused_result]] hts_pos_t firstExonLength() const noexcept;
 		/** \brief Index of the first exon after a given position
 		 * 
 		 * 0-based index of the first exon found entirely after the given position.
@@ -372,12 +386,18 @@ namespace isaSpace {
 		 */
 		[[gnu::warn_unused_result]] std::vector<float> getBestExonCoverageQuality(const BAMrecord &alignment) const;
 	private:
+		/** \brief Index of the strand ID field */
+		static const size_t strandIDidx_;
+		/** \brief GFF delimiter character */
+		static const char   gffDelimiter_;
+		/** \brief Index of exon start field */
+		static const size_t spanStart_;
+		/** \brief Index of exon end field */
+		static const size_t spanEnd_;
 		/** \brief Gene name */
 		std::string geneName_;
 		/** \brief Is the mRNA on the negative strand? */
 		bool isNegativeStrand_{false};
-		/** \brief Iterator pointing to the first exon */
-		std::vector< std::pair<hts_pos_t, hts_pos_t> >::iterator firstExonIt_;
 		/** \brief Start and end positions of each exon in order
 		 *
 		 * `hts_pos_t` is `int64_t`

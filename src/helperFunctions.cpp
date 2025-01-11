@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
+ * Copyright (c) 2024-2025 Anthony J. Greenberg and Rebekah Rogers
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
  *
@@ -28,6 +28,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iterator>
 #include <numeric>
@@ -76,18 +77,10 @@ std::string isaSpace::extractAttributeName(const TokenAttibuteListPair &tokenAnd
 	return attributeField;
 }
 
-bool isaSpace::rangesOverlap(const std::pair<hts_pos_t, hts_pos_t> &range1, const std::pair<hts_pos_t, hts_pos_t> &range2) noexcept {
-	const auto local1 = std::minmax(range1.first, range1.second);
-	const auto local2 = std::minmax(range2.first, range2.second);
-	return (local2.first <= local1.second) && (local2.second >= local1.first);
-}
-
-ExonGroup isaSpace::mRNAfromGFF(std::array<std::string, nGFFfields> &currentGFFline, std::array<std::string, nGFFfields> &previousGFFfields, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet) {
+std::string isaSpace::extractParentName(const std::string &attributeString) {
 	const std::string parentToken{"Parent="};
 	constexpr char attrDelimiter{';'};
-	constexpr size_t strandIDidx{6UL};
-	ExonGroup result;
-	std::stringstream attributeStream( currentGFFline.back() );
+	std::stringstream attributeStream(attributeString);
 	std::string attrField;
 	TokenAttibuteListPair tokenPair;
 	while ( std::getline(attributeStream, attrField, attrDelimiter) ) {
@@ -95,78 +88,75 @@ ExonGroup isaSpace::mRNAfromGFF(std::array<std::string, nGFFfields> &currentGFFl
 	}
 	tokenPair.tokenName = parentToken;
 
-	std::string parentName{extractAttributeName(tokenPair)};
-	std::swap(currentGFFline.back(), parentName);
-	if ( currentGFFline.back() == previousGFFfields.back() ) { // both could be empty
-		return result;
+	return extractAttributeName(tokenPair);
+}
+
+bool isaSpace::rangesOverlap(const std::pair<hts_pos_t, hts_pos_t> &range1, const std::pair<hts_pos_t, hts_pos_t> &range2) noexcept {
+	const auto local1 = std::minmax(range1.first, range1.second);
+	const auto local2 = std::minmax(range2.first, range2.second);
+	return (local2.first <= local1.second) && (local2.second >= local1.first);
+}
+
+std::array<std::string, nGFFfields> isaSpace::parseGFFline(const std::string &gffLine) {
+	constexpr char gffDelimiter{'\t'};
+	std::array<std::string, nGFFfields> result;
+	std::stringstream lineStream(gffLine);
+	size_t iField{0};
+	while ( (iField < nGFFfields) && std::getline(lineStream, result.at(iField), gffDelimiter) ) {
+		++iField;
 	}
-	if ( currentGFFline.back().empty() ) {
-		if ( !exonSpanSet.empty() ) {
-			const char strandID                  = (previousGFFfields.at(strandIDidx) == "-" ? '-' : '+');
-			const std::string strandedChromosome = previousGFFfields.front() + strandID;
-			result = ExonGroup(previousGFFfields.back(), previousGFFfields.at(strandIDidx).front(), exonSpanSet);
-			exonSpanSet.clear();
-		}
-		previousGFFfields.back().clear();
-		previousGFFfields.front().clear();
-		return result;
+	// skip incomplete lines
+	if (iField < nGFFfields) {
+		result.at(0) = "FAIL";
 	}
-	// neither is empty and are not the same
-	if ( !exonSpanSet.empty() ) {
-		const char strandID                  = (previousGFFfields.at(strandIDidx) == "-" ? '-' : '+');
-		const std::string strandedChromosome = previousGFFfields.front() + strandID;
-		result = ExonGroup(previousGFFfields.back(), previousGFFfields.at(strandIDidx).front(), exonSpanSet);
-		exonSpanSet.clear();
-	}
-	std::copy( currentGFFline.cbegin(), currentGFFline.cend(), previousGFFfields.begin() );
+
 	return result;
 }
 
 std::unordered_map< std::string, std::vector<ExonGroup> > isaSpace::parseGFF(const std::string &gffFileName) {
 	constexpr size_t strandIDidx{6UL};
-	constexpr char   gffDelimiter{'\t'};
-	constexpr size_t spanStart{3UL};
-	constexpr size_t spanEnd{4UL};
+	constexpr size_t typeIDidx{2UL};
 
 	std::unordered_map< std::string, std::vector<ExonGroup> > result;
 	std::string gffLine;
 	std::fstream gffStream(gffFileName, std::ios::in);
-	std::set< std::pair<hts_pos_t, hts_pos_t> > exonSpans;
-	std::array<std::string, nGFFfields> activeGFFfields;   // fields from the gene tracked up to now
-	std::array<std::string, nGFFfields> newGFFfields;      // fields from the currently read line
+	std::string currentGeneName;
+	std::string currentStrandedChromosome;
+	char currentStrandID{'+'};
+	std::vector<std::string> exonLines;
 	while ( std::getline(gffStream, gffLine) ) {
 		if ( gffLine.empty() || (gffLine.at(0) == '#') ) {
 			continue;
 		}
-		std::stringstream currLineStream(gffLine);
-		size_t iField{0};
-		while ( (iField < nGFFfields) && std::getline(currLineStream, newGFFfields.at(iField), gffDelimiter) ) {
-			++iField;
-		}
+		std::array<std::string, nGFFfields> gffFields{parseGFFline(gffLine)};
 		// skip incomplete lines
-		if (iField < nGFFfields) {
+		if (gffFields.at(0) == "FAIL") {
 			continue;
 		}
-		if (newGFFfields.at(2) == "mRNA") {
-			if ( activeGFFfields.front().empty() ) { // this is the first mRNA in the file
-				activeGFFfields = newGFFfields;
+		if (gffFields.at(typeIDidx) == "exon") {
+			exonLines.emplace_back(gffLine);
+			continue;
+		}
+		if (gffFields.at(2) == "mRNA") {
+			std::string thisGeneName{extractParentName( gffFields.back() )};
+			if (thisGeneName == currentGeneName) {
 				continue;
 			}
-			const char strandID                  = (activeGFFfields.at(strandIDidx) == "-" ? '-' : '+');
-			const std::string strandedChromosome = activeGFFfields.front() + strandID;
-			result[strandedChromosome].emplace_back( mRNAfromGFF(newGFFfields, activeGFFfields, exonSpans) );
-			continue;
-		}
-		if ( (newGFFfields.at(2) == "exon") && ( !activeGFFfields.back().empty() ) ) {
-			const auto exonStart = static_cast<hts_pos_t>( stol( newGFFfields.at(spanStart) ) );
-			const auto exonEnd   = static_cast<hts_pos_t>( stol( newGFFfields.at(spanEnd) ) );
-			exonSpans.insert({exonStart, exonEnd});
+			if ( currentGeneName.empty() ) { // first mRNA in the file
+				currentGeneName           = thisGeneName;
+				currentStrandID           = (gffFields.at(strandIDidx) == "-" ? '-' : '+');
+				currentStrandedChromosome = gffFields.front() + currentStrandID;
+				continue;
+			}
+			result[currentStrandedChromosome].emplace_back(currentGeneName, currentStrandID, exonLines);
+			currentStrandID           = (gffFields.at(strandIDidx) == "-" ? '-' : '+');
+			currentStrandedChromosome = gffFields.front() + currentStrandID;
+			currentGeneName           = thisGeneName;
+			exonLines.clear();
 		}
 	}
-	if ( !activeGFFfields.back().empty() && !exonSpans.empty() ) {
-		const char strandID                  = (activeGFFfields.at(strandIDidx) == "-" ? '-' : '+');
-		const std::string strandedChromosome = activeGFFfields.front() + strandID;
-		result[strandedChromosome].emplace_back(activeGFFfields.back(), activeGFFfields.at(strandIDidx).front(), exonSpans);
+	if ( ( !exonLines.empty() ) && ( !currentGeneName.empty() ) ) {
+		result[currentStrandedChromosome].emplace_back(currentGeneName, currentStrandID, exonLines);
 	}
 	return result;
 }
@@ -224,21 +214,31 @@ ReadExonCoverage isaSpace::getExonCoverageStats(const std::pair<BAMrecord, ExonG
 	const auto firstCIGAR{readAndExons.first.getFirstCIGAR()};
 	ReadExonCoverage currentAlignmentInfo;
 	if ( readAndExons.first.isMapped() && (firstCIGAR > 0) ) {
+		const MappedReadMatchStatus bestMatchStats{readAndExons.first.getBestReferenceMatchStatus()};
+		const std::pair<hts_pos_t, hts_pos_t> geneSpan{readAndExons.second.geneSpan()};
 		currentAlignmentInfo.readName                 = readAndExons.first.getReadName();
 		currentAlignmentInfo.chromosomeName           = readAndExons.first.getReferenceName();
 		currentAlignmentInfo.strand                   = strandID;
 		currentAlignmentInfo.alignmentStart           = readAndExons.first.getMapStart();
 		currentAlignmentInfo.alignmentEnd             = readAndExons.first.getMapEnd();
-		currentAlignmentInfo.bestAlignmentStart       = readAndExons.first.getMapStart();
-		currentAlignmentInfo.bestAlignmentEnd         = readAndExons.first.getMapEnd();
+		currentAlignmentInfo.bestAlignmentStart       = bestMatchStats.mapStart;
+		currentAlignmentInfo.bestAlignmentEnd         = bestMatchStats.mapStart + static_cast<hts_pos_t>( bestMatchStats.matchStatus.size() );
 		currentAlignmentInfo.firstSoftClipLength      = bam_cigar_oplen(firstCIGAR) * static_cast<uint32_t>(bam_cigar_opchr(firstCIGAR) == 'S');
 		currentAlignmentInfo.nSecondaryAlignments     = readAndExons.first.secondaryAlignmentCount();
 		currentAlignmentInfo.nLocalReversedAlignments = readAndExons.first.localReversedSecondaryAlignmentCount();
 		currentAlignmentInfo.nGoodSecondaryAlignments = readAndExons.first.localSecondaryAlignmentCount() - currentAlignmentInfo.nLocalReversedAlignments;
+		currentAlignmentInfo.geneName                 = readAndExons.second.geneName();
+		currentAlignmentInfo.nExons                   = readAndExons.second.nExons();
+		currentAlignmentInfo.firstExonStart           = geneSpan.first;
+		currentAlignmentInfo.lastExonEnd              = geneSpan.second;
+		currentAlignmentInfo.firstExonLength          = readAndExons.second.firstExonLength();
 		currentAlignmentInfo.exonCoverageScores       = readAndExons.second.getExonCoverageQuality(readAndExons.first);
 		currentAlignmentInfo.bestExonCoverageScores   = readAndExons.second.getBestExonCoverageQuality(readAndExons.first);
 	}
 
+	if ( currentAlignmentInfo.geneName.empty() ) {
+		currentAlignmentInfo.geneName = "no_overlap";
+	}
 	return currentAlignmentInfo;
 }
 

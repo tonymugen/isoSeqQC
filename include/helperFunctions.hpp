@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
+ * Copyright (c) 2024-2025 Anthony J. Greenberg and Rebekah Rogers
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
  *
@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include <array>
 #include <string>
 #include <utility> // for std::pair
 #include <vector>
@@ -47,6 +48,15 @@ namespace isaSpace {
 	 */
 	[[gnu::warn_unused_result]] std::string extractAttributeName(const TokenAttibuteListPair &tokenAndAttrList);
 
+	/** \brief Extract parent name
+	 *
+	 * Extract the value of the `Parent=` attribute from the provided GFF attribute string.
+	 *
+	 * \param[in] attributeString GFF attribute string
+	 * \return parent name
+	 */
+	[[gnu::warn_unused_result]] std::string extractParentName(const std::string &attributeString);
+
 	/** \brief Test for range overlap
 	 *
 	 * The first position in each range need not be before the second in the same range.
@@ -57,17 +67,15 @@ namespace isaSpace {
 	 */
 	[[gnu::warn_unused_result]] bool rangesOverlap(const std::pair<hts_pos_t, hts_pos_t> &range1, const std::pair<hts_pos_t, hts_pos_t> &range2) noexcept;
 
-	/** \brief Extract mRNA information from GFF 
+	/** \brief Parse a GFF line into fields
 	 *
-	 * Extract information from a GFF line that has mRNA data.
-	 * Changes the latest gene name if the parent of the current mRNA is different and updates the exon groups vector if necessary.
 	 *
-	 * \param[in,out] currentGFFline fields from the GFF file line just read
-	 * \param[in,out] previousGFFfields GFF fields from previous lines; the attribute field only has the current gene ID
-	 * \param[in,out] exonSpanSet set of unique exon start/end pairs
-	 * \return `ExonGroup` object
+	 * Places `FAIL` in the first element if the number of fields is not `nGFFfields` as required by the GFF specification.
+	 *
+	 * \param[in] gffLine one line of a GFF file
+	 * \return each GFF field in a separate element
 	 */
-	[[gnu::warn_unused_result]] ExonGroup mRNAfromGFF(std::array<std::string, nGFFfields> &currentGFFline, std::array<std::string, nGFFfields> &previousGFFfields, std::set< std::pair<hts_pos_t, hts_pos_t> > &exonSpanSet);
+	[[gnu::warn_unused_result]] std::array<std::string, nGFFfields> parseGFFline(const std::string &gffLine);
 
 	/** \brief Parse a GFF file
 	 *
