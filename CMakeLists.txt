@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
-project(isoseqAligner
-	VERSION 0.1
+project(isoSeqQC
+	VERSION 0.2
 	LANGUAGES CXX
 )
 include(CheckCXXCompilerFlag)
