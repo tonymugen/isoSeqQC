@@ -30,8 +30,6 @@
 #include <sstream>
 #include <vector>
 
-#include <iostream>
-
 #include "bgzf.h"
 #include "sam.h"
 
@@ -793,6 +791,33 @@ TEST_CASE("Reading individual BAM records works") {
 				[](const std::pair<float, hts_pos_t> &eachPair){return eachPair.second > 1;}
 			) == correctNjumps
 		);
+		// read too short for the window
+		const std::string shortBAMname("../tests/shortRead.bam");
+		std::unique_ptr<BGZF, void(*)(BGZF *)> shortBAMfile(
+			bgzf_open(shortBAMname.c_str(), &openMode),
+			[](BGZF *bamFile) {
+				bgzf_close(bamFile);
+			}
+		);
+
+		// must read the header first to get to the alignments
+		std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> shortBAMheader(
+			bam_hdr_read( shortBAMfile.get() ),
+			[](sam_hdr_t *samHeader) {
+				sam_hdr_destroy(samHeader);
+			}
+		);
+		std::unique_ptr<bam1_t, void(*)(bam1_t *)> shortBamRecordPtr(
+			bam_init1(),
+			[](bam1_t *bamRecord){
+				bam_destroy1(bamRecord);
+			}
+		);
+		nBytes = bam_read1( shortBAMfile.get(), shortBamRecordPtr.get() );
+		isaSpace::BAMrecord shortBamRecord( shortBamRecordPtr.get(), shortBAMheader.get() );
+		binomialParams.windowSize = 80;//NOLINT
+		const auto regions{shortBamRecord.getPoorlyMappedRegions(binomialParams)};
+		REQUIRE( regions.empty() );
 	}
 
 	SECTION("Reading a single reverse-complemented record") {

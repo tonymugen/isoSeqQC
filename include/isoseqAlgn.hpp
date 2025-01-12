@@ -769,9 +769,10 @@ namespace isaSpace {
 		 * If a file with the same name exists it is overwritten.
 		 *
 		 * \param[in] outFileName output file name
+		 * \param[in] windowParameters sliding window parameters
 		 * \param[in] nThreads number of concurrent threads
 		 */
-		void saveUnmappedRegions(const std::string &outFileName, const size_t &nThreads) const;
+		void saveUnmappedRegions(const std::string &outFileName, const BinomialWindowParameters &windowParameters, const size_t &nThreads) const;
 	private:
 		/** \brief Flag testing the two possible secondary alignment markers */
 		static const uint16_t suppSecondaryAlgn_;

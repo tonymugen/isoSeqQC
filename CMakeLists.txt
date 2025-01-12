@@ -148,7 +148,7 @@ set(CMAKE_CXX_FLAGS_TEST
 )
 
 include(GNUInstallDirs)
-# executable
+# executables
 add_executable(exoncoverage
 	${CMAKE_CURRENT_LIST_DIR}/apps/exoncoverage.cpp
 )
@@ -173,6 +173,33 @@ set_target_properties(exoncoverage PROPERTIES
 	CXX_STANDARD_REQUIRED ON
 )
 install(TARGETS exoncoverage
+	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+add_executable(partialmaps
+	${CMAKE_CURRENT_LIST_DIR}/apps/partialmaps.cpp
+)
+target_include_directories(partialmaps
+	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
+)
+target_include_directories(partialmaps SYSTEM
+	PRIVATE ${htslib_SOURCE_DIR}/htslib
+)
+target_link_libraries(partialmaps
+	PRIVATE isoseqAln
+)
+target_compile_options(partialmaps
+	PRIVATE ${PROJECT_WARNINGS_CXX}
+)
+if(BUILD_TESTS)
+	target_compile_options(partialmaps
+		PRIVATE -fsanitize=${SANITIZER_LIST}
+	)
+endif()
+set_target_properties(partialmaps PROPERTIES
+	CXX_STANDARD_REQUIRED ON
+)
+install(TARGETS partialmaps
 	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 

@@ -355,9 +355,14 @@ BAMrecord::BAMrecord(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader) 
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
 
-	readName_      = std::string{bam_get_qname(alignmentRecord)};
-	referenceName_ = std::string( sam_hdr_tid2name(samHeader, alignmentRecord->core.tid) );
-	cigar_         = std::vector<uint32_t>(
+	const auto *const refNamePtr = sam_hdr_tid2name(samHeader, alignmentRecord->core.tid); 
+	if (refNamePtr != nullptr) {
+		referenceName_ = std::string{refNamePtr};
+	} else {
+		referenceName_ = "Unknown";
+	}
+	readName_ = std::string{bam_get_qname(alignmentRecord)};
+	cigar_    = std::vector<uint32_t>(
 						bam_get_cigar(alignmentRecord),
 						bam_get_cigar(alignmentRecord) + alignmentRecord->core.n_cigar
 					);
@@ -535,7 +540,9 @@ std::vector< std::pair<float, hts_pos_t> > BAMrecord::getReadCentricMatchStatus(
 std::vector<MappedReadInterval> BAMrecord::getPoorlyMappedRegions(const BinomialWindowParameters &windowParameters) const {
 	std::vector<MappedReadInterval> result;
 	const auto readMatchStatus{this->getReadCentricMatchStatus()};
-	if ( (windowParameters.windowSize < 1) || ( readMatchStatus.empty() ) ) {
+	if ( (windowParameters.windowSize < 1) ||
+			( readMatchStatus.empty() ) ||
+			(readMatchStatus.size() < 2 * windowParameters.windowSize) ) {
 		return result;
 	}
 
@@ -757,10 +764,35 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 	outStream.close();
 };
 
-/*
-void BAMtoGenome::saveUnmappedRegions(const std::string &outFileName, const size_t &nThreads) const {
+void BAMtoGenome::saveUnmappedRegions(const std::string &outFileName, const BinomialWindowParameters &windowParameters, const size_t &nThreads) const {
+	std::vector<std::string> badAlignmentStats;
+	std::for_each(
+		readsAndExons_.cbegin(),
+		readsAndExons_.cend(),
+		[&badAlignmentStats, &windowParameters](const std::pair<BAMrecord, ExonGroup> &currentRAG) {
+			const std::vector<MappedReadInterval> badRegions{currentRAG.first.getPoorlyMappedRegions(windowParameters)};
+			std::for_each(
+				badRegions.cbegin(),
+				badRegions.cend(),
+				[&badAlignmentStats, &currentRAG](const MappedReadInterval &eachInterval) {
+					std::string regionStats =
+						currentRAG.first.getReadName() + "\t" +
+						std::to_string(eachInterval.readStart) + "\t" +
+						std::to_string(eachInterval.readEnd) + "\n";
+					badAlignmentStats.emplace_back(regionStats);
+				}
+			);
+		}
+	);
+	const std::string headerLine = "read_name\tunmapped_start\tunmapped_end\n";
+	std::fstream outStream;
+	outStream.open(outFileName, std::ios::out | std::ios::binary | std::ios::trunc);
+	outStream.write( headerLine.c_str(), static_cast<std::streamsize>( headerLine.size() ) );
+	for (const auto &eachThreadString : badAlignmentStats) {
+		outStream.write( eachThreadString.c_str(), static_cast<std::streamsize>( eachThreadString.size() ) );
+	}
+	outStream.close();
 };
-*/
 
 std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const std::vector<ExonGroup> &chromosomeExonGroups,
 		const std::vector<ExonGroup>::const_iterator &exonGroupSearchStart, BAMrecord &alignedRead) {
