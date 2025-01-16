@@ -56,4 +56,7 @@ The output is a tab-delimited text file with largely self-explanatory column nam
     n_local_reversed_strand       -- number of secondary alignments that are on the opposite strand but still in vicinity of the primary.
     alignment_quality_string      -- a string of alignment match fractions for each exon, by position on the reference regardless of transcipt arrangement or strand.
     best_alignment_quality_string -- the same, but taking into account secondary alignments.
-    
+
+# Funding
+
+This project is funded in part by an NIH NIGMS MIRA R35 GM133376 grant to Rebekah L. Rogers.
