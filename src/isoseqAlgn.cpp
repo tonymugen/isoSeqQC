@@ -324,9 +324,9 @@ ReadMatchWindowBIC::ReadMatchWindowBIC(const std::vector< std::pair<float, hts_p
 
 float ReadMatchWindowBIC::getBICdifference() const noexcept {
 	const float jFailures = nTrials_ - kSuccesses_;
-	const float leftLlik  = kSuccesses_ * logf(leftProbability_)  + jFailures * logf(1.0F - leftProbability_);
-	const float rightLlik = kSuccesses_ * logf(rightProbability_) + jFailures * logf(1.0F - rightProbability_);
-    return logf(nTrials_) + 2.0F * (leftLlik - rightLlik);
+	const float leftLlik  = ( kSuccesses_ * logf(leftProbability_) ) + ( jFailures * logf(1.0F - leftProbability_) );
+	const float rightLlik = ( kSuccesses_ * logf(rightProbability_) ) + ( jFailures * logf(1.0F - rightProbability_) );
+    return logf(nTrials_) + ( 2.0F * (leftLlik - rightLlik) );
 };
 
 // BAMrecord methods
@@ -777,6 +777,7 @@ void BAMtoGenome::saveUnmappedRegions(const std::string &outFileName, const Bino
 				[&badAlignmentStats, &currentRAG](const MappedReadInterval &eachInterval) {
 					std::string regionStats =
 						currentRAG.first.getReadName() + "\t" +
+						std::to_string( currentRAG.first.getReadLength() ) + "\t" +
 						std::to_string(eachInterval.readStart) + "\t" +
 						std::to_string(eachInterval.readEnd) + "\n";
 					badAlignmentStats.emplace_back(regionStats);
@@ -784,7 +785,7 @@ void BAMtoGenome::saveUnmappedRegions(const std::string &outFileName, const Bino
 			);
 		}
 	);
-	const std::string headerLine = "read_name\tunmapped_start\tunmapped_end\n";
+	const std::string headerLine = "read_name\tread_length\tunmapped_start\tunmapped_end\n";
 	std::fstream outStream;
 	outStream.open(outFileName, std::ios::out | std::ios::binary | std::ios::trunc);
 	outStream.write( headerLine.c_str(), static_cast<std::streamsize>( headerLine.size() ) );

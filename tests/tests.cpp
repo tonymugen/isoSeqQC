@@ -24,6 +24,7 @@
 #include <numeric>
 #include <utility>
 #include <set>
+#include <unordered_set>
 #include <array>
 #include <string>
 #include <fstream>
@@ -669,10 +670,12 @@ TEST_CASE("Read match window statistics work") {
 	constexpr std::vector< std::pair<float, hts_pos_t> >::difference_type subWindow{5};
 	constexpr float hiProb{0.99F};
 	constexpr float loProb{0.25F};
+	constexpr float bicDiffCutOff{50.0F};
 	isaSpace::BinomialWindowParameters windowParameters;
 	windowParameters.currentProbability     = loProb;
 	windowParameters.alternativeProbability = hiProb;
 	windowParameters.windowSize             = vecLength;
+	windowParameters.bicDifferenceThreshold = bicDiffCutOff;
 
 	constexpr float correctBIChi{118.758};
 	constexpr float correctBIClo{-112.767};
@@ -1298,5 +1301,62 @@ TEST_CASE("GFF and BAM parsing works") {
 			nSecondary.cend(),
 			[](int32_t val){return val > 0;}
 		) == correctNsecondary
+	);
+	// poorly aligned portions test
+	const std::string badRegionFileName("../tests/testBadRegions.tsv");
+	constexpr float hiProb{0.99F};
+	constexpr float loProb{0.25F};
+	constexpr float bicDiffCutOff{100.0F};
+	constexpr hts_pos_t windowSize{80};
+	isaSpace::BinomialWindowParameters bwParams;
+	bwParams.currentProbability     = loProb;
+	bwParams.alternativeProbability = hiProb;
+	bwParams.windowSize             = windowSize;
+	bwParams.bicDifferenceThreshold = bicDiffCutOff;
+	testBTG.saveUnmappedRegions(badRegionFileName, bwParams, nThreads);
+
+	std::fstream badRgionResultFile(badRegionFileName, std::ios::in);
+	constexpr size_t nIntFields{3};
+	std::unordered_set<std::string> uniqueReadNames;
+	std::vector< std::array<int32_t, nIntFields> > intFields;
+	std::getline(badRgionResultFile, line);             // get rid of the header
+	while ( std::getline(badRgionResultFile, line) ) {
+		std::stringstream lineStream;
+		std::array<int32_t, nIntFields> currentIntFields{0, 0, 0};
+		lineStream.str(line);
+		std::string field;
+		lineStream >> field;
+		uniqueReadNames.insert(field);
+		lineStream >> field;
+		currentIntFields.at(0) = stoi(field);
+		lineStream >> field;
+		currentIntFields.at(1) = stoi(field);
+		lineStream >> field;
+		currentIntFields.at(2) = stoi(field);
+		intFields.emplace_back(currentIntFields);
+	}
+	badRgionResultFile.close();
+
+	constexpr size_t correctBadRegionResSize{3};
+	constexpr size_t correctNuniqueReads{2};
+	REQUIRE(uniqueReadNames.size() == correctNuniqueReads);
+    REQUIRE(intFields.size() == correctBadRegionResSize);
+	REQUIRE(
+		std::all_of(
+			intFields.cbegin(),
+			intFields.cend(),
+			[](const std::array<int, nIntFields> &eachLine) {
+				return eachLine.at(0) >= eachLine.back();
+			}
+		)
+	);
+	REQUIRE(
+		std::all_of(
+			intFields.cbegin(),
+			intFields.cend(),
+			[&bwParams](const std::array<int, nIntFields> &eachLine) {
+				return ( eachLine.at(2) - eachLine.at(1) >= bwParams.windowSize);
+			}
+		)
 	);
 }
