@@ -21,7 +21,7 @@
 /** \file
  * \author Anthony J. Greenberg and Rebekah Rogers
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
- * \version 0.1
+ * \version 0.2
  *
  * Interface definitions of classes that take `.bam` files with isoSeq alignments and identify potential fused transcripts.
  *

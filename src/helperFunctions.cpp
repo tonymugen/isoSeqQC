@@ -21,7 +21,7 @@
 /** \file
  * \author Anthony J. Greenberg and Rebekah Rogers
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
- * \version 0.1
+ * \version 0.2
  *
  * Implementation of class-external functions needed by genomic analyses.
  *
@@ -284,9 +284,7 @@ std::string isaSpace::stringifyExonCoverage(const ReadExonCoverage &readRecord, 
 	return result;
 }
 
-std::string isaSpace::stringifyAlignmentRange(
-		const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &begin,
-		const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &end) {
+std::string isaSpace::stringifyAlignmentRange(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end) {
 	std::string outString;
 	std::for_each(
 		begin,
@@ -297,6 +295,30 @@ std::string isaSpace::stringifyAlignmentRange(
 		}
 	);
 	return outString;
+}
+
+std::string isaSpace::stringifyUnmappedRegions(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters) {
+	std::string badAlignmentString;
+	std::for_each(
+		begin,
+		end,
+		[&badAlignmentString, &windowParameters](const std::pair<BAMrecord, ExonGroup> &currentRAG) {
+			const std::vector<MappedReadInterval> badRegions{currentRAG.first.getPoorlyMappedRegions(windowParameters)};
+			std::for_each(
+				badRegions.cbegin(),
+				badRegions.cend(),
+				[&badAlignmentString, &currentRAG](const MappedReadInterval &eachInterval) {
+					std::string regionStats =
+						currentRAG.first.getReadName() + "\t" +
+						std::to_string( currentRAG.first.getReadLength() ) + "\t" +
+						std::to_string(eachInterval.readStart) + "\t" +
+						std::to_string(eachInterval.readEnd) + "\n";
+					badAlignmentString += regionStats;
+				}
+			);
+		}
+	);
+	return badAlignmentString;
 }
 
 std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
@@ -366,9 +388,9 @@ void isaSpace::extractCLinfo(const std::unordered_map<std::string, std::string> 
 	intVariables.clear();
 	stringVariables.clear();
 	const std::array<std::string, 3> requiredStringVariables{"input-bam", "input-gff", "out"};
-	const std::array<std::string, 1> optionalIntVariables{"threads"};
+	const std::array<std::string, 2> optionalIntVariables{"threads", "window-size"};
 
-	const std::unordered_map<std::string, int> defaultIntValues{ {"threads", -1} };
+	const std::unordered_map<std::string, int> defaultIntValues{ {"threads", -1}, {"window-size", 75} };
 
 	if ( parsedCLI.empty() ) {
 		throw std::string("No command line flags specified;");

@@ -21,7 +21,7 @@
 /** \file
  * \author Anthony J. Greenberg and Rebekah Rogers
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
- * \version 0.1
+ * \version 0.2
  *
  * Definitions of class-external functions needed by genomic analyses.
  *
@@ -143,10 +143,17 @@ namespace isaSpace {
 	 * \param[in] end end iterator
 	 * \return string with coverage information
 	 */
-	[[gnu::warn_unused_result]] std::string stringifyAlignmentRange(
-			const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &begin,
-			const std::vector< std::pair<BAMrecord, ExonGroup> >::const_iterator &end
-		);
+	[[gnu::warn_unused_result]] std::string stringifyAlignmentRange(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end);
+	/** \brief Produce a string of poorly aligned region statistics from an alignment range 
+	 *
+	 * Only saves information from reads that have poorly mapped regions, potentially multiple per read.
+	 *
+	 * \param[in] begin start iterator
+	 * \param[in] end end iterator
+	 * \param[in] windowParameters sliding window parameters
+	 * \return string with coverage information
+	 */
+	[[gnu::warn_unused_result]] std::string stringifyUnmappedRegions(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters);
 
 	/** \brief Make per-thread alignment record/annotation vector ranges
 	 *

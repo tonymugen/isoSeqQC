@@ -22,7 +22,7 @@
 /** \file
  * \author Anthony J. Greenberg and Rebekah Rogers
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
- * \version 0.1
+ * \version 0.2
  *
  * Goes through isoSeq read alignments and looks for exons annotated in a GFF file that overlap the reads.
  *

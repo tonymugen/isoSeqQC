@@ -22,7 +22,7 @@
 /** \file
  * \author Anthony J. Greenberg and Rebekah Rogers
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
- * \version 0.1
+ * \version 0.2
  *
  * Goes through isoSeq read alignments and looks for reads that have unmapped regions.
  *
@@ -39,10 +39,11 @@
 int main(int argc, char *argv[]) {
 	// set usage message
 	const std::string cliHelp = "Available command line flags (in any order):\n" 
-		"  --input-bam   bam_file_name (input BAM file name; required).\n"
-		"  --input-gff   gff_file_name (input GFF file name; required).\n"
-		"  --out         out_file_name (output file name; required).\n"
-		"  --threads     number_of_threads (maximal number of threads to use; defaults to maximal available).\n";
+		"  --input-bam    bam_file_name (input BAM file name; required).\n"
+		"  --input-gff    gff_file_name (input GFF file name; required).\n"
+		"  --out          out_file_name (output file name; required).\n"
+		"  --window-size  sliding window size for poorly aligned region identification (defaults to 75).\n"
+		"  --threads      number_of_threads (maximal number of threads to use; defaults to maximal available).\n";
 	try {
 		std::unordered_map <std::string, std::string> stringVariables;
 		std::unordered_map <std::string, int>         intVariables;
@@ -59,11 +60,11 @@ int main(int argc, char *argv[]) {
 		bamAndGFF.gffFileName = stringVariables.at("input-gff");
 		constexpr float hiProb{0.99F};
 		constexpr float loProb{0.25F};
-		constexpr int32_t windowSize{80};
 		isaSpace::BinomialWindowParameters windowParameters;
 		windowParameters.currentProbability     = loProb;
 		windowParameters.alternativeProbability = hiProb;
-		windowParameters.windowSize             = windowSize;
+		windowParameters.windowSize             = intVariables.at("window-size");
+		windowParameters.bicDifferenceThreshold = 2.0F * static_cast<float>(windowParameters.windowSize);
 		isaSpace::BAMtoGenome bam2genome(bamAndGFF);
 		bam2genome.saveUnmappedRegions(stringVariables.at("out"), windowParameters, nThreads);
 		return 0;

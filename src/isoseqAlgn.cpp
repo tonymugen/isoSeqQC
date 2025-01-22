@@ -21,7 +21,7 @@
 /** \file
  * \author Anthony J. Greenberg and Rebekah Rogers
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
- * \version 0.1
+ * \version 0.2
  *
  * Implementation of classes that take `.bam` files with isoSeq alignments and identify potential fused transcripts.
  *
@@ -765,31 +765,38 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 };
 
 void BAMtoGenome::saveUnmappedRegions(const std::string &outFileName, const BinomialWindowParameters &windowParameters, const size_t &nThreads) const {
-	std::vector<std::string> badAlignmentStats;
+	size_t actualNthreads = std::min( nThreads, static_cast<size_t>( std::thread::hardware_concurrency() ) );
+	actualNthreads        = std::min( actualNthreads, readsAndExons_.size() );
+	actualNthreads        = std::max(actualNthreads, 1UL);
+
+	const auto threadRanges{makeThreadRanges(readsAndExons_, actualNthreads)};
+	std::vector<std::string> threadOutStrings(actualNthreads);
+	std::vector< std::future<void> > tasks;
+	tasks.reserve(actualNthreads);
+	size_t iThread{0};
 	std::for_each(
-		readsAndExons_.cbegin(),
-		readsAndExons_.cend(),
-		[&badAlignmentStats, &windowParameters](const std::pair<BAMrecord, ExonGroup> &currentRAG) {
-			const std::vector<MappedReadInterval> badRegions{currentRAG.first.getPoorlyMappedRegions(windowParameters)};
-			std::for_each(
-				badRegions.cbegin(),
-				badRegions.cend(),
-				[&badAlignmentStats, &currentRAG](const MappedReadInterval &eachInterval) {
-					std::string regionStats =
-						currentRAG.first.getReadName() + "\t" +
-						std::to_string( currentRAG.first.getReadLength() ) + "\t" +
-						std::to_string(eachInterval.readStart) + "\t" +
-						std::to_string(eachInterval.readEnd) + "\n";
-					badAlignmentStats.emplace_back(regionStats);
-				}
+		threadRanges.cbegin(),
+		threadRanges.cend(),
+		[&iThread, &tasks, &windowParameters, &threadOutStrings](const std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> &eachRange) {
+			tasks.emplace_back(
+				std::async(
+					[iThread, eachRange, &threadOutStrings, &windowParameters] {
+						threadOutStrings.at(iThread) = stringifyUnmappedRegions(eachRange.first, eachRange.second, windowParameters);
+					}
+				)
 			);
+			++iThread;
 		}
 	);
+	for (const auto &eachThread : tasks) {
+		eachThread.wait();
+	}
+
 	const std::string headerLine = "read_name\tread_length\tunmapped_start\tunmapped_end\n";
 	std::fstream outStream;
 	outStream.open(outFileName, std::ios::out | std::ios::binary | std::ios::trunc);
 	outStream.write( headerLine.c_str(), static_cast<std::streamsize>( headerLine.size() ) );
-	for (const auto &eachThreadString : badAlignmentStats) {
+	for (const auto &eachThreadString : threadOutStrings) {
 		outStream.write( eachThreadString.c_str(), static_cast<std::streamsize>( eachThreadString.size() ) );
 	}
 	outStream.close();
