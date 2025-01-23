@@ -792,7 +792,7 @@ void BAMtoGenome::saveUnmappedRegions(const std::string &outFileName, const Bino
 		eachThread.wait();
 	}
 
-	const std::string headerLine = "read_name\tread_length\tunmapped_start\tunmapped_end\n";
+	const std::string headerLine = "read_name\tread_length\tunmapped_start\tunmapped_end\twindow_size\n";
 	std::fstream outStream;
 	outStream.open(outFileName, std::ios::out | std::ios::binary | std::ios::trunc);
 	outStream.write( headerLine.c_str(), static_cast<std::streamsize>( headerLine.size() ) );

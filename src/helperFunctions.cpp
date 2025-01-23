@@ -307,12 +307,13 @@ std::string isaSpace::stringifyUnmappedRegions(const bamGFFvector::const_iterato
 			std::for_each(
 				badRegions.cbegin(),
 				badRegions.cend(),
-				[&badAlignmentString, &currentRAG](const MappedReadInterval &eachInterval) {
+				[&badAlignmentString, &windowParameters, &currentRAG](const MappedReadInterval &eachInterval) {
 					std::string regionStats =
 						currentRAG.first.getReadName() + "\t" +
 						std::to_string( currentRAG.first.getReadLength() ) + "\t" +
 						std::to_string(eachInterval.readStart) + "\t" +
-						std::to_string(eachInterval.readEnd) + "\n";
+						std::to_string(eachInterval.readEnd) + "\t" +
+						std::to_string(windowParameters.windowSize) + "\n";
 					badAlignmentString += regionStats;
 				}
 			);

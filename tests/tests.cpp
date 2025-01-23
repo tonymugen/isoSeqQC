@@ -1316,7 +1316,7 @@ TEST_CASE("GFF and BAM parsing works") {
 	testBTG.saveUnmappedRegions(badRegionFileName, bwParams, nThreads);
 
 	std::fstream badRgionResultFile(badRegionFileName, std::ios::in);
-	constexpr size_t nIntFields{3};
+	constexpr size_t nIntFields{4};
 	std::unordered_set<std::string> uniqueReadNames;
 	std::vector< std::array<int32_t, nIntFields> > intFields;
 	std::getline(badRgionResultFile, line);             // get rid of the header
@@ -1333,6 +1333,8 @@ TEST_CASE("GFF and BAM parsing works") {
 		currentIntFields.at(1) = stoi(field);
 		lineStream >> field;
 		currentIntFields.at(2) = stoi(field);
+		lineStream >> field;
+		currentIntFields.at(3) = stoi(field);
 		intFields.emplace_back(currentIntFields);
 	}
 	badRgionResultFile.close();
@@ -1346,7 +1348,7 @@ TEST_CASE("GFF and BAM parsing works") {
 			intFields.cbegin(),
 			intFields.cend(),
 			[](const std::array<int, nIntFields> &eachLine) {
-				return eachLine.at(0) >= eachLine.back();
+				return eachLine.at(0) >= eachLine.at(2);
 			}
 		)
 	);
@@ -1355,7 +1357,16 @@ TEST_CASE("GFF and BAM parsing works") {
 			intFields.cbegin(),
 			intFields.cend(),
 			[&bwParams](const std::array<int, nIntFields> &eachLine) {
-				return ( eachLine.at(2) - eachLine.at(1) >= bwParams.windowSize);
+				return ( eachLine.at(2) - eachLine.at(1) ) >= bwParams.windowSize;
+			}
+		)
+	);
+	REQUIRE(
+		std::all_of(
+			intFields.cbegin(),
+			intFields.cend(),
+			[&bwParams](const std::array<int, nIntFields> &eachLine) {
+				return eachLine.at(3)== bwParams.windowSize;
 			}
 		)
 	);
