@@ -345,6 +345,12 @@ constexpr std::array<float, 10> BAMrecord::sequenceMatch_{
 	1.0, 0.0, 0.0, 0.0, 0.0,
 	0.0, 0.0, 1.0, 0.0, 0.0
 };
+constexpr std::array<char, 16> BAMrecord::seqNT16str_{
+	'=', 'A', 'C', 'M',
+	'G', 'R', 'S', 'V',
+	'T', 'W', 'Y', 'H',
+	'K', 'D', 'B', 'N'
+};
 
 BAMrecord::BAMrecord(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader) :
 			isRev_{bam_is_rev(alignmentRecord)}, mapStart_{alignmentRecord->core.pos + 1}, mapEnd_{bam_endpos(alignmentRecord) + 1},
@@ -619,6 +625,15 @@ std::vector<MappedReadInterval> BAMrecord::getPoorlyMappedRegions(const Binomial
 	return result;
 }
 
+std::string BAMrecord::getSequenceAmdQuality(const MappedReadInterval &segmentBoundaries) const {
+	const auto readEnd{static_cast<hts_pos_t>( sequenceAndQuality_.size() )};
+	const hts_pos_t begin = std::min(segmentBoundaries.readStart, readEnd);
+	const hts_pos_t end   = std::min(segmentBoundaries.readEnd, readEnd );
+	std::string fastqRecord;
+
+	return fastqRecord;
+}
+
 // BAMtoGenome methods
 constexpr uint16_t BAMtoGenome::suppSecondaryAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
 
@@ -797,6 +812,44 @@ void BAMtoGenome::saveUnmappedRegions(const std::string &outFileName, const Bino
 	outStream.open(outFileName, std::ios::out | std::ios::binary | std::ios::trunc);
 	outStream.write( headerLine.c_str(), static_cast<std::streamsize>( headerLine.size() ) );
 	for (const auto &eachThreadString : threadOutStrings) {
+		outStream.write( eachThreadString.c_str(), static_cast<std::streamsize>( eachThreadString.size() ) );
+	}
+	outStream.close();
+};
+
+void BAMtoGenome::saveUnmappedRegions(const StatsAndFastqFiles &outFilePair, const BinomialWindowParameters &windowParameters, const size_t &nThreads) const {
+	size_t actualNthreads = std::min( nThreads, static_cast<size_t>( std::thread::hardware_concurrency() ) );
+	actualNthreads        = std::min( actualNthreads, readsAndExons_.size() );
+	actualNthreads        = std::max(actualNthreads, 1UL);
+
+	const auto threadRanges{makeThreadRanges(readsAndExons_, actualNthreads)};
+	std::vector<std::string> statsOutStrings(actualNthreads);
+	std::vector< std::future<void> > tasks;
+	tasks.reserve(actualNthreads);
+	size_t iThread{0};
+	std::for_each(
+		threadRanges.cbegin(),
+		threadRanges.cend(),
+		[&iThread, &tasks, &windowParameters, &statsOutStrings](const std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> &eachRange) {
+			tasks.emplace_back(
+				std::async(
+					[iThread, eachRange, &statsOutStrings, &windowParameters] {
+						statsOutStrings.at(iThread) = stringifyUnmappedRegions(eachRange.first, eachRange.second, windowParameters);
+					}
+				)
+			);
+			++iThread;
+		}
+	);
+	for (const auto &eachThread : tasks) {
+		eachThread.wait();
+	}
+
+	const std::string headerLine = "read_name\tread_length\tunmapped_start\tunmapped_end\twindow_size\n";
+	std::fstream outStream;
+	outStream.open(outFilePair.statsFileName, std::ios::out | std::ios::binary | std::ios::trunc);
+	outStream.write( headerLine.c_str(), static_cast<std::streamsize>( headerLine.size() ) );
+	for (const auto &eachThreadString : statsOutStrings) {
 		outStream.write( eachThreadString.c_str(), static_cast<std::streamsize>( eachThreadString.size() ) );
 	}
 	outStream.close();

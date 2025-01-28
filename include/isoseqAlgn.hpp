@@ -40,6 +40,7 @@
 
 namespace isaSpace {
 	struct BamAndGffFiles;
+	struct StatsAndFastqFiles;
 	struct TokenAttibuteListPair;
 	struct MappedReadInterval;
 	struct MappedReadMatchStatus;
@@ -57,6 +58,13 @@ namespace isaSpace {
 		std::string bamFileName;
 		/** \brief GFF file name */
 		std::string gffFileName;
+	};
+	/** \brief Mismatch statistics and FASTQ file name pair */
+	struct StatsAndFastqFiles {
+		/** \brief Statistics file name */
+		std::string statsFileName;
+		/** \brief FASTQ file name */
+		std::string fastqFileName;
 	};
 	/** \brief Token name and GFF attribute list pair */
 	struct TokenAttibuteListPair {
@@ -641,6 +649,15 @@ namespace isaSpace {
 		 * \return vector of poorly mapped region coordinates
 		 */
 		[[gnu::warn_unused_result]] std::vector<MappedReadInterval> getPoorlyMappedRegions(const BinomialWindowParameters &windowParameters) const;
+		/** \brief Get a segment of the sequence and the ASCII quality score
+		 *
+		 * Returns sequence and printable ASCII quality scores separated by a newline, with a newline at the end.
+		 * Negative strand alignments are reverse-complemented to export the original strand.
+		 *
+		 * \param[in] segmentBoundaries read interval to retrieve
+		 * \return sequence and quality
+		 */
+		[[gnu::warn_unused_result]] std::string getSequenceAmdQuality(const MappedReadInterval &segmentBoundaries) const;
 	private:
 		/** \brief Mask isolating the sequence byte */
 		static const uint16_t sequenceMask_;
@@ -658,6 +675,8 @@ namespace isaSpace {
 		 * Can be indexed into using the CIGAR operation bit field. 
 		 */
 		static const std::array<hts_pos_t, 10> referenceConsumption_;
+		/** \brief Map of internal sequence to characters for export */
+		static const std::array<char, 16> seqNT16str_;
 		/** \brief Sequence match status array 
 		 *
 		 * Can be indexed into using the CIGAR operation bit field. 
@@ -762,7 +781,7 @@ namespace isaSpace {
 		 * \param[in] nThreads number of concurrent threads
 		 */
 		void saveReadCoverageStats(const std::string &outFileName, const size_t &nThreads) const;
-		/** \brief Save unmapped portions of reads to file
+		/** \brief Save unmapped read statistics to file
 		 *
 		 * Only considers reads that are at least partially well mapped,
 		 * but have some interval(s) with low alignment quality.
@@ -773,6 +792,18 @@ namespace isaSpace {
 		 * \param[in] nThreads number of concurrent threads
 		 */
 		void saveUnmappedRegions(const std::string &outFileName, const BinomialWindowParameters &windowParameters, const size_t &nThreads) const;
+		/** \brief Save unmapped statistics and read portions to files
+		 *
+		 * Only considers reads that are at least partially well mapped,
+		 * but have some interval(s) with low alignment quality.
+		 * Save unmapped portions to a FASTQ file.
+		 * If files with the same names exist it is overwritten.
+		 *
+		 * \param[in] outFilePair output file name
+		 * \param[in] windowParameters sliding window parameters
+		 * \param[in] nThreads number of concurrent threads
+		 */
+		void saveUnmappedRegions(const StatsAndFastqFiles &outFilePair, const BinomialWindowParameters &windowParameters, const size_t &nThreads) const;
 	private:
 		/** \brief Flag testing the two possible secondary alignment markers */
 		static const uint16_t suppSecondaryAlgn_;
