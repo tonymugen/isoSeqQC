@@ -351,6 +351,12 @@ constexpr std::array<char, 16> BAMrecord::seqNT16str_{
 	'T', 'W', 'Y', 'H',
 	'K', 'D', 'B', 'N'
 };
+constexpr std::array<char, 16> BAMrecord::complSeqNT16str_{
+	'=', 'T', 'G', 'K',
+	'C', 'Y', 'S', 'B',
+	'A', 'W', 'R', 'D',
+	'M', 'H', 'V', 'N'
+};
 
 BAMrecord::BAMrecord(const bam1_t *alignmentRecord, const sam_hdr_t *samHeader) :
 			isRev_{bam_is_rev(alignmentRecord)}, mapStart_{alignmentRecord->core.pos + 1}, mapEnd_{bam_endpos(alignmentRecord) + 1},
@@ -625,13 +631,38 @@ std::vector<MappedReadInterval> BAMrecord::getPoorlyMappedRegions(const Binomial
 	return result;
 }
 
-std::string BAMrecord::getSequenceAmdQuality(const MappedReadInterval &segmentBoundaries) const {
+std::string BAMrecord::getSequenceAndQuality(const MappedReadInterval &segmentBoundaries) const {
+	constexpr uint16_t asciiAdd{33}; // add this to the quality value to get the ASCII representation
 	const auto readEnd{static_cast<hts_pos_t>( sequenceAndQuality_.size() )};
 	const hts_pos_t begin = std::min(segmentBoundaries.readStart, readEnd);
 	const hts_pos_t end   = std::min(segmentBoundaries.readEnd, readEnd );
-	std::string fastqRecord;
+	std::string sequence;
+	std::string quality;
+	if (isRev_) {
+		auto rbeginIt = sequenceAndQuality_.crbegin() + static_cast<std::vector<uint16_t>::difference_type>(sequenceAndQuality_.size() - end);
+		auto rendIt   = sequenceAndQuality_.crbegin() + static_cast<std::vector<uint16_t>::difference_type>(sequenceAndQuality_.size() - begin);
+		std::for_each(
+			rbeginIt,
+			rendIt,
+			[&sequence, &quality](uint16_t currSAQ) {
+				sequence += complSeqNT16str_.at(currSAQ & sequenceMask_);
+				quality  += static_cast<char>( (currSAQ >> qualityShift_) + asciiAdd );
+			}
+		);
+		return sequence + "\n" + quality + "\n";
+	}
 
-	return fastqRecord;
+	auto beginIt = sequenceAndQuality_.cbegin() + static_cast<std::vector<uint16_t>::difference_type>(end);
+	auto endIt   = sequenceAndQuality_.cbegin() + static_cast<std::vector<uint16_t>::difference_type>(begin);
+	std::for_each(
+		beginIt,
+		endIt,
+		[&sequence, &quality](uint16_t currSAQ) {
+			sequence += seqNT16str_.at(currSAQ & sequenceMask_);
+			quality  += static_cast<char>( (currSAQ >> qualityShift_) + asciiAdd );
+		}
+	);
+	return sequence + "\n" + quality + "\n";
 }
 
 // BAMtoGenome methods

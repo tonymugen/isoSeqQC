@@ -31,6 +31,8 @@
 #include <sstream>
 #include <vector>
 
+#include <iostream>
+
 #include "bgzf.h"
 #include "sam.h"
 
@@ -794,6 +796,11 @@ TEST_CASE("Reading individual BAM records works") {
 				[](const std::pair<float, hts_pos_t> &eachPair){return eachPair.second > 1;}
 			) == correctNjumps
 		);
+
+		isaSpace::MappedReadInterval chunkInterval;
+		chunkInterval.readStart = 2;
+		chunkInterval.readEnd   = 10; // NOLINT
+		std::cout << bamRecord.getSequenceAndQuality(chunkInterval) << "\n";
 		// read too short for the window
 		const std::string shortBAMname("../tests/shortRead.bam");
 		std::unique_ptr<BGZF, void(*)(BGZF *)> shortBAMfile(

@@ -657,7 +657,7 @@ namespace isaSpace {
 		 * \param[in] segmentBoundaries read interval to retrieve
 		 * \return sequence and quality
 		 */
-		[[gnu::warn_unused_result]] std::string getSequenceAmdQuality(const MappedReadInterval &segmentBoundaries) const;
+		[[gnu::warn_unused_result]] std::string getSequenceAndQuality(const MappedReadInterval &segmentBoundaries) const;
 	private:
 		/** \brief Mask isolating the sequence byte */
 		static const uint16_t sequenceMask_;
@@ -677,6 +677,8 @@ namespace isaSpace {
 		static const std::array<hts_pos_t, 10> referenceConsumption_;
 		/** \brief Map of internal sequence to characters for export */
 		static const std::array<char, 16> seqNT16str_;
+		/** \brief Map of internal sequence complement to characters for export */
+		static const std::array<char, 16> complSeqNT16str_;
 		/** \brief Sequence match status array 
 		 *
 		 * Can be indexed into using the CIGAR operation bit field. 
