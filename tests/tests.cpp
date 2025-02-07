@@ -31,8 +31,6 @@
 #include <sstream>
 #include <vector>
 
-#include <iostream>
-
 #include "bgzf.h"
 #include "sam.h"
 
@@ -265,27 +263,6 @@ TEST_CASE("Helper functions work") {
 				}
 			) == 1
 		);
-
-		/*
-		const std::string testGFFname("../tests/posNegYak.gff");
-		const auto testGFF{isaSpace::parseGFF(testGFFname)};
-		std::for_each(
-			testGFF.at("NC_052529.2+").cbegin(),
-			testGFF.at("NC_052529.2+").cend(),
-			[](const isaSpace::ExonGroup &eachExonGroup) {
-				std::cout << ">>>>> " << eachExonGroup.geneName() << "\n";
-			}
-		);
-		*/
-		/*
-		std::for_each(
-			testGFF.cbegin(),
-			testGFF.cend(),
-			[](const std::pair<std::string, std::vector<isaSpace::ExonGroup> > &eachReference) {
-				std::cout << ">>>>> " <<  eachReference.first << ": " << eachReference.second.size() << "\n";
-			}
-		);
-		*/
 	}
 }
 
@@ -797,10 +774,40 @@ TEST_CASE("Reading individual BAM records works") {
 			) == correctNjumps
 		);
 
+		constexpr auto startTooLate{correctReadLength + 2};
+		constexpr auto endTooLate{correctReadLength + 10};
 		isaSpace::MappedReadInterval chunkInterval;
-		chunkInterval.readStart = 2;
-		chunkInterval.readEnd   = 10; // NOLINT
-		std::cout << bamRecord.getSequenceAndQuality(chunkInterval) << "\n";
+		chunkInterval.readStart = startTooLate;
+		chunkInterval.readEnd   = endTooLate;
+		REQUIRE(bamRecord.getSequenceAndQuality(chunkInterval).size() == 2);
+		constexpr hts_pos_t goodStart{2};
+		constexpr hts_pos_t goodEnd{10};
+		constexpr hts_pos_t goodLength{goodEnd - goodStart};
+		chunkInterval.readStart = goodStart;
+		chunkInterval.readEnd   = goodEnd;
+		const std::string goodSAQ{bamRecord.getSequenceAndQuality(chunkInterval)};
+		REQUIRE(goodSAQ.size() == (2 * goodLength) + 2);
+		REQUIRE(
+			std::count_if(
+				goodSAQ.cbegin(),
+				goodSAQ.cend(),
+				[](char eachChar) {
+					return eachChar == '\n';
+				}
+			) == 2
+		);
+		REQUIRE(
+			std::all_of(
+				goodSAQ.cbegin() + goodLength + 2,
+				goodSAQ.cend() - 1,
+				[](char eachChar) {
+					return eachChar == '~';
+				}
+			) 
+		);
+		chunkInterval.readEnd = endTooLate;
+		const std::string tooLateSAQ{bamRecord.getSequenceAndQuality(chunkInterval)};
+		REQUIRE(tooLateSAQ.size() == ( 2 * (correctReadLength - goodStart) ) + 2);
 		// read too short for the window
 		const std::string shortBAMname("../tests/shortRead.bam");
 		std::unique_ptr<BGZF, void(*)(BGZF *)> shortBAMfile(
@@ -917,6 +924,40 @@ TEST_CASE("Reading individual BAM records works") {
 				[](const std::pair<float, hts_pos_t> &eachPair){return eachPair.second > 1;}
 			) == correctNjumpsRev
 		);
+		constexpr auto startTooLate{correctRevReadLength + 2};
+		constexpr auto endTooLate{correctRevReadLength + 10};
+		isaSpace::MappedReadInterval chunkInterval;
+		chunkInterval.readStart = startTooLate;
+		chunkInterval.readEnd   = endTooLate;
+		REQUIRE(bamRecordRev.getSequenceAndQuality(chunkInterval).size() == 2);
+		constexpr hts_pos_t goodStart{2};
+		constexpr hts_pos_t goodEnd{10};
+		constexpr hts_pos_t goodLength{goodEnd - goodStart};
+		chunkInterval.readStart = goodStart;
+		chunkInterval.readEnd   = goodEnd;
+		const std::string goodSAQ{bamRecordRev.getSequenceAndQuality(chunkInterval)};
+		REQUIRE(goodSAQ.size() == (2 * goodLength) + 2);
+		REQUIRE(
+			std::count_if(
+				goodSAQ.cbegin(),
+				goodSAQ.cend(),
+				[](char eachChar) {
+					return eachChar == '\n';
+				}
+			) == 2
+		);
+		REQUIRE(
+			std::all_of(
+				goodSAQ.cbegin() + goodLength + 2,
+				goodSAQ.cend() - 1,
+				[](char eachChar) {
+					return eachChar == '~';
+				}
+			) 
+		);
+		chunkInterval.readEnd = endTooLate;
+		const std::string tooLateSAQ{bamRecordRev.getSequenceAndQuality(chunkInterval)};
+		REQUIRE(tooLateSAQ.size() == ( 2 * (correctRevReadLength - goodStart) ) + 2);
 	}
 
 	SECTION("Reading a single soft clipped record") {

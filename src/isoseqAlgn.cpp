@@ -330,7 +330,7 @@ float ReadMatchWindowBIC::getBICdifference() const noexcept {
 };
 
 // BAMrecord methods
-constexpr uint16_t BAMrecord::sequenceMask_{0x00FF};
+constexpr uint16_t BAMrecord::sequenceMask_{0x000F};
 constexpr uint16_t BAMrecord::qualityShift_{8};
 constexpr uint16_t BAMrecord::suppSecondaryAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
 constexpr std::array<hts_pos_t, 10> BAMrecord::queryConsumption_{
@@ -652,8 +652,8 @@ std::string BAMrecord::getSequenceAndQuality(const MappedReadInterval &segmentBo
 		return sequence + "\n" + quality + "\n";
 	}
 
-	auto beginIt = sequenceAndQuality_.cbegin() + static_cast<std::vector<uint16_t>::difference_type>(end);
-	auto endIt   = sequenceAndQuality_.cbegin() + static_cast<std::vector<uint16_t>::difference_type>(begin);
+	auto beginIt = sequenceAndQuality_.cbegin() + static_cast<std::vector<uint16_t>::difference_type>(begin);
+	auto endIt   = sequenceAndQuality_.cbegin() + static_cast<std::vector<uint16_t>::difference_type>(end);
 	std::for_each(
 		beginIt,
 		endIt,
