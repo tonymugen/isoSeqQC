@@ -155,10 +155,6 @@ TEST_CASE("Helper functions work") {
 	 * Reference match status function tests are in the BAM record section
 	 */
 
-	SECTION("GFF parsing functions") {
-		//TODO: add tests for the new parsing functions
-	}
-
 	SECTION("Exon coverage and stringify functions") {
 		// Exon coverage
 		const std::pair<isaSpace::BAMrecord, isaSpace::ExonGroup> emptyPair;
@@ -241,6 +237,7 @@ TEST_CASE("Helper functions work") {
 	}
 
 	SECTION("GFF parsing") {
+		//TODO: add parseGFFline tests
 		constexpr size_t nReferences{3};
 		const std::string goodGFFname("../tests/goodGFF.gff");
 		const auto parsedGFF{isaSpace::parseGFF(goodGFFname)};
@@ -779,14 +776,14 @@ TEST_CASE("Reading individual BAM records works") {
 		isaSpace::MappedReadInterval chunkInterval;
 		chunkInterval.readStart = startTooLate;
 		chunkInterval.readEnd   = endTooLate;
-		REQUIRE(bamRecord.getSequenceAndQuality(chunkInterval).size() == 2);
+		REQUIRE(bamRecord.getSequenceAndQuality(chunkInterval).size() == 4);
 		constexpr hts_pos_t goodStart{2};
 		constexpr hts_pos_t goodEnd{10};
 		constexpr hts_pos_t goodLength{goodEnd - goodStart};
 		chunkInterval.readStart = goodStart;
 		chunkInterval.readEnd   = goodEnd;
 		const std::string goodSAQ{bamRecord.getSequenceAndQuality(chunkInterval)};
-		REQUIRE(goodSAQ.size() == (2 * goodLength) + 2);
+		REQUIRE(goodSAQ.size() == (2 * goodLength) + 4);
 		REQUIRE(
 			std::count_if(
 				goodSAQ.cbegin(),
@@ -794,11 +791,11 @@ TEST_CASE("Reading individual BAM records works") {
 				[](char eachChar) {
 					return eachChar == '\n';
 				}
-			) == 2
+			) == 3
 		);
 		REQUIRE(
 			std::all_of(
-				goodSAQ.cbegin() + goodLength + 2,
+				goodSAQ.cbegin() + goodLength + 4,
 				goodSAQ.cend() - 1,
 				[](char eachChar) {
 					return eachChar == '~';
@@ -807,7 +804,7 @@ TEST_CASE("Reading individual BAM records works") {
 		);
 		chunkInterval.readEnd = endTooLate;
 		const std::string tooLateSAQ{bamRecord.getSequenceAndQuality(chunkInterval)};
-		REQUIRE(tooLateSAQ.size() == ( 2 * (correctReadLength - goodStart) ) + 2);
+		REQUIRE(tooLateSAQ.size() == ( 2 * (correctReadLength - goodStart) ) + 4);
 		// read too short for the window
 		const std::string shortBAMname("../tests/shortRead.bam");
 		std::unique_ptr<BGZF, void(*)(BGZF *)> shortBAMfile(
@@ -929,14 +926,14 @@ TEST_CASE("Reading individual BAM records works") {
 		isaSpace::MappedReadInterval chunkInterval;
 		chunkInterval.readStart = startTooLate;
 		chunkInterval.readEnd   = endTooLate;
-		REQUIRE(bamRecordRev.getSequenceAndQuality(chunkInterval).size() == 2);
+		REQUIRE(bamRecordRev.getSequenceAndQuality(chunkInterval).size() == 4);
 		constexpr hts_pos_t goodStart{2};
 		constexpr hts_pos_t goodEnd{10};
 		constexpr hts_pos_t goodLength{goodEnd - goodStart};
 		chunkInterval.readStart = goodStart;
 		chunkInterval.readEnd   = goodEnd;
 		const std::string goodSAQ{bamRecordRev.getSequenceAndQuality(chunkInterval)};
-		REQUIRE(goodSAQ.size() == (2 * goodLength) + 2);
+		REQUIRE(goodSAQ.size() == (2 * goodLength) + 4);
 		REQUIRE(
 			std::count_if(
 				goodSAQ.cbegin(),
@@ -944,11 +941,11 @@ TEST_CASE("Reading individual BAM records works") {
 				[](char eachChar) {
 					return eachChar == '\n';
 				}
-			) == 2
+			) == 3
 		);
 		REQUIRE(
 			std::all_of(
-				goodSAQ.cbegin() + goodLength + 2,
+				goodSAQ.cbegin() + goodLength + 4,
 				goodSAQ.cend() - 1,
 				[](char eachChar) {
 					return eachChar == '~';
@@ -957,7 +954,7 @@ TEST_CASE("Reading individual BAM records works") {
 		);
 		chunkInterval.readEnd = endTooLate;
 		const std::string tooLateSAQ{bamRecordRev.getSequenceAndQuality(chunkInterval)};
-		REQUIRE(tooLateSAQ.size() == ( 2 * (correctRevReadLength - goodStart) ) + 2);
+		REQUIRE(tooLateSAQ.size() == ( 2 * (correctRevReadLength - goodStart) ) + 4);
 	}
 
 	SECTION("Reading a single soft clipped record") {
@@ -1418,4 +1415,23 @@ TEST_CASE("GFF and BAM parsing works") {
 			}
 		)
 	);
+
+	isaSpace::StatsAndFastqFiles badRegionFiles;
+	badRegionFiles.statsFileName = "../tests/testBadRegionsWFQ.tsv";
+	badRegionFiles.fastqFileName = "../tests/testBadRegionsWFQ.fq";
+	testBTG.saveUnmappedRegions(badRegionFiles, bwParams, nThreads);
+	std::fstream badRgionFASTQfile(badRegionFiles.fastqFileName, std::ios::in);
+	uint16_t nPluses{0};
+	uint16_t nHeaders{0};
+	while ( std::getline(badRgionFASTQfile, line) ) {
+		if (line == "+") {
+			nPluses++;
+		}
+		if (line.front() == '@') {
+			nHeaders++;
+		}
+	}
+	badRgionResultFile.close();
+	REQUIRE(nPluses  == correctBadRegionResSize);
+    REQUIRE(nHeaders == correctBadRegionResSize);
 }

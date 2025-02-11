@@ -154,6 +154,16 @@ namespace isaSpace {
 	 * \return string with coverage information
 	 */
 	[[gnu::warn_unused_result]] std::string stringifyUnmappedRegions(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters);
+	/** \brief Produce a string of poorly aligned region statistics and corresponding FASTQ records from an alignment range 
+	 *
+	 * Only saves information from reads that have poorly mapped regions, potentially multiple per read.
+	 *
+	 * \param[in] begin start iterator
+	 * \param[in] end end iterator
+	 * \param[in] windowParameters sliding window parameters
+	 * \return strings with coverage information (`.first`) and FASTQ (`.second`)
+	 */
+	[[gnu::warn_unused_result]] std::pair<std::string, std::string> getUnmappedRegionsAndFASTQ(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters);
 
 	/** \brief Make per-thread alignment record/annotation vector ranges
 	 *

@@ -649,7 +649,7 @@ std::string BAMrecord::getSequenceAndQuality(const MappedReadInterval &segmentBo
 				quality  += static_cast<char>( (currSAQ >> qualityShift_) + asciiAdd );
 			}
 		);
-		return sequence + "\n" + quality + "\n";
+		return sequence + "\n+\n" + quality + "\n";
 	}
 
 	auto beginIt = sequenceAndQuality_.cbegin() + static_cast<std::vector<uint16_t>::difference_type>(begin);
@@ -662,7 +662,7 @@ std::string BAMrecord::getSequenceAndQuality(const MappedReadInterval &segmentBo
 			quality  += static_cast<char>( (currSAQ >> qualityShift_) + asciiAdd );
 		}
 	);
-	return sequence + "\n" + quality + "\n";
+	return sequence + "\n+\n" + quality + "\n";
 }
 
 // BAMtoGenome methods
@@ -854,18 +854,18 @@ void BAMtoGenome::saveUnmappedRegions(const StatsAndFastqFiles &outFilePair, con
 	actualNthreads        = std::max(actualNthreads, 1UL);
 
 	const auto threadRanges{makeThreadRanges(readsAndExons_, actualNthreads)};
-	std::vector<std::string> statsOutStrings(actualNthreads);
+	std::vector< std::pair<std::string, std::string> > outStrings(actualNthreads);
 	std::vector< std::future<void> > tasks;
 	tasks.reserve(actualNthreads);
 	size_t iThread{0};
 	std::for_each(
 		threadRanges.cbegin(),
 		threadRanges.cend(),
-		[&iThread, &tasks, &windowParameters, &statsOutStrings](const std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> &eachRange) {
+		[&iThread, &tasks, &windowParameters, &outStrings](const std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> &eachRange) {
 			tasks.emplace_back(
 				std::async(
-					[iThread, eachRange, &statsOutStrings, &windowParameters] {
-						statsOutStrings.at(iThread) = stringifyUnmappedRegions(eachRange.first, eachRange.second, windowParameters);
+					[iThread, eachRange, &outStrings, &windowParameters] {
+						outStrings.at(iThread) = getUnmappedRegionsAndFASTQ(eachRange.first, eachRange.second, windowParameters);
 					}
 				)
 			);
@@ -876,14 +876,26 @@ void BAMtoGenome::saveUnmappedRegions(const StatsAndFastqFiles &outFilePair, con
 		eachThread.wait();
 	}
 
+	auto writeFASTQ = std::async(
+		[&outFilePair, &outStrings] {
+			std::fstream fastqOutStream;
+			fastqOutStream.open(outFilePair.fastqFileName, std::ios::out | std::ios::binary | std::ios::trunc);
+			for (const auto &eachThreadString : outStrings) {
+				fastqOutStream.write( eachThreadString.second.c_str(), static_cast<std::streamsize>( eachThreadString.second.size() ) );
+			}
+			fastqOutStream.close();
+		}
+	);
+
 	const std::string headerLine = "read_name\tread_length\tunmapped_start\tunmapped_end\twindow_size\n";
-	std::fstream outStream;
-	outStream.open(outFilePair.statsFileName, std::ios::out | std::ios::binary | std::ios::trunc);
-	outStream.write( headerLine.c_str(), static_cast<std::streamsize>( headerLine.size() ) );
-	for (const auto &eachThreadString : statsOutStrings) {
-		outStream.write( eachThreadString.c_str(), static_cast<std::streamsize>( eachThreadString.size() ) );
+	std::fstream statsOutStream;
+	statsOutStream.open(outFilePair.statsFileName, std::ios::out | std::ios::binary | std::ios::trunc);
+	statsOutStream.write( headerLine.c_str(), static_cast<std::streamsize>( headerLine.size() ) );
+	for (const auto &eachThreadString : outStrings) {
+		statsOutStream.write( eachThreadString.first.c_str(), static_cast<std::streamsize>( eachThreadString.first.size() ) );
 	}
-	outStream.close();
+	statsOutStream.close();
+	writeFASTQ.wait();
 };
 
 std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const std::vector<ExonGroup> &chromosomeExonGroups,

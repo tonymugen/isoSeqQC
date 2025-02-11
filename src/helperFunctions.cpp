@@ -322,6 +322,38 @@ std::string isaSpace::stringifyUnmappedRegions(const bamGFFvector::const_iterato
 	return badAlignmentString;
 }
 
+std::pair<std::string, std::string> isaSpace::getUnmappedRegionsAndFASTQ(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters) {
+	std::pair<std::string, std::string> badAlignmentInfoFQ;
+	std::for_each(
+		begin,
+		end,
+		[&badAlignmentInfoFQ, &windowParameters](const std::pair<BAMrecord, ExonGroup> &currentRAG) {
+			const std::vector<MappedReadInterval> badRegions{currentRAG.first.getPoorlyMappedRegions(windowParameters)};
+			std::for_each(
+				badRegions.cbegin(),
+				badRegions.cend(),
+				[&badAlignmentInfoFQ, &windowParameters, &currentRAG](const MappedReadInterval &eachInterval) {
+					std::string regionStats =
+						currentRAG.first.getReadName() + "\t" +
+						std::to_string( currentRAG.first.getReadLength() ) + "\t" +
+						std::to_string(eachInterval.readStart) + "\t" +
+						std::to_string(eachInterval.readEnd) + "\t" +
+						std::to_string(windowParameters.windowSize) + "\n";
+					badAlignmentInfoFQ.first += regionStats;
+					std::string fastqString{currentRAG.first.getSequenceAndQuality(eachInterval)};
+					fastqString =
+						"@"  + currentRAG.first.getReadName() +
+						"_"  + std::to_string(eachInterval.readStart) +
+						"_"  + std::to_string(eachInterval.readEnd) +
+						"\n" + fastqString;
+					badAlignmentInfoFQ.second += fastqString;
+				}
+			);
+		}
+	);
+	return badAlignmentInfoFQ;
+}
+
 std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
 											isaSpace::makeThreadRanges(const bamGFFvector &targetVector, const size_t &threadCount) {
 	std::vector<bamGFFvector::difference_type> chunkSizes(
