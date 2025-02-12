@@ -421,16 +421,18 @@ void isaSpace::extractCLinfo(const std::unordered_map<std::string, std::string> 
 	intVariables.clear();
 	stringVariables.clear();
 	const std::array<std::string, 3> requiredStringVariables{"input-bam", "input-gff", "out"};
+	const std::array<std::string, 1> optionalStringVariables{"out-fastq"};
 	const std::array<std::string, 2> optionalIntVariables{"threads", "window-size"};
 
 	const std::unordered_map<std::string, int> defaultIntValues{ {"threads", -1}, {"window-size", 75} };
+	const std::unordered_map<std::string, std::string> defaultStringValues{ {"out-fastq", "NULL"} };
 
 	if ( parsedCLI.empty() ) {
 		throw std::string("No command line flags specified;");
 	}
 	for (const auto &eachFlag : optionalIntVariables) {
 		try {
-			intVariables[eachFlag] = stoi( parsedCLI.at(eachFlag));
+			intVariables[eachFlag] = stoi( parsedCLI.at(eachFlag) );
 		} catch(const std::exception &problem) {
 			intVariables[eachFlag] = defaultIntValues.at(eachFlag);
 		}
@@ -440,6 +442,13 @@ void isaSpace::extractCLinfo(const std::unordered_map<std::string, std::string> 
 			stringVariables[eachFlag] = parsedCLI.at(eachFlag);
 		} catch(const std::exception &problem) {
 			throw std::string("ERROR: ") + eachFlag + std::string(" specification is required");
+		}
+	}
+	for (const auto &eachFlag : optionalStringVariables) {
+		try {
+			stringVariables[eachFlag] = parsedCLI.at(eachFlag);
+		} catch(const std::exception &problem) {
+			stringVariables[eachFlag] = defaultStringValues.at(eachFlag);
 		}
 	}
 }

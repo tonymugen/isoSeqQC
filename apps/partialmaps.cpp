@@ -42,6 +42,7 @@ int main(int argc, char *argv[]) {
 		"  --input-bam    bam_file_name (input BAM file name; required).\n"
 		"  --input-gff    gff_file_name (input GFF file name; required).\n"
 		"  --out          out_file_name (output file name; required).\n"
+		"  --out-fastq    out_fastq_file_name (output FASTQ file name; optional, no FASTQ file created if omitted).\n"
 		"  --window-size  sliding window size for poorly aligned region identification (defaults to 75).\n"
 		"  --threads      number_of_threads (maximal number of threads to use; defaults to maximal available).\n";
 	try {
@@ -66,7 +67,14 @@ int main(int argc, char *argv[]) {
 		windowParameters.windowSize             = intVariables.at("window-size");
 		windowParameters.bicDifferenceThreshold = 2.0F * static_cast<float>(windowParameters.windowSize);
 		isaSpace::BAMtoGenome bam2genome(bamAndGFF);
-		bam2genome.saveUnmappedRegions(stringVariables.at("out"), windowParameters, nThreads);
+		if (stringVariables.at("out-fastq") == "NULL") {
+			bam2genome.saveUnmappedRegions(stringVariables.at("out"), windowParameters, nThreads);
+			return 0;
+		}
+		isaSpace::StatsAndFastqFiles twoFileNames;
+		twoFileNames.statsFileName = stringVariables.at("out");
+		twoFileNames.fastqFileName = stringVariables.at("out-fastq");
+		bam2genome.saveUnmappedRegions(twoFileNames, windowParameters, nThreads);
 		return 0;
 	} catch(std::string &problem) {
 		std::cerr << problem << "\n";
