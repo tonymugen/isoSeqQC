@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
+ * Copyright (c) 2024-2025 Anthony J. Greenberg and Rebekah Rogers
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
  *
@@ -21,17 +21,23 @@
 /** \file
  * \author Anthony J. Greenberg and Rebekah Rogers
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
- * \version 0.1
+ * \version 0.2
  *
  * Implementation of class-external functions needed by genomic analyses.
  *
  */
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <iterator>
 #include <numeric>
 #include <string>
+#include <sstream>
+#include <fstream>
 #include <utility>
+
+#include "sam.h"
 
 #include "helperFunctions.hpp"
 #include "isoseqAlgn.hpp"
@@ -71,11 +77,172 @@ std::string isaSpace::extractAttributeName(const TokenAttibuteListPair &tokenAnd
 	return attributeField;
 }
 
-bool isaSpace::rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &candidateBAM) noexcept {
-	return ( candidateBAM.getMapStart() <= geneInfo.lastExonEnd ) && ( candidateBAM.getMapEnd() >= geneInfo.firstExonStart );
+std::string isaSpace::extractParentName(const std::string &attributeString) {
+	const std::string parentToken{"Parent="};
+	constexpr char attrDelimiter{';'};
+	std::stringstream attributeStream(attributeString);
+	std::string attrField;
+	TokenAttibuteListPair tokenPair;
+	while ( std::getline(attributeStream, attrField, attrDelimiter) ) {
+		tokenPair.attributeList.emplace_back(attrField);
+	}
+	tokenPair.tokenName = parentToken;
+
+	return extractAttributeName(tokenPair);
 }
 
-std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separator) {
+bool isaSpace::rangesOverlap(const std::pair<hts_pos_t, hts_pos_t> &range1, const std::pair<hts_pos_t, hts_pos_t> &range2) noexcept {
+	const auto local1 = std::minmax(range1.first, range1.second);
+	const auto local2 = std::minmax(range2.first, range2.second);
+	return (local2.first <= local1.second) && (local2.second >= local1.first);
+}
+
+std::array<std::string, nGFFfields> isaSpace::parseGFFline(const std::string &gffLine) {
+	constexpr char gffDelimiter{'\t'};
+	std::array<std::string, nGFFfields> result;
+	std::stringstream lineStream(gffLine);
+	size_t iField{0};
+	while ( (iField < nGFFfields) && std::getline(lineStream, result.at(iField), gffDelimiter) ) {
+		++iField;
+	}
+	// skip incomplete lines
+	if (iField < nGFFfields) {
+		result.at(0) = "FAIL";
+	}
+
+	return result;
+}
+
+std::unordered_map< std::string, std::vector<ExonGroup> > isaSpace::parseGFF(const std::string &gffFileName) {
+	constexpr size_t strandIDidx{6UL};
+	constexpr size_t typeIDidx{2UL};
+
+	std::unordered_map< std::string, std::vector<ExonGroup> > result;
+	std::string gffLine;
+	std::fstream gffStream(gffFileName, std::ios::in);
+	std::string currentGeneName;
+	std::string currentStrandedChromosome;
+	char currentStrandID{'+'};
+	std::vector<std::string> exonLines;
+	while ( std::getline(gffStream, gffLine) ) {
+		if ( gffLine.empty() || (gffLine.at(0) == '#') ) {
+			continue;
+		}
+		std::array<std::string, nGFFfields> gffFields{parseGFFline(gffLine)};
+		// skip incomplete lines
+		if (gffFields.at(0) == "FAIL") {
+			continue;
+		}
+		if (gffFields.at(typeIDidx) == "exon") {
+			exonLines.emplace_back(gffLine);
+			continue;
+		}
+		if (gffFields.at(2) == "mRNA") {
+			std::string thisGeneName{extractParentName( gffFields.back() )};
+			if (thisGeneName == currentGeneName) {
+				continue;
+			}
+			if ( currentGeneName.empty() ) { // first mRNA in the file
+				currentGeneName           = thisGeneName;
+				currentStrandID           = (gffFields.at(strandIDidx) == "-" ? '-' : '+');
+				currentStrandedChromosome = gffFields.front() + currentStrandID;
+				continue;
+			}
+			result[currentStrandedChromosome].emplace_back(currentGeneName, currentStrandID, exonLines);
+			currentStrandID           = (gffFields.at(strandIDidx) == "-" ? '-' : '+');
+			currentStrandedChromosome = gffFields.front() + currentStrandID;
+			currentGeneName           = thisGeneName;
+			exonLines.clear();
+		}
+	}
+	if ( ( !exonLines.empty() ) && ( !currentGeneName.empty() ) ) {
+		result[currentStrandedChromosome].emplace_back(currentGeneName, currentStrandID, exonLines);
+	}
+	return result;
+}
+
+std::vector<std::vector<float>::const_iterator> isaSpace::getPeaks(const std::vector<float> &values, const float &threshold) {
+	std::vector<std::vector<float>::const_iterator> result;
+	auto peakIt = values.cbegin();
+	while ( peakIt != values.cend() ) {
+		const auto peakBeginIt = std::find_if(peakIt,      values.cend(), [&threshold](float value){return value >= threshold;});
+		const auto peakEndIt   = std::find_if(peakBeginIt, values.cend(), [&threshold](float value){return value < threshold;});
+		auto localPeakIt       = std::max_element(peakBeginIt, peakEndIt);
+		result.push_back(localPeakIt);
+		peakIt = peakEndIt;
+	}
+
+	return result;
+}
+
+std::vector<std::vector<float>::const_iterator> isaSpace::getValleys(const std::vector<float> &values, const float &threshold) {
+	std::vector<std::vector<float>::const_iterator> result;
+	auto peakIt = values.cbegin();
+	while ( peakIt != values.cend() ) {
+		const auto peakBeginIt = std::find_if(peakIt,      values.cend(), [&threshold](float value){return value <= threshold;});
+		const auto peakEndIt   = std::find_if(peakBeginIt, values.cend(), [&threshold](float value){return value > threshold;});
+		auto localPeakIt       = std::min_element(peakBeginIt, peakEndIt);
+		result.push_back(localPeakIt);
+		peakIt = peakEndIt;
+	}
+
+	return result;
+}
+
+std::vector<float> isaSpace::getReferenceMatchStatus(const std::vector<uint32_t> &cigar) {
+	constexpr std::array<hts_pos_t, 10> referenceConsumption{
+		1, 0, 1, 1, 0,
+		0, 0, 1, 1, 0
+	};
+	constexpr std::array<float, 10> sequenceMatch{
+		1.0, 0.0, 0.0, 0.0, 0.0,
+		0.0, 0.0, 1.0, 0.0, 0.0
+	};
+	std::vector<float> referenceMatchStatus;
+	for (const auto &eachCIGAR : cigar) {
+		const std::vector<float> currCIGARfield(
+			bam_cigar_oplen(eachCIGAR) * referenceConsumption.at( bam_cigar_op(eachCIGAR) ),
+			sequenceMatch.at( bam_cigar_op(eachCIGAR) )
+		);
+		std::copy( currCIGARfield.cbegin(), currCIGARfield.cend(), std::back_inserter(referenceMatchStatus) );
+	}
+	return referenceMatchStatus;
+}
+
+ReadExonCoverage isaSpace::getExonCoverageStats(const std::pair<BAMrecord, ExonGroup> &readAndExons) {
+	const char strandID = (readAndExons.first.isRevComp() ? '-' : '+' );
+	const auto firstCIGAR{readAndExons.first.getFirstCIGAR()};
+	ReadExonCoverage currentAlignmentInfo;
+	if ( readAndExons.first.isMapped() && (firstCIGAR > 0) ) {
+		const MappedReadMatchStatus bestMatchStats{readAndExons.first.getBestReferenceMatchStatus()};
+		const std::pair<hts_pos_t, hts_pos_t> geneSpan{readAndExons.second.geneSpan()};
+		currentAlignmentInfo.readName                 = readAndExons.first.getReadName();
+		currentAlignmentInfo.chromosomeName           = readAndExons.first.getReferenceName();
+		currentAlignmentInfo.strand                   = strandID;
+		currentAlignmentInfo.alignmentStart           = readAndExons.first.getMapStart();
+		currentAlignmentInfo.alignmentEnd             = readAndExons.first.getMapEnd();
+		currentAlignmentInfo.bestAlignmentStart       = bestMatchStats.mapStart;
+		currentAlignmentInfo.bestAlignmentEnd         = bestMatchStats.mapStart + static_cast<hts_pos_t>( bestMatchStats.matchStatus.size() );
+		currentAlignmentInfo.firstSoftClipLength      = bam_cigar_oplen(firstCIGAR) * static_cast<uint32_t>(bam_cigar_opchr(firstCIGAR) == 'S');
+		currentAlignmentInfo.nSecondaryAlignments     = readAndExons.first.secondaryAlignmentCount();
+		currentAlignmentInfo.nLocalReversedAlignments = readAndExons.first.localReversedSecondaryAlignmentCount();
+		currentAlignmentInfo.nGoodSecondaryAlignments = readAndExons.first.localSecondaryAlignmentCount() - currentAlignmentInfo.nLocalReversedAlignments;
+		currentAlignmentInfo.geneName                 = readAndExons.second.geneName();
+		currentAlignmentInfo.nExons                   = readAndExons.second.nExons();
+		currentAlignmentInfo.firstExonStart           = geneSpan.first;
+		currentAlignmentInfo.lastExonEnd              = geneSpan.second;
+		currentAlignmentInfo.firstExonLength          = readAndExons.second.firstExonLength();
+		currentAlignmentInfo.exonCoverageScores       = readAndExons.second.getExonCoverageQuality(readAndExons.first);
+		currentAlignmentInfo.bestExonCoverageScores   = readAndExons.second.getBestExonCoverageQuality(readAndExons.first);
+	}
+
+	if ( currentAlignmentInfo.geneName.empty() ) {
+		currentAlignmentInfo.geneName = "no_overlap";
+	}
+	return currentAlignmentInfo;
+}
+
+std::string isaSpace::stringifyExonCoverage(const ReadExonCoverage &readRecord, char separator) {
 	std::string coverages = std::accumulate(
 		readRecord.exonCoverageScores.cbegin(),
 		readRecord.exonCoverageScores.cend(),
@@ -84,7 +251,8 @@ std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separat
 			return std::move(strVal) + std::to_string(val) + ',';
 		}
 	);
-	coverages.back() = '}';
+	coverages.resize(std::max( 2UL, coverages.size() ) - 1);
+	coverages += "}";
 	std::string bestCoverages = std::accumulate(
 		readRecord.bestExonCoverageScores.cbegin(),
 		readRecord.bestExonCoverageScores.cend(),
@@ -93,7 +261,8 @@ std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separat
 			return std::move(strVal) + std::to_string(val) + ',';
 		}
 	);
-	bestCoverages.back() = '}';
+	bestCoverages.resize(std::max( 2UL, bestCoverages.size() ) - 1);
+	bestCoverages += "}";
 	std::string result =  readRecord.readName                                 + separator
 						+ readRecord.chromosomeName                           + separator
 						+ readRecord.strand                                   + separator
@@ -115,35 +284,93 @@ std::string isaSpace::stringify(const ReadExonCoverage &readRecord, char separat
 	return result;
 }
 
-std::string isaSpace::stringifyRCSrange(const std::vector<ReadExonCoverage>::const_iterator &begin, const std::vector<ReadExonCoverage>::const_iterator &end) {
+std::string isaSpace::stringifyAlignmentRange(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end) {
 	std::string outString;
 	std::for_each(
 		begin,
 		end,
-		[&outString](const ReadExonCoverage &currStat) {
-			outString += stringify(currStat) + "\n";
+		[&outString](const  std::pair<BAMrecord, ExonGroup>  &currentAlignment) {
+			const ReadExonCoverage exonCoverage = getExonCoverageStats(currentAlignment);
+			outString += stringifyExonCoverage(exonCoverage) + "\n";
 		}
 	);
 	return outString;
 }
 
-std::vector< std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vector<ReadExonCoverage>::const_iterator> > 
-											isaSpace::makeThreadRanges(const std::vector<ReadExonCoverage> &targetVector, const size_t &threadCount) {
-	std::vector<std::vector<ReadExonCoverage>::difference_type> chunkSizes(
+std::string isaSpace::stringifyUnmappedRegions(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters) {
+	std::string badAlignmentString;
+	std::for_each(
+		begin,
+		end,
+		[&badAlignmentString, &windowParameters](const std::pair<BAMrecord, ExonGroup> &currentRAG) {
+			const std::vector<MappedReadInterval> badRegions{currentRAG.first.getPoorlyMappedRegions(windowParameters)};
+			std::for_each(
+				badRegions.cbegin(),
+				badRegions.cend(),
+				[&badAlignmentString, &windowParameters, &currentRAG](const MappedReadInterval &eachInterval) {
+					std::string regionStats =
+						currentRAG.first.getReadName() + "\t" +
+						std::to_string( currentRAG.first.getReadLength() ) + "\t" +
+						std::to_string(eachInterval.readStart) + "\t" +
+						std::to_string(eachInterval.readEnd) + "\t" +
+						std::to_string(windowParameters.windowSize) + "\n";
+					badAlignmentString += regionStats;
+				}
+			);
+		}
+	);
+	return badAlignmentString;
+}
+
+std::pair<std::string, std::string> isaSpace::getUnmappedRegionsAndFASTQ(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters) {
+	std::pair<std::string, std::string> badAlignmentInfoFQ;
+	std::for_each(
+		begin,
+		end,
+		[&badAlignmentInfoFQ, &windowParameters](const std::pair<BAMrecord, ExonGroup> &currentRAG) {
+			const std::vector<MappedReadInterval> badRegions{currentRAG.first.getPoorlyMappedRegions(windowParameters)};
+			std::for_each(
+				badRegions.cbegin(),
+				badRegions.cend(),
+				[&badAlignmentInfoFQ, &windowParameters, &currentRAG](const MappedReadInterval &eachInterval) {
+					std::string regionStats =
+						currentRAG.first.getReadName() + "\t" +
+						std::to_string( currentRAG.first.getReadLength() ) + "\t" +
+						std::to_string(eachInterval.readStart) + "\t" +
+						std::to_string(eachInterval.readEnd) + "\t" +
+						std::to_string(windowParameters.windowSize) + "\n";
+					badAlignmentInfoFQ.first += regionStats;
+					std::string fastqString{currentRAG.first.getSequenceAndQuality(eachInterval)};
+					fastqString =
+						"@"  + currentRAG.first.getReadName() +
+						"_"  + std::to_string(eachInterval.readStart) +
+						"_"  + std::to_string(eachInterval.readEnd) +
+						"\n" + fastqString;
+					badAlignmentInfoFQ.second += fastqString;
+				}
+			);
+		}
+	);
+	return badAlignmentInfoFQ;
+}
+
+std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
+											isaSpace::makeThreadRanges(const bamGFFvector &targetVector, const size_t &threadCount) {
+	std::vector<bamGFFvector::difference_type> chunkSizes(
 		threadCount,
-		static_cast<std::vector<ReadExonCoverage>::difference_type>(targetVector.size() / threadCount)
+		static_cast<bamGFFvector::difference_type>(targetVector.size() / threadCount)
 	);
 	// spread the left over elements among chunks
 	std::for_each(
 		chunkSizes.begin(),
 		chunkSizes.begin() +
-			static_cast<std::vector<ReadExonCoverage>::difference_type >(targetVector.size() % threadCount),
-		[](std::vector<ReadExonCoverage>::difference_type &currSize) {return ++currSize;}
+			static_cast<bamGFFvector::difference_type >(targetVector.size() % threadCount),
+		[](bamGFFvector::difference_type &currSize) {return ++currSize;}
 	);
 	std::vector<
 		std::pair<
-			std::vector<ReadExonCoverage>::const_iterator,
-			std::vector<ReadExonCoverage>::const_iterator
+			bamGFFvector::const_iterator,
+			bamGFFvector::const_iterator
 		>
 	> threadRanges;
 	auto chunkBeginIt = targetVector.cbegin();
@@ -151,10 +378,10 @@ std::vector< std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vecto
 	std::for_each(
 		chunkSizes.cbegin(),
 		chunkSizes.cend(),
-		[&chunkBeginIt, &threadRanges](std::vector<ReadExonCoverage>::difference_type currDiff) {
+		[&chunkBeginIt, &threadRanges](bamGFFvector::difference_type currDiff) {
 			std::pair<
-				std::vector<ReadExonCoverage>::const_iterator,
-				std::vector<ReadExonCoverage>::const_iterator
+				bamGFFvector::const_iterator,
+				bamGFFvector::const_iterator
 			> currItPair{chunkBeginIt, chunkBeginIt + currDiff};
 			chunkBeginIt = currItPair.second;
 			threadRanges.emplace_back( std::move(currItPair) );
@@ -194,16 +421,18 @@ void isaSpace::extractCLinfo(const std::unordered_map<std::string, std::string> 
 	intVariables.clear();
 	stringVariables.clear();
 	const std::array<std::string, 3> requiredStringVariables{"input-bam", "input-gff", "out"};
-	const std::array<std::string, 1> optionalIntVariables{"threads"};
+	const std::array<std::string, 1> optionalStringVariables{"out-fastq"};
+	const std::array<std::string, 2> optionalIntVariables{"threads", "window-size"};
 
-	const std::unordered_map<std::string, int> defaultIntValues{ {"threads", -1} };
+	const std::unordered_map<std::string, int> defaultIntValues{ {"threads", -1}, {"window-size", 75} };
+	const std::unordered_map<std::string, std::string> defaultStringValues{ {"out-fastq", "NULL"} };
 
 	if ( parsedCLI.empty() ) {
 		throw std::string("No command line flags specified;");
 	}
 	for (const auto &eachFlag : optionalIntVariables) {
 		try {
-			intVariables[eachFlag] = stoi( parsedCLI.at(eachFlag));
+			intVariables[eachFlag] = stoi( parsedCLI.at(eachFlag) );
 		} catch(const std::exception &problem) {
 			intVariables[eachFlag] = defaultIntValues.at(eachFlag);
 		}
@@ -213,6 +442,13 @@ void isaSpace::extractCLinfo(const std::unordered_map<std::string, std::string> 
 			stringVariables[eachFlag] = parsedCLI.at(eachFlag);
 		} catch(const std::exception &problem) {
 			throw std::string("ERROR: ") + eachFlag + std::string(" specification is required");
+		}
+	}
+	for (const auto &eachFlag : optionalStringVariables) {
+		try {
+			stringVariables[eachFlag] = parsedCLI.at(eachFlag);
+		} catch(const std::exception &problem) {
+			stringVariables[eachFlag] = defaultStringValues.at(eachFlag);
 		}
 	}
 }

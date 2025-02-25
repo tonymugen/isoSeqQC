@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
-project(isoseqAligner
-	VERSION 0.1
+project(isoSeqQC
+	VERSION 0.2
 	LANGUAGES CXX
 )
 include(CheckCXXCompilerFlag)
@@ -148,12 +148,15 @@ set(CMAKE_CXX_FLAGS_TEST
 )
 
 include(GNUInstallDirs)
-# executable
+# executables
 add_executable(exoncoverage
 	${CMAKE_CURRENT_LIST_DIR}/apps/exoncoverage.cpp
 )
 target_include_directories(exoncoverage
 	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
+)
+target_include_directories(exoncoverage SYSTEM
+	PRIVATE ${htslib_SOURCE_DIR}/htslib
 )
 target_link_libraries(exoncoverage
 	PRIVATE isoseqAln
@@ -173,6 +176,33 @@ install(TARGETS exoncoverage
 	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+add_executable(partialmaps
+	${CMAKE_CURRENT_LIST_DIR}/apps/partialmaps.cpp
+)
+target_include_directories(partialmaps
+	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
+)
+target_include_directories(partialmaps SYSTEM
+	PRIVATE ${htslib_SOURCE_DIR}/htslib
+)
+target_link_libraries(partialmaps
+	PRIVATE isoseqAln
+)
+target_compile_options(partialmaps
+	PRIVATE ${PROJECT_WARNINGS_CXX}
+)
+if(BUILD_TESTS)
+	target_compile_options(partialmaps
+		PRIVATE -fsanitize=${SANITIZER_LIST}
+	)
+endif()
+set_target_properties(partialmaps PROPERTIES
+	CXX_STANDARD_REQUIRED ON
+)
+install(TARGETS partialmaps
+	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
 # library
 add_library(isoseqAln
 	${CMAKE_CURRENT_LIST_DIR}/src/isoseqAlgn.cpp
@@ -184,6 +214,8 @@ target_link_libraries(isoseqAln
 )
 target_include_directories(isoseqAln
 	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
+)
+target_include_directories(isoseqAln SYSTEM
 	PRIVATE ${htslib_SOURCE_DIR}/htslib
 )
 set_target_properties(isoseqAln PROPERTIES

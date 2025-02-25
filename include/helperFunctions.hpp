@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
+ * Copyright (c) 2024-2025 Anthony J. Greenberg and Rebekah Rogers
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
  *
@@ -21,7 +21,7 @@
 /** \file
  * \author Anthony J. Greenberg and Rebekah Rogers
  * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
- * \version 0.1
+ * \version 0.2
  *
  * Definitions of class-external functions needed by genomic analyses.
  *
@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include <array>
 #include <string>
 #include <utility> // for std::pair
 #include <vector>
@@ -36,6 +37,9 @@
 #include "isoseqAlgn.hpp"
 
 namespace isaSpace {
+	constexpr size_t nGFFfields{9UL};
+	using bamGFFvector = std::vector< std::pair<BAMrecord, ExonGroup> >;
+
 	/** \brief Extract a name 
 	 *
 	 * Extract a token name from GFF attributes.
@@ -43,30 +47,125 @@ namespace isaSpace {
 	 * \param[in] tokenAndAttrList field token and the list of attributes
 	 */
 	[[gnu::warn_unused_result]] std::string extractAttributeName(const TokenAttibuteListPair &tokenAndAttrList);
+
+	/** \brief Extract parent name
+	 *
+	 * Extract the value of the `Parent=` attribute from the provided GFF attribute string.
+	 *
+	 * \param[in] attributeString GFF attribute string
+	 * \return parent name
+	 */
+	[[gnu::warn_unused_result]] std::string extractParentName(const std::string &attributeString);
+
 	/** \brief Test for range overlap
 	 *
-	 * Checks if the BAM record overlaps the nucleotide range covered by a gene.
+	 * The first position in each range need not be before the second in the same range.
 	 *
-	 * \param[in] geneInfo gene information
-	 * \param[in] candidateBAM BAM record
+	 * \param[in] range1 first range
+	 * \param[in] range2 second range
 	 * \return `true` if there is overlap
 	 */
-	[[gnu::warn_unused_result]] bool rangesOverlap(const ReadExonCoverage &geneInfo, const BAMrecord &candidateBAM) noexcept;
+	[[gnu::warn_unused_result]] bool rangesOverlap(const std::pair<hts_pos_t, hts_pos_t> &range1, const std::pair<hts_pos_t, hts_pos_t> &range2) noexcept;
+
+	/** \brief Parse a GFF line into fields
+	 *
+	 *
+	 * Places `FAIL` in the first element if the number of fields is not `nGFFfields` as required by the GFF specification.
+	 *
+	 * \param[in] gffLine one line of a GFF file
+	 * \return each GFF field in a separate element
+	 */
+	[[gnu::warn_unused_result]] std::array<std::string, nGFFfields> parseGFFline(const std::string &gffLine);
+
+	/** \brief Parse a GFF file
+	 *
+	 * Extract exons from a GFF file and group them by gene and chromosome/linkage group.
+	 * The map keys are linkage groups, scaffolds, or chromosomes plus strand ID.
+	 *
+	 * \param[in] gffFileName GFF file name
+	 * \return collection of exon group vectors by chromosome and strand
+	 */
+	[[gnu::warn_unused_result]] std::unordered_map< std::string, std::vector<ExonGroup> > parseGFF(const std::string &gffFileName);
+
+	/** \brief Identify peaks in numerical data 
+	 *
+	 * Returns iterators to the elements in a vector that correspond to peaks above the provided threshold.
+	 * Last element is the `const_iterator` to the end of the vector unless it is empty, and is the only element if there are no peaks.
+	 *
+	 * \param[in] values vector of values
+	 * \param[in] threshold value that must be exceeded for a peak call
+	 * \return vector of iterators to peak elements
+	 *
+	 */
+	[[gnu::warn_unused_result]] std::vector<std::vector<float>::const_iterator> getPeaks(const std::vector<float> &values, const float &threshold);
+
+	/** \brief Identify valleys in numerical data 
+	 *
+	 * Returns iterators to the elements in a vector that correspond to valleys below the provided threshold.
+	 * Last element is the `const_iterator` to the end of the vector unless it is empty, and is the only element if there are no valleys.
+	 *
+	 * \param[in] values vector of values
+	 * \param[in] threshold value that must exceed the valley values
+	 * \return vector of iterators to valley elements
+	 *
+	 */
+	[[gnu::warn_unused_result]] std::vector<std::vector<float>::const_iterator> getValleys(const std::vector<float> &values, const float &threshold);
+
+	/** \brief Read match status along the reference
+	 *
+	 * Parses CIGAR to track read (query) match/mismatch (1.0 for match, 0.0 for mismatch) status along the reference.
+	 * This means that insertions in the read are ignored.
+	 * The vector start begins at the position closest to the first exon start regardless of strand.
+	 *
+	 * \param[in] cigar CIGAR vector
+	 * \return vector of match status
+	 */
+	[[gnu::warn_unused_result]] std::vector<float> getReferenceMatchStatus(const std::vector<uint32_t> &cigar);
+
+	/** \brief Extract exon coverage statistics for a read 
+	 *
+	 * \param[in] readAndExons read alignment with the corresponding exon group
+	 * \return exon coverage object
+	 */
+	[[gnu::warn_unused_result]] ReadExonCoverage getExonCoverageStats(const std::pair<BAMrecord, ExonGroup> &readAndExons);
+
 	/** \brief Convert `ReadExonCoverage` to string
 	 *
 	 * \param[in] readRecord individual read record
 	 * \param[in] separator field separator
 	 * \return `std::string` with the read record elements, without a new line at the end
 	 */
-	[[gnu::warn_unused_result]] std::string stringify(const ReadExonCoverage &readRecord, char separator = '\t');
-	/** \brief Produce a string from a range of `ReadExonCoverage` elements
+	[[gnu::warn_unused_result]] std::string stringifyExonCoverage(const ReadExonCoverage &readRecord, char separator = '\t');
+
+	/** \brief Produce a string from a range of read alignments
 	 *
 	 * \param[in] begin start iterator
 	 * \param[in] end end iterator
 	 * \return string with coverage information
 	 */
-	[[gnu::warn_unused_result]] std::string stringifyRCSrange(const std::vector<ReadExonCoverage>::const_iterator &begin, const std::vector<ReadExonCoverage>::const_iterator &end);
-	/** \brief Make per-thread `ReadExonCoverage` vector ranges
+	[[gnu::warn_unused_result]] std::string stringifyAlignmentRange(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end);
+	/** \brief Produce a string of poorly aligned region statistics from an alignment range 
+	 *
+	 * Only saves information from reads that have poorly mapped regions, potentially multiple per read.
+	 *
+	 * \param[in] begin start iterator
+	 * \param[in] end end iterator
+	 * \param[in] windowParameters sliding window parameters
+	 * \return string with coverage information
+	 */
+	[[gnu::warn_unused_result]] std::string stringifyUnmappedRegions(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters);
+	/** \brief Produce a string of poorly aligned region statistics and corresponding FASTQ records from an alignment range 
+	 *
+	 * Only saves information from reads that have poorly mapped regions, potentially multiple per read.
+	 *
+	 * \param[in] begin start iterator
+	 * \param[in] end end iterator
+	 * \param[in] windowParameters sliding window parameters
+	 * \return strings with coverage information (`.first`) and FASTQ (`.second`)
+	 */
+	[[gnu::warn_unused_result]] std::pair<std::string, std::string> getUnmappedRegionsAndFASTQ(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters);
+
+	/** \brief Make per-thread alignment record/annotation vector ranges
 	 *
 	 * Constructs a vector of iterator pairs bracketing chunks of a vector to be processed in parallel.
 	 *
@@ -75,8 +174,9 @@ namespace isaSpace {
 	 *
 	 * \return vector of iterator pairs for each thread
 	 */
-	[[gnu::warn_unused_result]] std::vector< std::pair<std::vector<ReadExonCoverage>::const_iterator, std::vector<ReadExonCoverage>::const_iterator> > 
-		makeThreadRanges(const std::vector<ReadExonCoverage> &targetVector, const size_t &threadCount);
+	[[gnu::warn_unused_result]] std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
+		makeThreadRanges(const bamGFFvector &targetVector, const size_t &threadCount);
+
 	/** \brief Command line parser
 	 *
 	 * Maps flags to values. Flags assumed to be of the form `--flag-name value`.
@@ -86,6 +186,7 @@ namespace isaSpace {
 	 * \return map of tags to values
 	 */
 	[[gnu::warn_unused_result]] std::unordered_map<std::string, std::string> parseCL(int &argc, char **argv);
+
 	/** \brief Extract parameters from parsed command line interface flags
 	 *
 	 * Extracts needed variable values, indexed by `std::string` encoded variable names.
