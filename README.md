@@ -80,6 +80,8 @@ The output is a tab-delimited text file with the following columns:
 	unmapped_end   -- 0-based index of the unmapped region end in the read.
     window_size    -- sliding window size.
 
+FASTQ sequence identifier fields are read names, with read portion base-0 start and stop positions added, separated by underscores.
+
 # Tests
 
 Unit tests can be optionally built, without installing the software on the system:
