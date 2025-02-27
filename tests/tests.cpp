@@ -160,7 +160,7 @@ TEST_CASE("Helper functions work") {
 		const std::pair<isaSpace::BAMrecord, isaSpace::ExonGroup> emptyPair;
 		const auto emptyExonCoverage{isaSpace::getExonCoverageStats(emptyPair)};
 		REQUIRE( emptyExonCoverage.geneName == "no_overlap" );
-		REQUIRE( emptyExonCoverage.chromosomeName.empty() );
+		REQUIRE( emptyExonCoverage.chromosomeName == "not_mapped" );
 		REQUIRE( emptyExonCoverage.readName.empty() );
 		REQUIRE( emptyExonCoverage.exonCoverageScores.empty() );
 		REQUIRE( emptyExonCoverage.bestExonCoverageScores.empty() );
