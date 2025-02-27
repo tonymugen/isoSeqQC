@@ -213,12 +213,13 @@ ReadExonCoverage isaSpace::getExonCoverageStats(const std::pair<BAMrecord, ExonG
 	const char strandID = (readAndExons.first.isRevComp() ? '-' : '+' );
 	const auto firstCIGAR{readAndExons.first.getFirstCIGAR()};
 	ReadExonCoverage currentAlignmentInfo;
+	currentAlignmentInfo.readName       = readAndExons.first.getReadName();
+	currentAlignmentInfo.strand         = strandID;
+	currentAlignmentInfo.chromosomeName = "not_mapped";
 	if ( readAndExons.first.isMapped() && (firstCIGAR > 0) ) {
 		const MappedReadMatchStatus bestMatchStats{readAndExons.first.getBestReferenceMatchStatus()};
 		const std::pair<hts_pos_t, hts_pos_t> geneSpan{readAndExons.second.geneSpan()};
-		currentAlignmentInfo.readName                 = readAndExons.first.getReadName();
 		currentAlignmentInfo.chromosomeName           = readAndExons.first.getReferenceName();
-		currentAlignmentInfo.strand                   = strandID;
 		currentAlignmentInfo.alignmentStart           = readAndExons.first.getMapStart();
 		currentAlignmentInfo.alignmentEnd             = readAndExons.first.getMapEnd();
 		currentAlignmentInfo.bestAlignmentStart       = bestMatchStats.mapStart;
