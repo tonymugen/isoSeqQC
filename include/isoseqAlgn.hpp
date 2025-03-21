@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include <memory>
 #include <utility>
 #include <vector>
 #include <array>
@@ -47,10 +48,13 @@ namespace isaSpace {
 	struct BinomialWindowParameters;
 	struct ReadExonCoverage;
 	struct BAMsecondary;
+	struct BAMheaderDeleter;
+	struct BAMrecordDeleter;
 	class  ExonGroup;
 	class  ReadMatchWindowBIC;
 	class  BAMrecord;
 	class  BAMtoGenome;
+	class  BAMfile;
 
 	/** \brief BAM and GFF file name pair */
 	struct BamAndGffFiles {
@@ -213,17 +217,33 @@ namespace isaSpace {
 	};
 	/** \brief BAM secondary alignment
 	 *
-	 * Only secondary alignments on the same reference and strand are used.
+	 * Only secondary alignments on the same reference.
 	 */
 	struct BAMsecondary {
-		/** Base-1 map start position on the reference */
+		/** \brief Base-1 map start position on the reference */
 		hts_pos_t mapStart{-1};
-		/** Base-1 map end position on the reference */
+		/** \brief Base-1 map end position on the reference */
 		hts_pos_t mapEnd{-1};
 		/** \brief Is it the same strand as the primary? */
 		bool sameStrandAsPrimary{false};
 		/** \brief CIGAR string */
 		std::vector<uint32_t> cigar;
+	};
+	/** \brief BAM header pointer deleter */
+	struct BAMheaderDeleter {
+		/** \brief Functor operator
+		 *
+		 * \param[in] header pointer to the header
+		 */
+		void operator()(sam_hdr_t *header) const { sam_hdr_destroy(header); }
+	};
+	/** \brief BAM record pointer deleter */
+	struct BAMrecordDeleter {
+		/** \brief Functor operator
+		 *
+		 * \param[in] bamRecord pointer to a BAM record
+		 */
+		void operator()(bam1_t *bamRecord) const { bam_destroy1(bamRecord); }
 	};
 
 	/** \brief Group of exons from the same gene
@@ -842,5 +862,77 @@ namespace isaSpace {
 		 * \param[in] latestExonGroupIts iterators to the latest exon groups for each reference and strand
 		 */
 		void processSecondaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, const std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts);
+	};
+
+	/** \brief Records from a BAM file
+	 *
+	 * Primary records from a BAM file, including the header.
+	 * Used to add realignments as secondary records.
+	 */
+	class BAMfile {
+	public:
+		/** \brief Default constructor */
+		BAMfile() = default;
+		/** \brief Constructor with BAM file name 
+		 *
+		 * \param[in] BAMfileName name of the input BAM file
+		 */
+		BAMfile(const std::string &BAMfileName);
+		/** \brief Copy constructor
+		 *
+		 * \param[in] toCopy object to copy
+		 */
+		BAMfile(const BAMfile &toCopy) = delete;
+		/** \brief Copy assignment operator
+		 *
+		 * \param[in] toCopy object to copy
+		 * \return `BAMfile` object
+		 */
+		BAMfile& operator=(const BAMfile &toCopy) = delete;
+		/** \brief Move constructor
+		 *
+		 * \param[in] toMove object to move
+		 */
+		BAMfile(BAMfile &&toMove) noexcept = default;
+		/** \brief Move assignment operator
+		 *
+		 * \param[in] toMove object to move
+		 * \return `BAMfile` object
+		 */
+		BAMfile& operator=(BAMfile &&toMove) noexcept = default;
+		/** \brief Destructor */
+		~BAMfile() = default;
+
+		/** \brief Get the number of primary alignments
+		 *
+		 * \return number of primary alignments
+		 */
+		[[gnu::warn_unused_result]] uint32_t getPrimaryAlignmentCount() const;
+		/** \brief Add re-mapped read regions
+		 *
+		 * Add re-mapped read regions as secondary alignments,
+		 * fixing CIGAR strings for the primaries.
+		 *
+		 * \param[in] remapBAMfileName name of the BAM file with re-mapped read portions
+		 */
+		void addRemaps(const std::string &remapBAMfileName);
+		/** \brief Save the reads with re-alignments to BAM file
+		 *
+		 * \param[in] outputBAMfileName output BAM file name
+		 */
+		void saveRemappedBAM(const std::string &outputBAMfileName) const;
+	private:
+		/** \brief Flag testing the two possible secondary alignment markers */
+		static const uint16_t suppSecondaryAlgn_;
+		/** \brief BAM records indexed by name, separated by reference/chromosome
+		 *
+		 * Vector index according to reference index in the BAM header.
+		 * TODO: actually make it a vector
+		 */
+		std::vector< std::unordered_map< std::string, std::unique_ptr<bam1_t, BAMrecordDeleter> > > bamRecords_;
+		/** \brief BAM file header */
+		std::unique_ptr<sam_hdr_t, BAMheaderDeleter> bamFileHeader_;
+		/** \brief Look-up table for reference indexes by name */
+		std::unordered_map<std::string, size_t> referenceNameIndexes_;
 	};
 }

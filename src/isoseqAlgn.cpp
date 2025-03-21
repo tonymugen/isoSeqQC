@@ -950,3 +950,66 @@ std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const s
 	readsAndExons_.emplace_back(alignedRead, *searchIt);
 	return searchIt;
 };
+
+// BAMfile methods
+BAMfile::BAMfile(const std::string &BAMfileName) {
+	constexpr char openMode{'r'};
+	std::unique_ptr<BGZF, void(*)(BGZF *)> inputBAMfile(
+		bgzf_open(BAMfileName.c_str(), &openMode),
+		[](BGZF *bamFile) {
+			bgzf_close(bamFile);
+		}
+	);
+	if (inputBAMfile == nullptr) {
+		throw std::string("ERROR: failed to open the BAM file ")
+			+ BAMfileName + " in "
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+
+	BAMheaderDeleter headDeleter;
+	bamFileHeader_ = std::unique_ptr<sam_hdr_t, BAMheaderDeleter>(bam_hdr_read( inputBAMfile.get() ), headDeleter);
+	if (bamFileHeader_ == nullptr) {
+		throw std::string("ERROR: failed to read the header for the BAM file in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+	const int32_t nRef = sam_hdr_nref( bamFileHeader_.get() );
+	if (nRef < 0) {
+		throw std::string("ERROR: invalid number of references/chromosomes in the ") 
+			+ BAMfileName + std::string(" BAM file in ")
+            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+	int32_t iRef{0};
+	while (iRef < nRef) {
+		const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), iRef); 
+		std::string referenceName;
+		if (refNamePtr != nullptr) {
+			referenceName = std::string{refNamePtr};
+		} else {
+			referenceName = std::string("Unknown") + std::to_string(iRef);
+		}
+		referenceNameIndexes_[referenceName] = static_cast<size_t>(iRef);
+		++iRef;
+	}
+	bamRecords_.resize(nRef);
+
+	while (true) {
+		BAMrecordDeleter currentBAMdeleter;
+		std::unique_ptr<bam1_t, BAMrecordDeleter> bamRecordPtr(bam_init1(), currentBAMdeleter);
+		const auto nBytes = bam_read1( inputBAMfile.get(), bamRecordPtr.get() );
+		if (nBytes == -1) {
+			break;
+		}
+		if (nBytes < -1) {
+			continue;
+		}
+		// Is this a secondary alignment?
+		if ( ( (bamRecordPtr->core.flag & suppSecondaryAlgn_) != 0 ) ) {
+			continue;
+		}
+
+		// primary alignment; process
+		const std::string readName{bam_get_qname(bamRecordPtr)};
+		// TODO: this is not yet a vector
+		bamRecords_.at(bamRecordPtr->core.tid)[readName].swap(bamRecordPtr);
+	}
+}
