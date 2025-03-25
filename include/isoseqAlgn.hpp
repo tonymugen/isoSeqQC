@@ -907,7 +907,7 @@ namespace isaSpace {
 		 *
 		 * \return number of primary alignments
 		 */
-		[[gnu::warn_unused_result]] uint32_t getPrimaryAlignmentCount() const;
+		[[gnu::warn_unused_result]] size_t getPrimaryAlignmentCount() const noexcept;
 		/** \brief Add re-mapped read regions
 		 *
 		 * Add re-mapped read regions as secondary alignments,
@@ -916,23 +916,31 @@ namespace isaSpace {
 		 * \param[in] remapBAMfileName name of the BAM file with re-mapped read portions
 		 */
 		void addRemaps(const std::string &remapBAMfileName);
-		/** \brief Save the reads with re-alignments to BAM file
+		/** \brief Save the reads with re-alignments to a BAM file
 		 *
 		 * \param[in] outputBAMfileName output BAM file name
 		 */
 		void saveRemappedBAM(const std::string &outputBAMfileName) const;
+		/** \brief Sort and save the reads with re-alignments to a BAM file
+		 *
+		 * References saved in the order of the original BAM file.
+		 * Reads sorted by start position (which is the gene end if mapped to the negative strand).
+		 *
+		 * \param[in] outputBAMfileName output BAM file name
+		 */
+		void saveSortedRemappedBAM(const std::string &outputBAMfileName) const;
 	private:
 		/** \brief Flag testing the two possible secondary alignment markers */
 		static const uint16_t suppSecondaryAlgn_;
-		/** \brief BAM records indexed by name, separated by reference/chromosome
-		 *
-		 * Vector index according to reference index in the BAM header.
-		 * TODO: actually make it a vector
-		 */
-		std::vector< std::unordered_map< std::string, std::unique_ptr<bam1_t, BAMrecordDeleter> > > bamRecords_;
+		/** \brief BAM records indexed by name, separated by reference/chromosome */
+		std::unordered_map<
+			std::string,
+			std::unordered_map<
+				std::string,
+				std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> >
+			>
+		> bamRecords_;
 		/** \brief BAM file header */
 		std::unique_ptr<sam_hdr_t, BAMheaderDeleter> bamFileHeader_;
-		/** \brief Look-up table for reference indexes by name */
-		std::unordered_map<std::string, size_t> referenceNameIndexes_;
 	};
 }

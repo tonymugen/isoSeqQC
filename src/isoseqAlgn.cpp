@@ -952,6 +952,8 @@ std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const s
 };
 
 // BAMfile methods
+constexpr uint16_t BAMfile::suppSecondaryAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
+
 BAMfile::BAMfile(const std::string &BAMfileName) {
 	constexpr char openMode{'r'};
 	std::unique_ptr<BGZF, void(*)(BGZF *)> inputBAMfile(
@@ -978,19 +980,6 @@ BAMfile::BAMfile(const std::string &BAMfileName) {
 			+ BAMfileName + std::string(" BAM file in ")
             + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
-	int32_t iRef{0};
-	while (iRef < nRef) {
-		const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), iRef); 
-		std::string referenceName;
-		if (refNamePtr != nullptr) {
-			referenceName = std::string{refNamePtr};
-		} else {
-			referenceName = std::string("Unknown") + std::to_string(iRef);
-		}
-		referenceNameIndexes_[referenceName] = static_cast<size_t>(iRef);
-		++iRef;
-	}
-	bamRecords_.resize(nRef);
 
 	while (true) {
 		BAMrecordDeleter currentBAMdeleter;
@@ -1009,7 +998,46 @@ BAMfile::BAMfile(const std::string &BAMfileName) {
 
 		// primary alignment; process
 		const std::string readName{bam_get_qname(bamRecordPtr)};
-		// TODO: this is not yet a vector
-		bamRecords_.at(bamRecordPtr->core.tid)[readName].swap(bamRecordPtr);
+		const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), bamRecordPtr->core.tid); 
+		if (refNamePtr != nullptr) {
+			const std::string refName{refNamePtr};
+			bamRecords_[refName][readName].emplace_back( std::move(bamRecordPtr) );
+		}
+	}
+}
+
+size_t BAMfile::getPrimaryAlignmentCount() const noexcept {
+	size_t paCount{0};
+	for (const auto &eachReference : bamRecords_) {
+		paCount += eachReference.second.size();
+	}
+	return paCount;
+}
+
+void BAMfile::addRemaps(const std::string &remapBAMfileName) {
+	constexpr char openMode{'r'};
+	std::unique_ptr<BGZF, void(*)(BGZF *)> inputBAMfile(
+		bgzf_open(remapBAMfileName.c_str(), &openMode),
+		[](BGZF *bamFile) {
+			bgzf_close(bamFile);
+		}
+	);
+	if (inputBAMfile == nullptr) {
+		throw std::string("ERROR: failed to open the BAM file ")
+			+ remapBAMfileName + " in "
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+
+	BAMheaderDeleter headDeleter;
+	bamFileHeader_ = std::unique_ptr<sam_hdr_t, BAMheaderDeleter>(bam_hdr_read( inputBAMfile.get() ), headDeleter);
+	if (bamFileHeader_ == nullptr) {
+		throw std::string("ERROR: failed to read the header for the BAM file in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+	const int32_t nRef = sam_hdr_nref( bamFileHeader_.get() );
+	if (nRef < 0) {
+		throw std::string("ERROR: invalid number of references/chromosomes in the ") 
+			+ remapBAMfileName + std::string(" BAM file in ")
+            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
 }

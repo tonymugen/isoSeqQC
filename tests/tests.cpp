@@ -1435,3 +1435,10 @@ TEST_CASE("GFF and BAM parsing works") {
 	REQUIRE(nPluses  == correctBadRegionResSize);
     REQUIRE(nHeaders == correctBadRegionResSize);
 }
+
+TEST_CASE("Test adding and saving unmapped regions from a BAM file") {
+	const std::string testInputAlgnBAMname("../tests/testRealign.bam");
+	constexpr size_t correctNprimary{12};
+	isaSpace::BAMfile testInputAlgnBAM(testInputAlgnBAMname);
+	REQUIRE(testInputAlgnBAM.getPrimaryAlignmentCount() == correctNprimary);
+}
