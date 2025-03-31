@@ -47,6 +47,7 @@ namespace isaSpace {
 	struct MappedReadMatchStatus;
 	struct BinomialWindowParameters;
 	struct ReadExonCoverage;
+	struct ReadPortion;
 	struct BAMsecondary;
 	struct BAMheaderDeleter;
 	struct BAMrecordDeleter;
@@ -214,6 +215,15 @@ namespace isaSpace {
 		 * in the read from the best alignment for that exon among all alignments for the read.
 		 */
 		std::vector<float> bestExonCoverageScores;
+	};
+	/** \brief Read portion for re-mapping */
+	struct ReadPortion {
+		/** \brief Base-0 read start */
+		size_t start{0};
+		/** \brief Base-0 one past the read end */
+		size_t end{0};
+		/** \brief Original read name */
+		std::string originalName;
 	};
 	/** \brief BAM secondary alignment
 	 *
@@ -931,7 +941,7 @@ namespace isaSpace {
 		void saveSortedRemappedBAM(const std::string &outputBAMfileName) const;
 	private:
 		/** \brief Flag testing the two possible secondary alignment markers */
-		static const uint16_t suppSecondaryAlgn_;
+		static const uint16_t secondaryOrUnpammpedAlgn_;
 		/** \brief BAM records indexed by name, separated by reference/chromosome */
 		std::unordered_map<
 			std::string,

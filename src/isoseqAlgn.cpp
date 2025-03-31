@@ -952,7 +952,7 @@ std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const s
 };
 
 // BAMfile methods
-constexpr uint16_t BAMfile::suppSecondaryAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
+constexpr uint16_t BAMfile::secondaryOrUnpammpedAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY | BAM_FUNMAP};
 
 BAMfile::BAMfile(const std::string &BAMfileName) {
 	constexpr char openMode{'r'};
@@ -991,18 +991,16 @@ BAMfile::BAMfile(const std::string &BAMfileName) {
 		if (nBytes < -1) {
 			continue;
 		}
-		// Is this a secondary alignment?
-		if ( ( (bamRecordPtr->core.flag & suppSecondaryAlgn_) != 0 ) ) {
-			continue;
+		if ( (bamRecordPtr->core.flag & secondaryOrUnpammpedAlgn_) == 0 ) {
+			// mapped primary alignment; process
+			const std::string readName{bam_get_qname(bamRecordPtr)};
+			const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), bamRecordPtr->core.tid); 
+			if (refNamePtr != nullptr) {
+				const std::string refName{refNamePtr};
+				bamRecords_[refName][readName].emplace_back( std::move(bamRecordPtr) );
+			}
 		}
 
-		// primary alignment; process
-		const std::string readName{bam_get_qname(bamRecordPtr)};
-		const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), bamRecordPtr->core.tid); 
-		if (refNamePtr != nullptr) {
-			const std::string refName{refNamePtr};
-			bamRecords_[refName][readName].emplace_back( std::move(bamRecordPtr) );
-		}
 	}
 }
 
@@ -1039,5 +1037,34 @@ void BAMfile::addRemaps(const std::string &remapBAMfileName) {
 		throw std::string("ERROR: invalid number of references/chromosomes in the ") 
 			+ remapBAMfileName + std::string(" BAM file in ")
             + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+
+	while (true) {
+		BAMrecordDeleter currentBAMdeleter;
+		std::unique_ptr<bam1_t, BAMrecordDeleter> bamRecordPtr(bam_init1(), currentBAMdeleter);
+		const auto nBytes = bam_read1( inputBAMfile.get(), bamRecordPtr.get() );
+		if (nBytes == -1) {
+			break;
+		}
+		if (nBytes < -1) {
+			continue;
+		}
+		if ( (bamRecordPtr->core.flag & secondaryOrUnpammpedAlgn_) == 0 ) {
+			// mapped primary alignment; process
+			const std::string readName{bam_get_qname(bamRecordPtr)};
+			// TODO: delete the trailing _NNN_NNN to get the original read name
+
+			// must search all references because the re-map may hit a different one from the original
+			if ( !readName.empty() ) {
+				for (const auto &eachReference : bamRecords_) {
+					const auto readIt = eachReference.second.find(readName);
+					if ( readIt != eachReference.second.end() ) {
+						// do the thing
+						break;
+					}
+				}
+			}
+		}
+
 	}
 }

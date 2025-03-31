@@ -355,6 +355,34 @@ std::pair<std::string, std::string> isaSpace::getUnmappedRegionsAndFASTQ(const b
 	return badAlignmentInfoFQ;
 }
 
+ReadPortion isaSpace::parseRemappedReadName(const std::string &remappedReadName) {
+	ReadPortion result;
+	constexpr size_t nStartEnd{2};
+	std::array<std::string, nStartEnd> startAndEndStrings;
+	auto trailerBeginIt = std::prev( remappedReadName.end() );
+	size_t iRange{0};
+	while ( (iRange < nStartEnd) && ( trailerBeginIt != remappedReadName.begin() ) ) {
+		if (*trailerBeginIt == '_') {
+			++iRange;
+			trailerBeginIt = std::prev(trailerBeginIt);
+			continue;
+		}
+		startAndEndStrings.at(iRange) = *trailerBeginIt + startAndEndStrings.at(iRange); // reversing the order since we are moving from the back
+		trailerBeginIt = std::prev(trailerBeginIt);
+	}
+
+	result.originalName = std::string(remappedReadName.begin(), trailerBeginIt);
+	result.start        = std::stoul( startAndEndStrings.at(0) );
+	result.end          = std::stoul( startAndEndStrings.at(1) );
+	return result;
+}
+
+void isaSpace::addRemappedSecondaryAlignment(const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &newRecordHeader, const std::unique_ptr<bam1_t, BAMrecordDeleter> &newRecord,
+			const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &originalHeader, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > &readMapVector) {
+	BAMrecordDeleter newSecondaryDeleter;
+	std::unique_ptr<bam1_t, BAMrecordDeleter> secondaryFromNew(bam_init1(), newSecondaryDeleter);
+}
+
 std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
 											isaSpace::makeThreadRanges(const bamGFFvector &targetVector, const size_t &threadCount) {
 	std::vector<bamGFFvector::difference_type> chunkSizes(

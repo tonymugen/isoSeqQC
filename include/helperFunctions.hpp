@@ -29,10 +29,13 @@
 
 #pragma once
 
+#include <memory>
 #include <array>
 #include <string>
 #include <utility> // for std::pair
 #include <vector>
+
+#include "sam.h"
 
 #include "isoseqAlgn.hpp"
 
@@ -164,6 +167,26 @@ namespace isaSpace {
 	 * \return strings with coverage information (`.first`) and FASTQ (`.second`)
 	 */
 	[[gnu::warn_unused_result]] std::pair<std::string, std::string> getUnmappedRegionsAndFASTQ(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters);
+
+	/** \brief Extract original read name and coordinates
+	 *
+	 * The remapped read names are original names, with `_`-separated start and end coordinates.
+	 *
+	 * \param[in] remappedReadName re-mapped read portion name
+	 * \return original read name and segment coordinates
+	 */
+	[[gnu::warn_unused_result]] ReadPortion parseRemappedReadName(const std::string &remappedReadName);
+	/** \brief Add a re-mapped secondary alignment
+	 *
+	 * Add a read portion remap as a secondary alignment to a vector of BAM records.
+	 *
+	 * \param[in] newRecordHeader header corresponding to the re-mapped record
+	 * \param[in] newRecord remapped BAM record
+	 * \param[in] originalHeader header corresponding to the original record
+	 * \param[in,out] readMapVector vector of alignments of a read, first element is the primary alignment
+	 */
+	void addRemappedSecondaryAlignment(const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &newRecordHeader, const std::unique_ptr<bam1_t, BAMrecordDeleter> &newRecord,
+			const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &originalHeader, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > &readMapVector);
 
 	/** \brief Make per-thread alignment record/annotation vector ranges
 	 *
