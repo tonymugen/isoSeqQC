@@ -36,6 +36,7 @@
 #include <sstream>
 #include <fstream>
 #include <utility>
+#include <stdexcept>
 
 #include "sam.h"
 
@@ -357,6 +358,9 @@ std::pair<std::string, std::string> isaSpace::getUnmappedRegionsAndFASTQ(const b
 
 ReadPortion isaSpace::parseRemappedReadName(const std::string &remappedReadName) {
 	ReadPortion result;
+	if ( remappedReadName.empty() ) {
+		return result;
+	}
 	constexpr size_t nStartEnd{2};
 	std::array<std::string, nStartEnd> startAndEndStrings;
 	auto trailerBeginIt = std::prev( remappedReadName.end() );
@@ -364,16 +368,29 @@ ReadPortion isaSpace::parseRemappedReadName(const std::string &remappedReadName)
 	while ( (iRange < nStartEnd) && ( trailerBeginIt != remappedReadName.begin() ) ) {
 		if (*trailerBeginIt == '_') {
 			++iRange;
-			trailerBeginIt = std::prev(trailerBeginIt);
+			--trailerBeginIt;
 			continue;
 		}
 		startAndEndStrings.at(iRange) = *trailerBeginIt + startAndEndStrings.at(iRange); // reversing the order since we are moving from the back
-		trailerBeginIt = std::prev(trailerBeginIt);
+		--trailerBeginIt;
 	}
 
-	result.originalName = std::string(remappedReadName.begin(), trailerBeginIt);
-	result.start        = std::stoul( startAndEndStrings.at(0) );
-	result.end          = std::stoul( startAndEndStrings.at(1) );
+	result.originalName = std::string( remappedReadName.begin(), std::next(trailerBeginIt) ); // next because we advance back on '_'
+	try {
+		// start is in the back of the array because we are reading back to front
+		result.start = std::stoul( startAndEndStrings.at(1) );
+		result.end   = std::stoul( startAndEndStrings.at(0) );
+	} catch(const std::invalid_argument &invalid) {
+		result.originalName.clear();
+		result.start = 0;
+		result.end   = 0;
+		return result;
+	} catch(const std::out_of_range &outOfRange) {
+		result.originalName.clear();
+		result.start = 0;
+		result.end   = 0;
+		return result;
+	}
 	return result;
 }
 

@@ -1052,12 +1052,12 @@ void BAMfile::addRemaps(const std::string &remapBAMfileName) {
 		if ( (bamRecordPtr->core.flag & secondaryOrUnpammpedAlgn_) == 0 ) {
 			// mapped primary alignment; process
 			const std::string readName{bam_get_qname(bamRecordPtr)};
-			// TODO: delete the trailing _NNN_NNN to get the original read name
+			const ReadPortion realignedInfo{parseRemappedReadName(readName)};
 
 			// must search all references because the re-map may hit a different one from the original
-			if ( !readName.empty() ) {
+			if ( !realignedInfo.originalName.empty() ) {
 				for (const auto &eachReference : bamRecords_) {
-					const auto readIt = eachReference.second.find(readName);
+					const auto readIt = eachReference.second.find(realignedInfo.originalName);
 					if ( readIt != eachReference.second.end() ) {
 						// do the thing
 						break;

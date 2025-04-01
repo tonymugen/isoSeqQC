@@ -237,7 +237,27 @@ TEST_CASE("Helper functions work") {
 	}
 
 	SECTION("GFF parsing") {
-		//TODO: add parseGFFline tests
+		const std::string gffLine(
+			"NC_052526.2	Gnomon	exon	50812	50970	.	+	.	"
+			"ID=exon-XM_043206943.1-1;Parent=rna-XM_043206943.1;Dbxref=GeneID:6526243,Genbank:XM_043206943.1;experiment=COORDINATES: "
+			"polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC6526243;product=active breakpoint cluster region-related protein%2C transcript variant X1;transcript_id=XM_043206943.1"
+		);
+		const std::array<std::string, isaSpace::nGFFfields> goodGFFfields{isaSpace::parseGFFline(gffLine)};
+		REQUIRE(goodGFFfields.at(0) == "NC_052526.2");
+		REQUIRE(goodGFFfields.at(1) == "Gnomon");
+		REQUIRE(goodGFFfields.at(2) == "exon");
+		REQUIRE(goodGFFfields.at(3) == "50812");
+		REQUIRE(goodGFFfields.at(4) == "50970");
+		REQUIRE(goodGFFfields.at(6) == "+");
+
+		const std::string badGFFline(
+			"NC_052526.2	exon	50812	50970	.	+	.	"
+			"ID=exon-XM_043206943.1-1;Parent=rna-XM_043206943.1;Dbxref=GeneID:6526243,Genbank:XM_043206943.1;experiment=COORDINATES: "
+			"polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC6526243;product=active breakpoint cluster region-related protein%2C transcript variant X1;transcript_id=XM_043206943.1"
+		);
+		const std::array<std::string, isaSpace::nGFFfields> badGFFfields{isaSpace::parseGFFline(badGFFline)};
+		REQUIRE(badGFFfields.at(0) == "FAIL");
+
 		constexpr size_t nReferences{3};
 		const std::string goodGFFname("../tests/goodGFF.gff");
 		const auto parsedGFF{isaSpace::parseGFF(goodGFFname)};
@@ -260,6 +280,43 @@ TEST_CASE("Helper functions work") {
 				}
 			) == 1
 		);
+	}
+
+	SECTION("Re-alignment parsing") {
+		const std::string goodSubreadName("test_1234_567");
+		const isaSpace::ReadPortion goodRP{isaSpace::parseRemappedReadName(goodSubreadName)};
+
+		REQUIRE(goodRP.originalName == "test");
+		REQUIRE(goodRP.start        == 1234);
+		REQUIRE(goodRP.end          == 567);
+
+		const std::string goodSubreadNameUS("test_test_1234_567");
+		const isaSpace::ReadPortion goodRPUS{isaSpace::parseRemappedReadName(goodSubreadNameUS)};
+
+		REQUIRE(goodRPUS.originalName == "test_test");
+		REQUIRE(goodRPUS.start        == 1234);
+		REQUIRE(goodRPUS.end          == 567);
+
+		const std::string badSubreadName("test");
+		const isaSpace::ReadPortion badRP{isaSpace::parseRemappedReadName(badSubreadName)};
+
+		REQUIRE( badRP.originalName.empty() );
+		REQUIRE(badRP.start == 0);
+		REQUIRE(badRP.end   == 0);
+
+		const std::string badSubreadNameUS("test_test");
+		const isaSpace::ReadPortion badRPUS{isaSpace::parseRemappedReadName(badSubreadNameUS)};
+
+		REQUIRE( badRPUS.originalName.empty() );
+		REQUIRE(badRPUS.start == 0);
+		REQUIRE(badRPUS.end   == 0);
+
+		const std::string emptySubreadName;
+		const isaSpace::ReadPortion emptyRP{isaSpace::parseRemappedReadName(emptySubreadName)};
+
+		REQUIRE( emptyRP.originalName.empty() );
+		REQUIRE(emptyRP.start == 0);
+		REQUIRE(emptyRP.end   == 0);
 	}
 }
 
