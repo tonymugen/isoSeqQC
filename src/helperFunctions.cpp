@@ -27,6 +27,7 @@
  *
  */
 
+#include <cassert>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -36,7 +37,6 @@
 #include <sstream>
 #include <fstream>
 #include <utility>
-#include <stdexcept>
 
 #include "sam.h"
 
@@ -380,12 +380,7 @@ ReadPortion isaSpace::parseRemappedReadName(const std::string &remappedReadName)
 		// start is in the back of the array because we are reading back to front
 		result.start = std::stoul( startAndEndStrings.at(1) );
 		result.end   = std::stoul( startAndEndStrings.at(0) );
-	} catch(const std::invalid_argument &invalid) {
-		result.originalName.clear();
-		result.start = 0;
-		result.end   = 0;
-		return result;
-	} catch(const std::out_of_range &outOfRange) {
+	} catch(const std::exception &invalid) {
 		result.originalName.clear();
 		result.start = 0;
 		result.end   = 0;
@@ -394,10 +389,42 @@ ReadPortion isaSpace::parseRemappedReadName(const std::string &remappedReadName)
 	return result;
 }
 
-void isaSpace::addRemappedSecondaryAlignment(const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &newRecordHeader, const std::unique_ptr<bam1_t, BAMrecordDeleter> &newRecord,
-			const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &originalHeader, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > &readMapVector) {
+void isaSpace::addRemappedSecondaryAlignment(
+		const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &newRecordHeader, const std::unique_ptr<bam1_t, BAMrecordDeleter> &newRecord, const ReadPortion &remapInfo,
+		const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &originalHeader, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > &readMapVector) {
 	BAMrecordDeleter newSecondaryDeleter;
 	std::unique_ptr<bam1_t, BAMrecordDeleter> secondaryFromNew(bam_init1(), newSecondaryDeleter);
+
+	// reference indexes may not be the same in the original and new headers
+	// retrieve the original index from the reference name
+	const auto *const newRefNamePtr = sam_hdr_tid2name(newRecordHeader.get(), newRecord->core.tid); 
+	if (newRefNamePtr == nullptr) {
+		return;
+	}
+	const int32_t originalTID = bam_name2id(originalHeader.get(), newRefNamePtr);
+	if (originalTID < 0) {
+		return;
+	}
+
+	// Add softclips to the CIGAR string of the remapped portion if necessary
+	std::vector<uint32_t> remapCIGAR(
+		bam_cigar_gen(static_cast<uint32_t>(remapInfo.start), BAM_CSOFT_CLIP),
+		static_cast<uint32_t>(remapInfo.start > 0)
+	);
+	for (uint32_t iCIGAR = 0; iCIGAR < newRecord->core.n_cigar; ++iCIGAR) {
+		remapCIGAR.push_back( *(bam_get_cigar( newRecord.get() ) + iCIGAR) );
+	}
+	if (remapInfo.end <= readMapVector.front()->core.l_qseq) {
+		remapCIGAR.push_back( bam_cigar_gen(static_cast<uint32_t>(readMapVector.front()->core.l_qseq - remapInfo.end), BAM_CSOFT_CLIP) );
+	}
+	assert(
+		bam_cigar2qlen( remapCIGAR.size(), remapCIGAR.data() ) == 
+			bam_cigar2qlen(
+				readMapVector.front()->core.n_cigar, bam_get_cigar( readMapVector.front() )
+			) &&
+		"ERROR: original and new CIGAR strings imply different read lengths"
+	);
+
 }
 
 std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 

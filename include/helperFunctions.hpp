@@ -171,6 +171,8 @@ namespace isaSpace {
 	/** \brief Extract original read name and coordinates
 	 *
 	 * The remapped read names are original names, with `_`-separated start and end coordinates.
+	 * Underscores in the original read name are allowed.
+	 * If the coordinates are absent, returns an empty object.
 	 *
 	 * \param[in] remappedReadName re-mapped read portion name
 	 * \return original read name and segment coordinates
@@ -182,10 +184,12 @@ namespace isaSpace {
 	 *
 	 * \param[in] newRecordHeader header corresponding to the re-mapped record
 	 * \param[in] newRecord remapped BAM record
+	 * \param[in] remapInfo original name and read segment range
 	 * \param[in] originalHeader header corresponding to the original record
 	 * \param[in,out] readMapVector vector of alignments of a read, first element is the primary alignment
 	 */
-	void addRemappedSecondaryAlignment(const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &newRecordHeader, const std::unique_ptr<bam1_t, BAMrecordDeleter> &newRecord,
+	void addRemappedSecondaryAlignment(
+			const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &newRecordHeader, const std::unique_ptr<bam1_t, BAMrecordDeleter> &newRecord, const ReadPortion &remapInfo,
 			const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &originalHeader, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > &readMapVector);
 
 	/** \brief Make per-thread alignment record/annotation vector ranges
