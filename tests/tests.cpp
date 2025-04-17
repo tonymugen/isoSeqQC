@@ -283,6 +283,7 @@ TEST_CASE("Helper functions work") {
 	}
 
 	SECTION("Re-alignment parsing") {
+		// re-aligned read name parsing
 		const std::string goodSubreadName("test_1234_567");
 		const isaSpace::ReadPortion goodRP{isaSpace::parseRemappedReadName(goodSubreadName)};
 
@@ -317,6 +318,40 @@ TEST_CASE("Helper functions work") {
 		REQUIRE( emptyRP.originalName.empty() );
 		REQUIRE(emptyRP.start == 0);
 		REQUIRE(emptyRP.end   == 0);
+
+		// add remapped reads as secondary alignments
+		const std::string originalAlgnBAMname("../tests/remappedOriginals.bam");
+		constexpr char openMode{'r'};
+		std::unique_ptr<BGZF, void(*)(BGZF *)> originalAlgnBAMfile(
+			bgzf_open(originalAlgnBAMname.c_str(), &openMode),
+			[](BGZF *bamFile) {
+				bgzf_close(bamFile);
+			}
+		);
+		isaSpace::BAMheaderDeleter originalHeadDeleter;
+		std::unique_ptr<sam_hdr_t, isaSpace::BAMheaderDeleter> originalHeadPtr{bam_hdr_read( originalAlgnBAMfile.get() ), originalHeadDeleter};
+		isaSpace::BAMrecordDeleter originalBAMdeleter;
+		std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> originalRecordPtr(bam_init1(), originalBAMdeleter);
+		auto nBytes = bam_read1( originalAlgnBAMfile.get(), originalRecordPtr.get() );
+		std::vector< std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> > originalVector;
+		originalVector.emplace_back( std::move(originalRecordPtr) );
+		isaSpace::ReadPortion remappedParams;
+		remappedParams.originalName = "m54312U_201212_032953/4064952/ccs";
+		remappedParams.start        = 1576; // NOLINT
+		remappedParams.end          = 2407; // NOLINT
+		const std::string remappedBAMname("../tests/remappedPortions.bam");
+		std::unique_ptr<BGZF, void(*)(BGZF *)> remappedBAMfile(
+			bgzf_open(remappedBAMname.c_str(), &openMode),
+			[](BGZF *bamFile) {
+				bgzf_close(bamFile);
+			}
+		);
+		isaSpace::BAMheaderDeleter remappedHeadDeleter;
+		std::unique_ptr<sam_hdr_t, isaSpace::BAMheaderDeleter> remappedHeadPtr{bam_hdr_read( remappedBAMfile.get() ), remappedHeadDeleter};
+		isaSpace::BAMrecordDeleter remappedBAMdeleter;
+		std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> remappedRecordPtr(bam_init1(), remappedBAMdeleter);
+		nBytes = bam_read1( remappedBAMfile.get(), remappedRecordPtr.get() );
+		isaSpace::addRemappedSecondaryAlignment(remappedHeadPtr, remappedRecordPtr, remappedParams, originalHeadPtr, originalVector);
 	}
 }
 

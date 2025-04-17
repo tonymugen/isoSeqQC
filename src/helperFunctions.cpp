@@ -406,17 +406,22 @@ void isaSpace::addRemappedSecondaryAlignment(
 		return;
 	}
 
-	// Add softclips to the CIGAR string of the remapped portion if necessary
+	// Add soft clips to the CIGAR string of the remapped portion if necessary
+	auto softClip = static_cast<uint32_t>(remapInfo.start);
+	bam_cigar_gen(softClip, BAM_CSOFT_CLIP);
 	std::vector<uint32_t> remapCIGAR(
-		bam_cigar_gen(static_cast<uint32_t>(remapInfo.start), BAM_CSOFT_CLIP),
+		softClip,
 		static_cast<uint32_t>(remapInfo.start > 0)
 	);
+	// TODO: calculate read-centric mismatch rates and toss those under a threshold
 	for (uint32_t iCIGAR = 0; iCIGAR < newRecord->core.n_cigar; ++iCIGAR) {
 		remapCIGAR.push_back( *(bam_get_cigar( newRecord.get() ) + iCIGAR) );
 	}
 	if (remapInfo.end <= readMapVector.front()->core.l_qseq) {
-		remapCIGAR.push_back( bam_cigar_gen(static_cast<uint32_t>(readMapVector.front()->core.l_qseq - remapInfo.end), BAM_CSOFT_CLIP) );
+		softClip = static_cast<uint32_t>(readMapVector.front()->core.l_qseq - remapInfo.end);
+		remapCIGAR.push_back( bam_cigar_gen(softClip, BAM_CSOFT_CLIP) );
 	}
+	/*
 	assert(
 		bam_cigar2qlen( remapCIGAR.size(), remapCIGAR.data() ) == 
 			bam_cigar2qlen(
@@ -424,7 +429,21 @@ void isaSpace::addRemappedSecondaryAlignment(
 			) &&
 		"ERROR: original and new CIGAR strings imply different read lengths"
 	);
+	*/
+	const int32_t success = bam_set1(
+		secondaryFromNew.get(),
+		remapInfo.originalName.size(),
+		remapInfo.originalName.c_str(),
+		newRecord->core.flag | BAM_FSECONDARY,
+		originalTID,
+		newRecord->core.pos,
+		newRecord->core.qual,
+		remapCIGAR.size(),
+		remapCIGAR.data(),
+		0, 0, newRecord->core.isize, 0, nullptr, nullptr, 0
+	);
 
+	readMapVector.emplace_back( std::move(secondaryFromNew) );
 }
 
 std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
