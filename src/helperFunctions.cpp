@@ -389,9 +389,12 @@ ReadPortion isaSpace::parseRemappedReadName(const std::string &remappedReadName)
 	return result;
 }
 
+void isaSpace::modifyCIGAR(const ReadPortion &modRange, std::unique_ptr<bam1_t, BAMrecordDeleter> &bamRecord) {
+}
+
 void isaSpace::addRemappedSecondaryAlignment(
 		const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &newRecordHeader, const std::unique_ptr<bam1_t, BAMrecordDeleter> &newRecord, const ReadPortion &remapInfo,
-		const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &originalHeader, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > &readMapVector) {
+		const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &originalHeader, const float &remapIdentityCutoff, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > &readMapVector) {
 	BAMrecordDeleter newSecondaryDeleter;
 	std::unique_ptr<bam1_t, BAMrecordDeleter> secondaryFromNew(bam_init1(), newSecondaryDeleter);
 
@@ -406,30 +409,43 @@ void isaSpace::addRemappedSecondaryAlignment(
 		return;
 	}
 
+	constexpr std::array<float, 10> sequenceMatch{
+		1.0, 0.0, 0.0, 0.0, 0.0,
+		0.0, 0.0, 1.0, 0.0, 0.0
+	};
+	constexpr std::array<float, 10> readConsumption{
+		1.0, 1.0, 0.0, 0.0, 1.0,
+		0.0, 0.0, 1.0, 1.0, 0.0
+	};
 	// Add soft clips to the CIGAR string of the remapped portion if necessary
 	auto softClip = static_cast<uint32_t>(remapInfo.start);
-	bam_cigar_gen(softClip, BAM_CSOFT_CLIP);
 	std::vector<uint32_t> remapCIGAR(
-		softClip,
-		static_cast<uint32_t>(remapInfo.start > 0)
+		static_cast<uint32_t>(remapInfo.start > 0),
+		bam_cigar_gen(softClip, BAM_CSOFT_CLIP)
 	);
-	// TODO: calculate read-centric mismatch rates and toss those under a threshold
+	// only the remapped portion of the read counts towards the identity fraction calculation
+	float matchCount{0.0};
+	float readLength{0.0};
 	for (uint32_t iCIGAR = 0; iCIGAR < newRecord->core.n_cigar; ++iCIGAR) {
 		remapCIGAR.push_back( *(bam_get_cigar( newRecord.get() ) + iCIGAR) );
+		const auto cigarOpLength = static_cast<float>( bam_cigar_oplen( remapCIGAR.back() ) );
+		matchCount += cigarOpLength * sequenceMatch.at( bam_cigar_op( remapCIGAR.back() ) );
+		readLength += cigarOpLength * readConsumption.at( bam_cigar_op( remapCIGAR.back() ) );
+	}
+	if (matchCount/readLength < remapIdentityCutoff) {
+		return;
 	}
 	if (remapInfo.end <= readMapVector.front()->core.l_qseq) {
 		softClip = static_cast<uint32_t>(readMapVector.front()->core.l_qseq - remapInfo.end);
 		remapCIGAR.push_back( bam_cigar_gen(softClip, BAM_CSOFT_CLIP) );
 	}
-	/*
 	assert(
-		bam_cigar2qlen( remapCIGAR.size(), remapCIGAR.data() ) == 
+		bam_cigar2qlen( static_cast<int32_t>( remapCIGAR.size() ), remapCIGAR.data() ) == 
 			bam_cigar2qlen(
-				readMapVector.front()->core.n_cigar, bam_get_cigar( readMapVector.front() )
+				static_cast<int32_t>(readMapVector.front()->core.n_cigar), bam_get_cigar( readMapVector.front().get() )
 			) &&
 		"ERROR: original and new CIGAR strings imply different read lengths"
 	);
-	*/
 	const int32_t success = bam_set1(
 		secondaryFromNew.get(),
 		remapInfo.originalName.size(),
@@ -443,7 +459,9 @@ void isaSpace::addRemappedSecondaryAlignment(
 		0, 0, newRecord->core.isize, 0, nullptr, nullptr, 0
 	);
 
-	readMapVector.emplace_back( std::move(secondaryFromNew) );
+	if (success >= 0) {
+		readMapVector.emplace_back( std::move(secondaryFromNew) );
+	}
 }
 
 std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 

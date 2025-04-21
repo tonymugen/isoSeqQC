@@ -320,6 +320,8 @@ TEST_CASE("Helper functions work") {
 		REQUIRE(emptyRP.end   == 0);
 
 		// add remapped reads as secondary alignments
+		constexpr float readMatchCutoff{0.99F};
+		constexpr uint32_t nSkip{2};
 		const std::string originalAlgnBAMname("../tests/remappedOriginals.bam");
 		constexpr char openMode{'r'};
 		std::unique_ptr<BGZF, void(*)(BGZF *)> originalAlgnBAMfile(
@@ -330,11 +332,11 @@ TEST_CASE("Helper functions work") {
 		);
 		isaSpace::BAMheaderDeleter originalHeadDeleter;
 		std::unique_ptr<sam_hdr_t, isaSpace::BAMheaderDeleter> originalHeadPtr{bam_hdr_read( originalAlgnBAMfile.get() ), originalHeadDeleter};
-		isaSpace::BAMrecordDeleter originalBAMdeleter;
-		std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> originalRecordPtr(bam_init1(), originalBAMdeleter);
-		auto nBytes = bam_read1( originalAlgnBAMfile.get(), originalRecordPtr.get() );
-		std::vector< std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> > originalVector;
-		originalVector.emplace_back( std::move(originalRecordPtr) );
+		isaSpace::BAMrecordDeleter originalBAMdeleter1;
+		std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> originalRecordPtr1(bam_init1(), originalBAMdeleter1);
+		auto nBytes = bam_read1( originalAlgnBAMfile.get(), originalRecordPtr1.get() );
+		std::vector< std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> > originalVector1;
+		originalVector1.emplace_back( std::move(originalRecordPtr1) );
 		isaSpace::ReadPortion remappedParams;
 		remappedParams.originalName = "m54312U_201212_032953/4064952/ccs";
 		remappedParams.start        = 1576; // NOLINT
@@ -348,10 +350,33 @@ TEST_CASE("Helper functions work") {
 		);
 		isaSpace::BAMheaderDeleter remappedHeadDeleter;
 		std::unique_ptr<sam_hdr_t, isaSpace::BAMheaderDeleter> remappedHeadPtr{bam_hdr_read( remappedBAMfile.get() ), remappedHeadDeleter};
-		isaSpace::BAMrecordDeleter remappedBAMdeleter;
-		std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> remappedRecordPtr(bam_init1(), remappedBAMdeleter);
-		nBytes = bam_read1( remappedBAMfile.get(), remappedRecordPtr.get() );
-		isaSpace::addRemappedSecondaryAlignment(remappedHeadPtr, remappedRecordPtr, remappedParams, originalHeadPtr, originalVector);
+		isaSpace::BAMrecordDeleter remappedBAMdeleter1;
+		std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> remappedRecordPtr1(bam_init1(), remappedBAMdeleter1);
+		nBytes = bam_read1( remappedBAMfile.get(), remappedRecordPtr1.get() );
+		isaSpace::addRemappedSecondaryAlignment(remappedHeadPtr, remappedRecordPtr1, remappedParams, originalHeadPtr, readMatchCutoff, originalVector1);
+		REQUIRE(originalVector1.size() == 2);
+
+		// skip records not relevant for this set of tests
+		for (uint32_t iSkip = 0; iSkip < nSkip; ++iSkip) {
+			isaSpace::BAMrecordDeleter localBAMdeleter;
+			std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> localRecordPtr(bam_init1(), localBAMdeleter);
+			nBytes = bam_read1( originalAlgnBAMfile.get(), localRecordPtr.get() );
+		}
+
+		// remapped region at the start of the original read
+		isaSpace::BAMrecordDeleter originalBAMdeleter2;
+		std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> originalRecordPtr2(bam_init1(), originalBAMdeleter2);
+		nBytes = bam_read1( originalAlgnBAMfile.get(), originalRecordPtr2.get() );
+		std::vector< std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> > originalVector2;
+		originalVector2.emplace_back( std::move(originalRecordPtr2) );
+		remappedParams.originalName = "m54312U_201212_032953/919963/ccs";
+		remappedParams.start        = 0;   // NOLINT
+		remappedParams.end          = 314; // NOLINT
+		isaSpace::BAMrecordDeleter remappedBAMdeleter2;
+		std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> remappedRecordPtr2(bam_init1(), remappedBAMdeleter2);
+		nBytes = bam_read1( remappedBAMfile.get(), remappedRecordPtr2.get() );
+		isaSpace::addRemappedSecondaryAlignment(remappedHeadPtr, remappedRecordPtr2, remappedParams, originalHeadPtr, readMatchCutoff, originalVector2);
+		REQUIRE(originalVector2.size() == 2);
 	}
 }
 
@@ -1529,8 +1554,8 @@ TEST_CASE("GFF and BAM parsing works") {
 }
 
 TEST_CASE("Test adding and saving unmapped regions from a BAM file") {
-	const std::string testInputAlgnBAMname("../tests/testRealign.bam");
-	constexpr size_t correctNprimary{12};
+	const std::string testInputAlgnBAMname("../tests/remappedOriginals.bam");
+	constexpr size_t correctNprimary{3};
 	isaSpace::BAMfile testInputAlgnBAM(testInputAlgnBAMname);
 	REQUIRE(testInputAlgnBAM.getPrimaryAlignmentCount() == correctNprimary);
 }

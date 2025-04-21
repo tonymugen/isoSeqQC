@@ -178,19 +178,29 @@ namespace isaSpace {
 	 * \return original read name and segment coordinates
 	 */
 	[[gnu::warn_unused_result]] ReadPortion parseRemappedReadName(const std::string &remappedReadName);
+	/** \brief Modify the BAM CIGAR string to erase alignment in a range 
+	 *
+	 * Substitute operations in a BAM record within the given range with non-matching operations.
+	 *
+	 * \param[in] modRange modification range
+	 * \param[in,out] bamRecord BAM record to be modified
+	 */
+	void modifyCIGAR(const ReadPortion &modRange, std::unique_ptr<bam1_t, BAMrecordDeleter> &bamRecord);
 	/** \brief Add a re-mapped secondary alignment
 	 *
 	 * Add a read portion remap as a secondary alignment to a vector of BAM records.
+	 * Only reads that pass the identity threshold are added.
 	 *
 	 * \param[in] newRecordHeader header corresponding to the re-mapped record
 	 * \param[in] newRecord remapped BAM record
 	 * \param[in] remapInfo original name and read segment range
 	 * \param[in] originalHeader header corresponding to the original record
+	 * \param[in] remapIdentityCutoff fraction of sites in the remapped read that are identical to the reference
 	 * \param[in,out] readMapVector vector of alignments of a read, first element is the primary alignment
 	 */
 	void addRemappedSecondaryAlignment(
 			const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &newRecordHeader, const std::unique_ptr<bam1_t, BAMrecordDeleter> &newRecord, const ReadPortion &remapInfo,
-			const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &originalHeader, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > &readMapVector);
+			const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &originalHeader, const float &remapIdentityCutoff, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > &readMapVector);
 
 	/** \brief Make per-thread alignment record/annotation vector ranges
 	 *
