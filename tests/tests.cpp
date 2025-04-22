@@ -355,6 +355,8 @@ TEST_CASE("Helper functions work") {
 		nBytes = bam_read1( remappedBAMfile.get(), remappedRecordPtr1.get() );
 		isaSpace::addRemappedSecondaryAlignment(remappedHeadPtr, remappedRecordPtr1, remappedParams, originalHeadPtr, readMatchCutoff, originalVector1);
 		REQUIRE(originalVector1.size() == 2);
+		const auto firstCIGAR = *bam_get_cigar( originalVector1.back().get() ) ; // NOLINT
+		REQUIRE(bam_cigar_op(firstCIGAR) == BAM_CSOFT_CLIP);
 
 		// skip records not relevant for this set of tests
 		for (uint32_t iSkip = 0; iSkip < nSkip; ++iSkip) {
@@ -377,6 +379,8 @@ TEST_CASE("Helper functions work") {
 		nBytes = bam_read1( remappedBAMfile.get(), remappedRecordPtr2.get() );
 		isaSpace::addRemappedSecondaryAlignment(remappedHeadPtr, remappedRecordPtr2, remappedParams, originalHeadPtr, readMatchCutoff, originalVector2);
 		REQUIRE(originalVector2.size() == 2);
+		const auto lastCIGAR = *(bam_get_cigar( originalVector2.back().get() ) + originalVector2.back()->core.n_cigar - 1); // NOLINT
+		REQUIRE(bam_cigar_op(lastCIGAR) == BAM_CSOFT_CLIP);
 	}
 }
 
@@ -1555,7 +1559,7 @@ TEST_CASE("GFF and BAM parsing works") {
 
 TEST_CASE("Test adding and saving unmapped regions from a BAM file") {
 	const std::string testInputAlgnBAMname("../tests/remappedOriginals.bam");
-	constexpr size_t correctNprimary{3};
+	constexpr size_t correctNprimary{4};
 	isaSpace::BAMfile testInputAlgnBAM(testInputAlgnBAMname);
 	REQUIRE(testInputAlgnBAM.getPrimaryAlignmentCount() == correctNprimary);
 }

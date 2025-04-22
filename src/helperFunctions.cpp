@@ -390,6 +390,7 @@ ReadPortion isaSpace::parseRemappedReadName(const std::string &remappedReadName)
 }
 
 void isaSpace::modifyCIGAR(const ReadPortion &modRange, std::unique_ptr<bam1_t, BAMrecordDeleter> &bamRecord) {
+	constexpr std::array<int32_t, 2> mismatchKind{BAM_CDIFF, BAM_CSOFT_CLIP};
 }
 
 void isaSpace::addRemappedSecondaryAlignment(
