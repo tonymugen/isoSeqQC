@@ -390,7 +390,28 @@ ReadPortion isaSpace::parseRemappedReadName(const std::string &remappedReadName)
 }
 
 void isaSpace::modifyCIGAR(const ReadPortion &modRange, std::unique_ptr<bam1_t, BAMrecordDeleter> &bamRecord) {
-	constexpr std::array<int32_t, 2> mismatchKind{BAM_CDIFF, BAM_CSOFT_CLIP};
+	assert( modRange.end >= modRange.start && "ERROR: end of the range must be no smaller than the start");
+
+	constexpr std::array<uint32_t, 2>  mismatchKind{BAM_CDIFF, BAM_CSOFT_CLIP};
+	constexpr std::array<uint32_t, 10> readConsumption{1, 1, 0, 0, 1, 0, 0, 1, 1, 0};
+	constexpr std::array<uint32_t, 10> referenceConsumption{1, 0, 1, 1, 0, 0, 0, 1, 1, 0};
+
+	std::vector<uint32_t> newCIGAR;
+	auto *oldCIGARptr = bam_get_cigar( bamRecord.get() );
+	uint32_t iCIGAR{0};
+
+	if (modRange.start == 0) {
+		const uint32_t rangeLength = modRange.end - modRange.start;
+		newCIGAR.push_back( bam_cigar_gen(rangeLength, BAM_CSOFT_CLIP) );
+		uint32_t readConsumptionCounter{0};
+		uint32_t referenceConsumptionCounter{0};
+		// skip CIGAR fields that are to be replaced with S
+		while ( (readConsumptionCounter < rangeLength) && (iCIGAR < bamRecord->core.n_cigar) ) {
+			readConsumptionCounter      += bam_cigar_oplen(oldCIGARptr[iCIGAR]) * readConsumption.at( bam_cigar_op(oldCIGARptr[iCIGAR]) );
+			referenceConsumptionCounter += bam_cigar_oplen(oldCIGARptr[iCIGAR]) * referenceConsumption.at( bam_cigar_op(oldCIGARptr[iCIGAR]) );
+			++iCIGAR;
+		}
+	}
 }
 
 void isaSpace::addRemappedSecondaryAlignment(
