@@ -183,9 +183,10 @@ namespace isaSpace {
 	 * Substitute operations in a BAM record within the given range with non-matching operations.
 	 *
 	 * \param[in] modRange modification range
-	 * \param[in,out] bamRecord BAM record to be modified
+	 * \param[in] bamRecord BAM record to be modified
+	 * \return BAM record with the CIGAR vector replaced
 	 */
-	void modifyCIGAR(const ReadPortion &modRange, std::unique_ptr<bam1_t, BAMrecordDeleter> &bamRecord);
+	[[gnu::warn_unused_result]] std::unique_ptr<bam1_t, BAMrecordDeleter> modifyCIGAR(const ReadPortion &modRange, std::unique_ptr<bam1_t, const BAMrecordDeleter> &bamRecord);
 	/** \brief Add a re-mapped secondary alignment
 	 *
 	 * Add a read portion remap as a secondary alignment to a vector of BAM records.

@@ -389,8 +389,11 @@ ReadPortion isaSpace::parseRemappedReadName(const std::string &remappedReadName)
 	return result;
 }
 
-void isaSpace::modifyCIGAR(const ReadPortion &modRange, std::unique_ptr<bam1_t, BAMrecordDeleter> &bamRecord) {
-	assert( modRange.end >= modRange.start && "ERROR: end of the range must be no smaller than the start");
+std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortion &modRange, std::unique_ptr<bam1_t, const BAMrecordDeleter> &bamRecord) {
+	assert( (modRange.end <= modRange.start)
+		&& "ERROR: end of the range must be no smaller than the start");
+	assert( (bamRecord->core.n_cigar > 0)
+		&& "ERROR: CIGAR string is empty");
 
 	constexpr std::array<uint32_t, 2>  mismatchKind{BAM_CDIFF, BAM_CSOFT_CLIP};
 	constexpr std::array<uint32_t, 10> readConsumption{1, 1, 0, 0, 1, 0, 0, 1, 1, 0};
@@ -398,13 +401,62 @@ void isaSpace::modifyCIGAR(const ReadPortion &modRange, std::unique_ptr<bam1_t, 
 
 	std::vector<uint32_t> newCIGAR;
 	auto *oldCIGARptr = bam_get_cigar( bamRecord.get() );
-	uint32_t iCIGAR{0};
+	const auto readLength{
+		static_cast<size_t>( bam_cigar2qlen(static_cast<int32_t>(bamRecord->core.n_cigar), oldCIGARptr) )
+	};
+	const uint32_t actualMismatchKind{mismatchKind.at(
+		static_cast<size_t>( (modRange.start == 0) || (modRange.end == readLength) ) 
+	)};
 
+	uint32_t iCIGAR{0};
+	uint32_t readConsumptionCounter{0};
+	// accumulate any elements before the replacement range start
+	while ( (readConsumptionCounter < modRange.start) && (iCIGAR < bamRecord->core.n_cigar) ) {
+		readConsumptionCounter += bam_cigar_oplen(oldCIGARptr[iCIGAR]) * readConsumption.at( bam_cigar_op(oldCIGARptr[iCIGAR]) );
+		newCIGAR.push_back(oldCIGARptr[iCIGAR]);
+		++iCIGAR;
+	}
+	// deal with over-shoot, if any
+	if (iCIGAR > 0) {
+		auto lastCIGARlen   = bam_cigar_oplen( newCIGAR.back() );
+		const auto overhang = readConsumptionCounter % modRange.start;
+
+		assert( (overhang < lastCIGARlen)
+			&& "ERROR: CIGAR field overhang is greater than the current field length");
+
+		lastCIGARlen          -= overhang;
+		lastCIGARlen           = bam_cigar_gen( lastCIGARlen, bam_cigar_op( newCIGAR.back() ) );
+		newCIGAR.back()        = lastCIGARlen;
+		readConsumptionCounter = modRange.start;
+	}
+	uint32_t referenceConsumptionCounter{0};
+	while ( (readConsumptionCounter < modRange.end) && (iCIGAR < bamRecord->core.n_cigar) ) {
+		// the read consumption counter is necessary to calculate the remainder of a possible overshoot
+		readConsumptionCounter      += bam_cigar_oplen(oldCIGARptr[iCIGAR]) * readConsumption.at( bam_cigar_op(oldCIGARptr[iCIGAR]) );
+		referenceConsumptionCounter += bam_cigar_oplen(oldCIGARptr[iCIGAR]) * referenceConsumption.at( bam_cigar_op(oldCIGARptr[iCIGAR]) );
+		++iCIGAR;
+	}
+
+	// advance the reference start position if the unmapped region is at the beginning
+	hts_pos_t newRefPos{bamRecord->core.pos};
 	if (modRange.start == 0) {
-		const uint32_t rangeLength = modRange.end - modRange.start;
+		newRefPos += referenceConsumptionCounter;
+	}
+	newCIGAR.push_back( bam_cigar_gen(modRange.end - modRange.start, actualMismatchKind) );
+
+	// only deal with a remainder if we are not at the read end
+	if (iCIGAR < bamRecord->core.n_cigar) {
+		;
+	}
+
+	while (iCIGAR < bamRecord->core.n_cigar) { // this iCIGAR is already past the previous one dealt with above
+		newCIGAR.push_back(oldCIGARptr[iCIGAR]);
+		++iCIGAR;
+	}
+	
+	/*
+	if (modRange.start == 0) {
 		newCIGAR.push_back( bam_cigar_gen(rangeLength, BAM_CSOFT_CLIP) );
-		uint32_t readConsumptionCounter{0};
-		uint32_t referenceConsumptionCounter{0};
 		// skip CIGAR fields that are to be replaced with S
 		while ( (readConsumptionCounter < rangeLength) && (iCIGAR < bamRecord->core.n_cigar) ) {
 			readConsumptionCounter      += bam_cigar_oplen(oldCIGARptr[iCIGAR]) * readConsumption.at( bam_cigar_op(oldCIGARptr[iCIGAR]) );
@@ -412,6 +464,33 @@ void isaSpace::modifyCIGAR(const ReadPortion &modRange, std::unique_ptr<bam1_t, 
 			++iCIGAR;
 		}
 	}
+	*/
+	BAMrecordDeleter localDeleter;
+	std::unique_ptr<bam1_t, BAMrecordDeleter> modifiedBAM(bam_init1(), localDeleter);
+
+	// Casting from uint8_t*, should be safe
+	// Necessary to match the function signature
+	auto *const seqPtr    = reinterpret_cast<char*>( bam_get_seq( bamRecord.get() ) );
+	auto *const qualPtr   = reinterpret_cast<char*>( bam_get_qual( bamRecord.get() ) );
+	const int32_t success = bam_set1(
+		modifiedBAM.get(),
+		modRange.originalName.size(),
+		modRange.originalName.c_str(),
+		bamRecord->core.flag,
+		bamRecord->core.tid,
+		newRefPos,
+		bamRecord->core.qual,
+		newCIGAR.size(),
+		newCIGAR.data(),
+		bamRecord->core.mtid,
+		bamRecord->core.mpos,
+		bamRecord->core.isize,
+		bamRecord->core.l_qseq,
+		seqPtr,
+		qualPtr,
+		bam_get_l_aux( bamRecord.get() )
+	);
+	return modifiedBAM;
 }
 
 void isaSpace::addRemappedSecondaryAlignment(
