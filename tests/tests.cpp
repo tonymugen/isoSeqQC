@@ -319,6 +319,42 @@ TEST_CASE("Helper functions work") {
 		REQUIRE(emptyRP.start == 0);
 		REQUIRE(emptyRP.end   == 0);
 
+		// modify CIGAR string
+		constexpr uint32_t exactLength{100};
+		const isaSpace::BAMrecordDeleter cigarRecordDeleter1;
+		std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> beforeCRPtr1(bam_init1(), cigarRecordDeleter1);
+		constexpr std::array<uint32_t, 2> beforeCIGAR1{
+			bam_cigar_gen(exactLength, BAM_CSOFT_CLIP),
+			bam_cigar_gen(200, BAM_CMATCH)
+		};
+		isaSpace::ReadPortion replacement1;
+		replacement1.originalName = "test_read";
+		replacement1.start        = 0;
+		replacement1.end          = exactLength;
+
+		const std::string sequence(300, 'A');
+		const std::string quality(300, '~');
+
+		const int32_t success = bam_set1(
+			beforeCRPtr1.get(),
+			replacement1.originalName.size(),
+			replacement1.originalName.c_str(),
+			0,
+			1,
+			501,
+			60,
+			beforeCIGAR1.size(),
+			beforeCIGAR1.data(),
+			0,
+			0,
+			static_cast<hts_pos_t>( sequence.size() ),
+			sequence.size(),
+			sequence.c_str(),
+			quality.c_str(),
+			0
+		);
+		//const auto afterCIGAR1{isaSpace::modifyCIGAR(replacement1, beforeCRPtr1)};
+
 		// add remapped reads as secondary alignments
 		constexpr float readMatchCutoff{0.99F};
 		constexpr uint32_t nSkip{2};

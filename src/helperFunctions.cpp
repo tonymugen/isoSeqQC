@@ -30,7 +30,6 @@
 #include <cassert>
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <iterator>
 #include <numeric>
 #include <string>
@@ -389,7 +388,7 @@ ReadPortion isaSpace::parseRemappedReadName(const std::string &remappedReadName)
 	return result;
 }
 
-std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortion &modRange, std::unique_ptr<bam1_t, const BAMrecordDeleter> &bamRecord) {
+std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortion &modRange, const std::unique_ptr<bam1_t, BAMrecordDeleter> &bamRecord) {
 	assert( (modRange.end <= modRange.start)
 		&& "ERROR: end of the range must be no smaller than the start");
 	assert( (bamRecord->core.n_cigar > 0)
@@ -444,9 +443,11 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 	}
 	newCIGAR.push_back( bam_cigar_gen(modRange.end - modRange.start, actualMismatchKind) );
 
-	// only deal with a remainder if we are not at the read end
+	// only deal with the remainder if we are not at the read end
 	if (iCIGAR < bamRecord->core.n_cigar) {
-		;
+		const uint32_t currentCIGARlen{bam_cigar_oplen(oldCIGARptr[iCIGAR])};
+		const uint32_t remainderCIGAR = bam_cigar_gen( currentCIGARlen % modRange.end, bam_cigar_op(oldCIGARptr[iCIGAR]) );
+		newCIGAR.push_back(remainderCIGAR);
 	}
 
 	while (iCIGAR < bamRecord->core.n_cigar) { // this iCIGAR is already past the previous one dealt with above
@@ -454,17 +455,6 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 		++iCIGAR;
 	}
 	
-	/*
-	if (modRange.start == 0) {
-		newCIGAR.push_back( bam_cigar_gen(rangeLength, BAM_CSOFT_CLIP) );
-		// skip CIGAR fields that are to be replaced with S
-		while ( (readConsumptionCounter < rangeLength) && (iCIGAR < bamRecord->core.n_cigar) ) {
-			readConsumptionCounter      += bam_cigar_oplen(oldCIGARptr[iCIGAR]) * readConsumption.at( bam_cigar_op(oldCIGARptr[iCIGAR]) );
-			referenceConsumptionCounter += bam_cigar_oplen(oldCIGARptr[iCIGAR]) * referenceConsumption.at( bam_cigar_op(oldCIGARptr[iCIGAR]) );
-			++iCIGAR;
-		}
-	}
-	*/
 	BAMrecordDeleter localDeleter;
 	std::unique_ptr<bam1_t, BAMrecordDeleter> modifiedBAM(bam_init1(), localDeleter);
 

@@ -186,7 +186,7 @@ namespace isaSpace {
 	 * \param[in] bamRecord BAM record to be modified
 	 * \return BAM record with the CIGAR vector replaced
 	 */
-	[[gnu::warn_unused_result]] std::unique_ptr<bam1_t, BAMrecordDeleter> modifyCIGAR(const ReadPortion &modRange, std::unique_ptr<bam1_t, const BAMrecordDeleter> &bamRecord);
+	[[gnu::warn_unused_result]] std::unique_ptr<bam1_t, BAMrecordDeleter> modifyCIGAR(const ReadPortion &modRange, const std::unique_ptr<bam1_t, BAMrecordDeleter> &bamRecord);
 	/** \brief Add a re-mapped secondary alignment
 	 *
 	 * Add a read portion remap as a secondary alignment to a vector of BAM records.
