@@ -389,7 +389,7 @@ ReadPortion isaSpace::parseRemappedReadName(const std::string &remappedReadName)
 }
 
 std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortion &modRange, const std::unique_ptr<bam1_t, BAMrecordDeleter> &bamRecord) {
-	assert( (modRange.end <= modRange.start)
+	assert( (modRange.end >= modRange.start)
 		&& "ERROR: end of the range must be no smaller than the start");
 	assert( (bamRecord->core.n_cigar > 0)
 		&& "ERROR: CIGAR string is empty");
@@ -447,7 +447,9 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 	if (iCIGAR < bamRecord->core.n_cigar) {
 		const uint32_t currentCIGARlen{bam_cigar_oplen(oldCIGARptr[iCIGAR])};
 		const uint32_t remainderCIGAR = bam_cigar_gen( currentCIGARlen % modRange.end, bam_cigar_op(oldCIGARptr[iCIGAR]) );
-		newCIGAR.push_back(remainderCIGAR);
+		if (remainderCIGAR > 0) {
+			newCIGAR.push_back(remainderCIGAR);
+		}
 	}
 
 	while (iCIGAR < bamRecord->core.n_cigar) { // this iCIGAR is already past the previous one dealt with above
