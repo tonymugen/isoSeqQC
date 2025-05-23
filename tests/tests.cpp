@@ -359,7 +359,7 @@ TEST_CASE("Helper functions work") {
 		const auto afterCIGAR1{isaSpace::modifyCIGAR(replacement, beforeCRPtr1)};
 
 		auto *const oldCIGARptr1 = bam_get_cigar( beforeCRPtr1.get() ); //NOLINT
-		auto *const newCIGARptr1 = bam_get_cigar( afterCIGAR1.get() ); // NOLINT
+		auto *const newCIGARptr1 = bam_get_cigar( afterCIGAR1.get() );  // NOLINT
 		REQUIRE(beforeCRPtr1->core.n_cigar == afterCIGAR1->core.n_cigar);
 		size_t iCIG{0};
 		while(iCIG < afterCIGAR1->core.n_cigar){
@@ -396,24 +396,8 @@ TEST_CASE("Helper functions work") {
 		);
 		const auto afterCIGAR2{isaSpace::modifyCIGAR(replacement, beforeCRPtr2)};
 
-		std::cout << ">>>>>>> old CIGAR length: " << beforeCRPtr2->core.n_cigar << "; new CIGAR length: " << afterCIGAR2->core.n_cigar << " <<<<<<<\n";
-		std::string oldCIGAR;
-		iCIG = 0;
 		auto *const oldCIGARptr2 = bam_get_cigar( beforeCRPtr2.get() ); //NOLINT
-		while(iCIG < beforeCRPtr2->core.n_cigar){
-			oldCIGAR += std::to_string(bam_cigar_oplen(oldCIGARptr2[iCIG])) + bam_cigar_opchr(oldCIGARptr2[iCIG]); // NOLINT
-			++iCIG;
-		}
-		std::cout << ">>>>>>>>>>>>> old CIGAR: " << oldCIGAR << " <<<<<<<<<<<<\n";
-		std::string newCIGAR;
-		iCIG = 0;
-		auto *const newCIGARptr2 = bam_get_cigar( afterCIGAR2.get() ); // NOLINT
-		while(iCIG < afterCIGAR2->core.n_cigar){
-			newCIGAR += std::to_string(bam_cigar_oplen(newCIGARptr2[iCIG])) + bam_cigar_opchr(newCIGARptr2[iCIG]); // NOLINT
-			++iCIG;
-		}
-		std::cout << ">>>>>>>>>>>>> new CIGAR: " << newCIGAR << " <<<<<<<<<<<<\n";
-		std::cout << ">>>>>>>>>>>>> old pos: " << beforeCRPtr2->core.pos << "; new pos: " << afterCIGAR2->core.pos << " <<<<<<<<<<<<\n";
+		auto *const newCIGARptr2 = bam_get_cigar( afterCIGAR2.get() );  // NOLINT
 
 		REQUIRE(beforeCRPtr2->core.n_cigar == afterCIGAR2->core.n_cigar);
 		iCIG = 0;
@@ -430,7 +414,6 @@ TEST_CASE("Helper functions work") {
 			bam_cigar_gen(scLength, BAM_CINS),
 			bam_cigar_gen(matchLength - 1, BAM_CMATCH)
 		};
-		std::cout << ">>>>>>>>>>>>> query length: " << bam_cigar2qlen( beforeCIGAR3.size(), beforeCIGAR3.data() ) << " <<<<<<<<<<<<\n";
 		replacement.start = 0;
 		replacement.end   = scLength + 2;
 		success           = bam_set1(
@@ -451,7 +434,34 @@ TEST_CASE("Helper functions work") {
 			quality.c_str(),
 			0
 		);
-		//const auto afterCIGAR3{isaSpace::modifyCIGAR(replacement, beforeCRPtr3)};
+		const auto afterCIGAR3{isaSpace::modifyCIGAR(replacement, beforeCRPtr3)};
+
+		REQUIRE(afterCIGAR3->core.n_cigar == 2);
+		REQUIRE(afterCIGAR3->core.pos     == 701);
+
+		const auto beforeQLEN{bam_cigar2qlen( beforeCRPtr3->core.n_cigar, bam_get_cigar( beforeCRPtr3.get() ) )}; // NOLINT
+		const auto afterQLEN{bam_cigar2qlen( afterCIGAR3->core.n_cigar, bam_get_cigar( afterCIGAR3.get() ) )};    // NOLINT
+		REQUIRE(beforeQLEN == afterQLEN);
+
+		auto *const oldCIGARptr3 = bam_get_cigar( beforeCRPtr3.get() ); //NOLINT
+		auto *const newCIGARptr3 = bam_get_cigar( afterCIGAR3.get() );  // NOLINT
+
+		std::cout << ">>>>>>> old CIGAR length: " << beforeCRPtr3->core.n_cigar << "; new CIGAR length: " << afterCIGAR3->core.n_cigar << " <<<<<<<\n";
+		std::string oldCIGAR;
+		iCIG = 0;
+		while(iCIG < beforeCRPtr3->core.n_cigar){
+			oldCIGAR += std::to_string(bam_cigar_oplen(oldCIGARptr3[iCIG])) + bam_cigar_opchr(oldCIGARptr3[iCIG]); // NOLINT
+			++iCIG;
+		}
+		std::cout << ">>>>>>>>>>>>> old CIGAR: " << oldCIGAR << " <<<<<<<<<<<<\n";
+		std::string newCIGAR;
+		iCIG = 0;
+		while(iCIG < afterCIGAR3->core.n_cigar){
+			newCIGAR += std::to_string(bam_cigar_oplen(newCIGARptr3[iCIG])) + bam_cigar_opchr(newCIGARptr3[iCIG]); // NOLINT
+			++iCIG;
+		}
+		std::cout << ">>>>>>>>>>>>> new CIGAR: " << newCIGAR << " <<<<<<<<<<<<\n";
+		std::cout << ">>>>>>>>>>>>> old pos: " << beforeCRPtr3->core.pos << "; new pos: " << afterCIGAR3->core.pos << " <<<<<<<<<<<<\n";
 
 		// add remapped reads as secondary alignments
 		constexpr float readMatchCutoff{0.99F};

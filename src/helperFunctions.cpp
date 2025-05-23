@@ -418,7 +418,7 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 	// deal with over-shoot, if any
 	if (iCIGAR > 0) {
 		auto lastCIGARlen   = bam_cigar_oplen( newCIGAR.back() );
-		const auto overhang = readConsumptionCounter % modRange.start;
+		const auto overhang = readConsumptionCounter  -  std::min(static_cast<uint32_t>(modRange.start), readConsumptionCounter);
 
 		assert( (overhang < lastCIGARlen)
 			&& "ERROR: CIGAR field overhang is greater than the current field length");
@@ -443,12 +443,13 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 	}
 	newCIGAR.push_back( bam_cigar_gen(modRange.end - modRange.start, actualMismatchKind) );
 
-	// only deal with the remainder if we are not at the read end
-	if (iCIGAR < bamRecord->core.n_cigar) {
-		const uint32_t currentCIGARlen{bam_cigar_oplen(oldCIGARptr[iCIGAR])};
-		const uint32_t remainderCIGAR = bam_cigar_gen( currentCIGARlen % modRange.end, bam_cigar_op(oldCIGARptr[iCIGAR]) );
-		if (remainderCIGAR > 0) {
-			newCIGAR.push_back(remainderCIGAR);
+	// only deal with the remainder if we are not at the read start;
+	// cannot be more than one past the end
+	if (iCIGAR > 0) {
+		const uint32_t currentCIGARlen{bam_cigar_oplen(oldCIGARptr[iCIGAR - 1])};
+		const uint32_t remainderCIGARlen =  readConsumptionCounter - std::min(static_cast<uint32_t>(modRange.end), readConsumptionCounter);
+		if (remainderCIGARlen > 0) {
+			newCIGAR.push_back( bam_cigar_gen( remainderCIGARlen, bam_cigar_op(oldCIGARptr[iCIGAR - 1]) ) );
 		}
 	}
 
@@ -456,7 +457,8 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 		newCIGAR.push_back(oldCIGARptr[iCIGAR]);
 		++iCIGAR;
 	}
-	
+	std::string newCIGARstr;
+	std::for_each(newCIGAR.cbegin(), newCIGAR.cend(), [&newCIGARstr](const uint32_t &cigarElement) { newCIGARstr += std::to_string( bam_cigar_oplen(cigarElement) ) + bam_cigar_opchr(cigarElement); } );
 	BAMrecordDeleter localDeleter;
 	std::unique_ptr<bam1_t, BAMrecordDeleter> modifiedBAM(bam_init1(), localDeleter);
 
@@ -482,6 +484,10 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 		qualPtr,
 		bam_get_l_aux( bamRecord.get() )
 	);
+
+	assert( (success >= 0)
+		&& "ERROR: failed to set new BAM record");
+
 	return modifiedBAM;
 }
 
