@@ -423,10 +423,12 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 		assert( (overhang < lastCIGARlen)
 			&& "ERROR: CIGAR field overhang is greater than the current field length");
 
-		lastCIGARlen          -= overhang;
-		lastCIGARlen           = bam_cigar_gen( lastCIGARlen, bam_cigar_op( newCIGAR.back() ) );
-		newCIGAR.back()        = lastCIGARlen;
-		readConsumptionCounter = modRange.start;
+		lastCIGARlen   -= overhang;
+		lastCIGARlen    = bam_cigar_gen( lastCIGARlen, bam_cigar_op( newCIGAR.back() ) );
+		newCIGAR.back() = lastCIGARlen;
+		// I originally thought that I need to put the reference consumption counter back to modRange.start
+		// but that is not correct because I would have to add back the overhang to track reference consumption
+		// within the substitution range
 	}
 	uint32_t referenceConsumptionCounter{0};
 	while ( (readConsumptionCounter < modRange.end) && (iCIGAR < bamRecord->core.n_cigar) ) {
@@ -457,8 +459,7 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 		newCIGAR.push_back(oldCIGARptr[iCIGAR]);
 		++iCIGAR;
 	}
-	std::string newCIGARstr;
-	std::for_each(newCIGAR.cbegin(), newCIGAR.cend(), [&newCIGARstr](const uint32_t &cigarElement) { newCIGARstr += std::to_string( bam_cigar_oplen(cigarElement) ) + bam_cigar_opchr(cigarElement); } );
+
 	BAMrecordDeleter localDeleter;
 	std::unique_ptr<bam1_t, BAMrecordDeleter> modifiedBAM(bam_init1(), localDeleter);
 

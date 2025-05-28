@@ -31,8 +31,6 @@
 #include <sstream>
 #include <vector>
 
-#include<iostream>
-
 #include "bgzf.h"
 #include "sam.h"
 
@@ -439,29 +437,51 @@ TEST_CASE("Helper functions work") {
 		REQUIRE(afterCIGAR3->core.n_cigar == 2);
 		REQUIRE(afterCIGAR3->core.pos     == 701);
 
-		const auto beforeQLEN{bam_cigar2qlen( beforeCRPtr3->core.n_cigar, bam_get_cigar( beforeCRPtr3.get() ) )}; // NOLINT
-		const auto afterQLEN{bam_cigar2qlen( afterCIGAR3->core.n_cigar, bam_get_cigar( afterCIGAR3.get() ) )};    // NOLINT
-		REQUIRE(beforeQLEN == afterQLEN);
+		const auto beforeQLEN3{bam_cigar2qlen( beforeCRPtr3->core.n_cigar, bam_get_cigar( beforeCRPtr3.get() ) )}; // NOLINT
+		const auto afterQLEN3{bam_cigar2qlen( afterCIGAR3->core.n_cigar, bam_get_cigar( afterCIGAR3.get() ) )};    // NOLINT
+		REQUIRE(beforeQLEN3 == afterQLEN3);
 
-		auto *const oldCIGARptr3 = bam_get_cigar( beforeCRPtr3.get() ); //NOLINT
-		auto *const newCIGARptr3 = bam_get_cigar( afterCIGAR3.get() );  // NOLINT
+		const isaSpace::BAMrecordDeleter cigarRecordDeleter4;
+		std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> beforeCRPtr4(bam_init1(), cigarRecordDeleter4);
+		constexpr std::array<uint32_t, 7> beforeCIGAR4{
+			bam_cigar_gen(100, BAM_CMATCH),
+			bam_cigar_gen(1, BAM_CDIFF),
+			bam_cigar_gen(99, BAM_CMATCH),
+			bam_cigar_gen(50, BAM_CDIFF),
+			bam_cigar_gen(50, BAM_CDEL),
+			bam_cigar_gen(50, BAM_CINS),
+			bam_cigar_gen(200, BAM_CMATCH)
+		};
+		replacement.start = 190; // NOLINT
+		replacement.end   = 300; // NOLINT
+		const auto qLen4{bam_cigar2qlen( beforeCIGAR4.size(), beforeCIGAR4.data() )};
+		const std::string sequence4(qLen4, 'A');
+		const std::string quality4(qLen4, '~');
+		success = bam_set1(
+			beforeCRPtr4.get(),
+			replacement.originalName.size(),
+			replacement.originalName.c_str(),
+			0,
+			1,
+			501,  // NOLINT
+			60,   // NOLINT
+			beforeCIGAR4.size(),
+			beforeCIGAR4.data(),
+			0,
+			0,
+			static_cast<hts_pos_t>( sequence4.size() ),
+			sequence4.size(),
+			sequence4.c_str(),
+			quality4.c_str(),
+			0
+		);
+		const auto afterCIGAR4{isaSpace::modifyCIGAR(replacement, beforeCRPtr4)};
+		REQUIRE(afterCIGAR4->core.n_cigar == 5);
+		REQUIRE(afterCIGAR4->core.pos     == beforeCRPtr4->core.pos);
 
-		std::cout << ">>>>>>> old CIGAR length: " << beforeCRPtr3->core.n_cigar << "; new CIGAR length: " << afterCIGAR3->core.n_cigar << " <<<<<<<\n";
-		std::string oldCIGAR;
-		iCIG = 0;
-		while(iCIG < beforeCRPtr3->core.n_cigar){
-			oldCIGAR += std::to_string(bam_cigar_oplen(oldCIGARptr3[iCIG])) + bam_cigar_opchr(oldCIGARptr3[iCIG]); // NOLINT
-			++iCIG;
-		}
-		std::cout << ">>>>>>>>>>>>> old CIGAR: " << oldCIGAR << " <<<<<<<<<<<<\n";
-		std::string newCIGAR;
-		iCIG = 0;
-		while(iCIG < afterCIGAR3->core.n_cigar){
-			newCIGAR += std::to_string(bam_cigar_oplen(newCIGARptr3[iCIG])) + bam_cigar_opchr(newCIGARptr3[iCIG]); // NOLINT
-			++iCIG;
-		}
-		std::cout << ">>>>>>>>>>>>> new CIGAR: " << newCIGAR << " <<<<<<<<<<<<\n";
-		std::cout << ">>>>>>>>>>>>> old pos: " << beforeCRPtr3->core.pos << "; new pos: " << afterCIGAR3->core.pos << " <<<<<<<<<<<<\n";
+		const auto beforeQLEN4{bam_cigar2qlen( beforeCRPtr4->core.n_cigar, bam_get_cigar( beforeCRPtr4.get() ) )}; // NOLINT
+		const auto afterQLEN4{bam_cigar2qlen( afterCIGAR4->core.n_cigar, bam_get_cigar( afterCIGAR4.get() ) )};    // NOLINT
+		REQUIRE(beforeQLEN4 == afterQLEN4);
 
 		// add remapped reads as secondary alignments
 		constexpr float readMatchCutoff{0.99F};
