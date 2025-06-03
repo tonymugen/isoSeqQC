@@ -1726,4 +1726,9 @@ TEST_CASE("Test adding and saving unmapped regions from a BAM file") {
 	constexpr size_t correctNprimary{4};
 	isaSpace::BAMfile testInputAlgnBAM(testInputAlgnBAMname);
 	REQUIRE(testInputAlgnBAM.getPrimaryAlignmentCount() == correctNprimary);
+
+	const std::string testRemappedBAMname("../tests/remappedPortions.bam");
+	constexpr float readMatchCutoff{0.99F};
+	testInputAlgnBAM.addRemaps(testRemappedBAMname, readMatchCutoff);
+	REQUIRE(testInputAlgnBAM.getPrimaryAlignmentCount() == correctNprimary);
 }

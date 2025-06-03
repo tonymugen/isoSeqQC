@@ -924,8 +924,9 @@ namespace isaSpace {
 		 * fixing CIGAR strings for the primaries.
 		 *
 		 * \param[in] remapBAMfileName name of the BAM file with re-mapped read portions
+		 * \param[in] remapIdentityCutoff fraction of sites in the remapped read that are identical to the reference
 		 */
-		void addRemaps(const std::string &remapBAMfileName);
+		void addRemaps(const std::string &remapBAMfileName, const float &remapIdentityCutoff);
 		/** \brief Save the reads with re-alignments to a BAM file
 		 *
 		 * \param[in] outputBAMfileName output BAM file name

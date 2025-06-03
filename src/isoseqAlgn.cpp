@@ -1012,7 +1012,7 @@ size_t BAMfile::getPrimaryAlignmentCount() const noexcept {
 	return paCount;
 }
 
-void BAMfile::addRemaps(const std::string &remapBAMfileName) {
+void BAMfile::addRemaps(const std::string &remapBAMfileName, const float &remapIdentityCutoff) {
 	constexpr char openMode{'r'};
 	std::unique_ptr<BGZF, void(*)(BGZF *)> inputBAMfile(
 		bgzf_open(remapBAMfileName.c_str(), &openMode),
@@ -1027,12 +1027,12 @@ void BAMfile::addRemaps(const std::string &remapBAMfileName) {
 	}
 
 	BAMheaderDeleter headDeleter;
-	bamFileHeader_ = std::unique_ptr<sam_hdr_t, BAMheaderDeleter>(bam_hdr_read( inputBAMfile.get() ), headDeleter);
-	if (bamFileHeader_ == nullptr) {
-		throw std::string("ERROR: failed to read the header for the BAM file in ")
+	auto remapHeader = std::unique_ptr<sam_hdr_t, BAMheaderDeleter>(bam_hdr_read( inputBAMfile.get() ), headDeleter);
+	if (remapHeader == nullptr) {
+		throw std::string("ERROR: failed to read the header for the remap BAM file in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
-	const int32_t nRef = sam_hdr_nref( bamFileHeader_.get() );
+	const int32_t nRef = sam_hdr_nref( remapHeader.get() );
 	if (nRef < 0) {
 		throw std::string("ERROR: invalid number of references/chromosomes in the ") 
 			+ remapBAMfileName + std::string(" BAM file in ")
@@ -1041,25 +1041,25 @@ void BAMfile::addRemaps(const std::string &remapBAMfileName) {
 
 	while (true) {
 		BAMrecordDeleter currentBAMdeleter;
-		std::unique_ptr<bam1_t, BAMrecordDeleter> bamRecordPtr(bam_init1(), currentBAMdeleter);
-		const auto nBytes = bam_read1( inputBAMfile.get(), bamRecordPtr.get() );
+		std::unique_ptr<bam1_t, BAMrecordDeleter> remapBAMrecordPtr(bam_init1(), currentBAMdeleter);
+		const auto nBytes = bam_read1( inputBAMfile.get(), remapBAMrecordPtr.get() );
 		if (nBytes == -1) {
 			break;
 		}
 		if (nBytes < -1) {
 			continue;
 		}
-		if ( (bamRecordPtr->core.flag & secondaryOrUnpammpedAlgn_) == 0 ) {
+		if ( (remapBAMrecordPtr->core.flag & secondaryOrUnpammpedAlgn_) == 0 ) {
 			// mapped primary alignment; process
-			const std::string readName{bam_get_qname(bamRecordPtr)};
+			const std::string readName{bam_get_qname(remapBAMrecordPtr)};
 			const ReadPortion realignedInfo{parseRemappedReadName(readName)};
 
 			// must search all references because the re-map may hit a different one from the original
 			if ( !realignedInfo.originalName.empty() ) {
-				for (const auto &eachReference : bamRecords_) {
-					const auto readIt = eachReference.second.find(realignedInfo.originalName);
-					if ( readIt != eachReference.second.end() ) {
-						// do the thing
+				for (auto &eachReference : bamRecords_) {
+					const auto primaryRecordIt = eachReference.second.find(realignedInfo.originalName);
+					if ( primaryRecordIt != eachReference.second.end() ) {
+						addRemappedSecondaryAlignment(remapHeader, remapBAMrecordPtr, realignedInfo, bamFileHeader_, remapIdentityCutoff, primaryRecordIt->second);
 						break;
 					}
 				}

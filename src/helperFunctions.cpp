@@ -561,6 +561,7 @@ void isaSpace::addRemappedSecondaryAlignment(
 
 	if (success >= 0) {
 		readMapVector.emplace_back( std::move(secondaryFromNew) );
+		readMapVector.front() = modifyCIGAR( remapInfo, readMapVector.front() );
 	}
 }
 
