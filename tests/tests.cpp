@@ -1731,4 +1731,7 @@ TEST_CASE("Test adding and saving unmapped regions from a BAM file") {
 	constexpr float readMatchCutoff{0.99F};
 	testInputAlgnBAM.addRemaps(testRemappedBAMname, readMatchCutoff);
 	REQUIRE(testInputAlgnBAM.getPrimaryAlignmentCount() == correctNprimary);
+
+	const std::string unsortedOutBAMname("../tests/remappedUnsortedOut.bam");
+	const auto failedReadsUnsorted{testInputAlgnBAM.saveRemappedBAM(unsortedOutBAMname)};
 }

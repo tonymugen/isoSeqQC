@@ -930,16 +930,18 @@ namespace isaSpace {
 		/** \brief Save the reads with re-alignments to a BAM file
 		 *
 		 * \param[in] outputBAMfileName output BAM file name
+		 * \return names of reads that failed to be written
 		 */
-		void saveRemappedBAM(const std::string &outputBAMfileName) const;
+		[[gnu::warn_unused_result]] std::vector<std::string> saveRemappedBAM(const std::string &outputBAMfileName) const;
 		/** \brief Sort and save the reads with re-alignments to a BAM file
 		 *
 		 * References saved in the order of the original BAM file.
 		 * Reads sorted by start position (which is the gene end if mapped to the negative strand).
 		 *
 		 * \param[in] outputBAMfileName output BAM file name
+		 * \return names of reads that failed to be written
 		 */
-		void saveSortedRemappedBAM(const std::string &outputBAMfileName) const;
+		[[gnu::warn_unused_result]] std::vector<std::string> saveSortedRemappedBAM(const std::string &outputBAMfileName) const; // TODO: copy over position/name pairs and sort those, then access by name to save
 	private:
 		/** \brief Flag testing the two possible secondary alignment markers */
 		static const uint16_t secondaryOrUnpammpedAlgn_;

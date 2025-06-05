@@ -27,6 +27,7 @@
  *
  */
 
+#include <cstdio>
 #include <cstring>
 #include <cmath>
 #include <algorithm>
@@ -1067,4 +1068,49 @@ void BAMfile::addRemaps(const std::string &remapBAMfileName, const float &remapI
 		}
 
 	}
+}
+
+std::vector<std::string> BAMfile::saveRemappedBAM(const std::string &outputBAMfileName) const {
+	// we will be appending, so must delete this file if it exists
+	const auto rmvSuccess = std::remove( outputBAMfileName.c_str() );
+
+	constexpr char openMode{'a'};
+	std::unique_ptr<BGZF, void(*)(BGZF *)> outputBAMfile(
+		bgzf_open(outputBAMfileName.c_str(), &openMode),
+		[](BGZF *bamFile) {
+			bgzf_close(bamFile);
+		}
+	);
+	if (outputBAMfile == nullptr) {
+		throw std::string("ERROR: failed to open the BAM file ")
+			+ outputBAMfileName + " for reading in "
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+
+	const int32_t headerWriteResult = bam_hdr_write( outputBAMfile.get(), bamFileHeader_.get() );
+    if (headerWriteResult < 0) {
+        throw std::string("ERROR: failed to write the header for the output BAM file ")
+			+ outputBAMfileName + " in "
+            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+    }
+
+	std::vector<std::string> failedReads;
+	const int32_t nRef{sam_hdr_nref( bamFileHeader_.get() )};
+	int32_t iRef{0};
+	// save references/chromosomes in the same order as the original BAM file
+	while (iRef < nRef) {
+		const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), iRef); 
+		const std::string refName{refNamePtr};
+		for ( const auto &eachRead : bamRecords_.at(refName) ) {
+			for (const auto &eachAlignment : eachRead.second) {
+				const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
+					if (writeSuccess < 0) {
+						failedReads.push_back(eachRead.first);
+					}
+			}
+		}
+		++iRef;
+	}
+
+	return failedReads;
 }

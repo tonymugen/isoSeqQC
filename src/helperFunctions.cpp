@@ -483,7 +483,7 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 		bamRecord->core.l_qseq,
 		seqPtr,
 		qualPtr,
-		bam_get_l_aux( bamRecord.get() )
+		0 // no need for the aux field
 	);
 
 	assert( (success >= 0)
