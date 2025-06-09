@@ -397,6 +397,7 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 	constexpr std::array<uint32_t, 2>  mismatchKind{BAM_CDIFF, BAM_CSOFT_CLIP};
 	constexpr std::array<uint32_t, 10> readConsumption{1, 1, 0, 0, 1, 0, 0, 1, 1, 0};
 	constexpr std::array<uint32_t, 10> referenceConsumption{1, 0, 1, 1, 0, 0, 0, 1, 1, 0};
+	constexpr std::array<char, 16>     seqNT16str{'=', 'A', 'C', 'M', 'G', 'R', 'S', 'V', 'T', 'W', 'Y', 'H', 'K', 'D', 'B', 'N'};
 
 	std::vector<uint32_t> newCIGAR;
 	auto *oldCIGARptr = bam_get_cigar( bamRecord.get() );
@@ -465,8 +466,15 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 
 	// Casting from uint8_t*, should be safe
 	// Necessary to match the function signature
-	auto *const seqPtr    = reinterpret_cast<char*>( bam_get_seq( bamRecord.get() ) );
+	//auto *const seqPtr    = reinterpret_cast<char*>( bam_get_seq( bamRecord.get() ) );
+	auto *const seqPtr    = bam_get_seq( bamRecord.get() );
 	auto *const qualPtr   = reinterpret_cast<char*>( bam_get_qual( bamRecord.get() ) );
+
+	// Must unpack the sequence before presenting it to bam_set1
+	std::string unpackedSequence;
+	for (size_t iSeq = 0; iSeq < bamRecord->core.l_qseq; ++iSeq) {
+		unpackedSequence += seqNT16str.at( static_cast<char>( bam_seqi(seqPtr, iSeq) ) );
+	}
 	const int32_t success = bam_set1(
 		modifiedBAM.get(),
 		modRange.originalName.size(),
@@ -481,7 +489,8 @@ std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortio
 		bamRecord->core.mpos,
 		bamRecord->core.isize,
 		bamRecord->core.l_qseq,
-		seqPtr,
+		//seqPtr,
+		unpackedSequence.c_str(),
 		qualPtr,
 		0 // no need for the aux field
 	);
