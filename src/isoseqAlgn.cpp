@@ -1114,3 +1114,60 @@ std::vector<std::string> BAMfile::saveRemappedBAM(const std::string &outputBAMfi
 
 	return failedReads;
 }
+
+std::vector<std::string> BAMfile::saveSortedRemappedBAM(const std::string &outputBAMfileName) const {
+	// we will be appending, so must delete this file if it exists
+	const auto rmvSuccess = std::remove( outputBAMfileName.c_str() );
+
+	constexpr char openMode{'a'};
+	std::unique_ptr<BGZF, void(*)(BGZF *)> outputBAMfile(
+		bgzf_open(outputBAMfileName.c_str(), &openMode),
+		[](BGZF *bamFile) {
+			bgzf_close(bamFile);
+		}
+	);
+	if (outputBAMfile == nullptr) {
+		throw std::string("ERROR: failed to open the BAM file ")
+			+ outputBAMfileName + " for reading in "
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+
+	const int32_t headerWriteResult = bam_hdr_write( outputBAMfile.get(), bamFileHeader_.get() );
+    if (headerWriteResult < 0) {
+        throw std::string("ERROR: failed to write the header for the output BAM file ")
+			+ outputBAMfileName + " in "
+            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+    }
+
+	std::vector<std::string> failedReads;
+	const int32_t nRef{sam_hdr_nref( bamFileHeader_.get() )};
+	int32_t iRef{0};
+	// save references/chromosomes in the same order as the original BAM file
+	while (iRef < nRef) {
+		const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), iRef); 
+		const std::string refName{refNamePtr};
+		// copy over just the map positions of reads
+		std::vector< std::pair<std::string, hts_pos_t> > readPositions;
+		for ( const auto &eachRead : bamRecords_.at(refName) ) {
+			readPositions.emplace_back(eachRead.first, eachRead.second.front()->core.pos);
+		}
+		std::sort(
+			readPositions.begin(),
+			readPositions.end(),
+			[](const std::pair<std::string, hts_pos_t> &firstPair, const std::pair<std::string, hts_pos_t> &secondPair) {
+				return firstPair.second < secondPair.second;
+			}
+		);
+		for (const auto &eachReadPosition : readPositions) {
+			for ( const auto &eachAlignment : bamRecords_.at(refName).at(eachReadPosition.first) ) {
+				const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
+					if (writeSuccess < 0) {
+						failedReads.push_back(eachReadPosition.first);
+					}
+			}
+		}
+		++iRef;
+	}
+
+	return failedReads;
+}

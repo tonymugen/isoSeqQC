@@ -1734,4 +1734,9 @@ TEST_CASE("Test adding and saving unmapped regions from a BAM file") {
 
 	const std::string unsortedOutBAMname("../tests/remappedUnsortedOut.bam");
 	const auto failedReadsUnsorted{testInputAlgnBAM.saveRemappedBAM(unsortedOutBAMname)};
+	REQUIRE( failedReadsUnsorted.empty() );
+
+	const std::string sortedOutBAMname("../tests/remappedSortedOut.bam");
+	const auto failedReadsSorted{testInputAlgnBAM.saveSortedRemappedBAM(sortedOutBAMname)};
+	REQUIRE( failedReadsSorted.empty() );
 }
