@@ -1723,7 +1723,7 @@ TEST_CASE("GFF and BAM parsing works") {
 
 TEST_CASE("Test adding and saving unmapped regions from a BAM file") {
 	const std::string testInputAlgnBAMname("../tests/remappedOriginals.bam");
-	constexpr size_t correctNprimary{4};
+	constexpr size_t correctNprimary{6};
 	isaSpace::BAMfile testInputAlgnBAM(testInputAlgnBAMname);
 	REQUIRE(testInputAlgnBAM.getPrimaryAlignmentCount() == correctNprimary);
 
