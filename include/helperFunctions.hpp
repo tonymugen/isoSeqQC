@@ -231,8 +231,11 @@ namespace isaSpace {
 	 *
 	 * \param[in] parsedCLI flag values parsed from the command line
 	 * \param[out] intVariables indexed `int` variables for use by `main()`
+	 * \param[out] floatVariables indexed `float` variables for use by `main()`
 	 * \param[out] stringVariables indexed `std::string` variables for use by `main()`
 	 */
 	void extractCLinfo(const std::unordered_map<std::string, std::string> &parsedCLI,
-			std::unordered_map<std::string, int> &intVariables, std::unordered_map<std::string, std::string> &stringVariables);
+			std::unordered_map<std::string, int> &intVariables,
+			std::unordered_map<std::string, float> &floatVariables,
+			std::unordered_map<std::string, std::string> &stringVariables);
 }

@@ -48,8 +48,10 @@ int main(int argc, char *argv[]) {
 	try {
 		std::unordered_map <std::string, std::string> stringVariables;
 		std::unordered_map <std::string, int>         intVariables;
-		const auto clInfo{isaSpace::parseCL(argc, argv)};
-		isaSpace::extractCLinfo(clInfo, intVariables, stringVariables);
+		std::unordered_map <std::string, float>       floatVariables;
+		auto clInfo{isaSpace::parseCL(argc, argv)};
+		clInfo["remapped-bam"] = "NULL";
+		isaSpace::extractCLinfo(clInfo, intVariables, floatVariables, stringVariables);
 		size_t nThreads{0};
 		if (intVariables.at("threads") < 1) {
 			nThreads = static_cast<size_t>( std::thread::hardware_concurrency() );

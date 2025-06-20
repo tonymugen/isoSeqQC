@@ -941,10 +941,10 @@ namespace isaSpace {
 		 * \param[in] outputBAMfileName output BAM file name
 		 * \return names of reads that failed to be written
 		 */
-		[[gnu::warn_unused_result]] std::vector<std::string> saveSortedRemappedBAM(const std::string &outputBAMfileName) const; // TODO: copy over position/name pairs and sort those, then access by name to save
+		[[gnu::warn_unused_result]] std::vector<std::string> saveSortedRemappedBAM(const std::string &outputBAMfileName) const;
 	private:
 		/** \brief Flag testing the two possible secondary alignment markers */
-		static const uint16_t secondaryOrUnpammpedAlgn_;
+		static const uint16_t secondaryOrUnmappedAlgn_;
 		/** \brief BAM records indexed by name, separated by reference/chromosome */
 		std::unordered_map<
 			std::string,

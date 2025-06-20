@@ -690,6 +690,12 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			+ bamGFFfilePairNames.bamFileName + std::string(" in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
+	const int32_t eofTest = bgzf_check_EOF( bamFile.get() );
+	if (eofTest != 1) {
+		throw std::string("ERROR: no EOF marker in the BAM file ")
+			+ bamGFFfilePairNames.bamFileName + std::string(" in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
 
 	// must read the header first to get to the alignments
 	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> bamHeader(
@@ -953,7 +959,7 @@ std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const s
 };
 
 // BAMfile methods
-constexpr uint16_t BAMfile::secondaryOrUnpammpedAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY | BAM_FUNMAP};
+constexpr uint16_t BAMfile::secondaryOrUnmappedAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY | BAM_FUNMAP};
 
 BAMfile::BAMfile(const std::string &BAMfileName) {
 	constexpr char openMode{'r'};
@@ -966,6 +972,12 @@ BAMfile::BAMfile(const std::string &BAMfileName) {
 	if (inputBAMfile == nullptr) {
 		throw std::string("ERROR: failed to open the BAM file ")
 			+ BAMfileName + " in "
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+	const int32_t eofTest = bgzf_check_EOF( inputBAMfile.get() );
+	if (eofTest != 1) {
+		throw std::string("ERROR: no EOF marker in the BAM file ")
+			+ BAMfileName + std::string(" in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
 
@@ -992,7 +1004,7 @@ BAMfile::BAMfile(const std::string &BAMfileName) {
 		if (nBytes < -1) {
 			continue;
 		}
-		if ( (bamRecordPtr->core.flag & secondaryOrUnpammpedAlgn_) == 0 ) {
+		if ( (bamRecordPtr->core.flag & secondaryOrUnmappedAlgn_) == 0 ) {
 			// mapped primary alignment; process
 			const std::string readName{bam_get_qname(bamRecordPtr)};
 			const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), bamRecordPtr->core.tid); 
@@ -1026,6 +1038,12 @@ void BAMfile::addRemaps(const std::string &remapBAMfileName, const float &remapI
 			+ remapBAMfileName + " in "
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
+	const int32_t eofTest = bgzf_check_EOF( inputBAMfile.get() );
+	if (eofTest != 1) {
+		throw std::string("ERROR: no EOF marker in the BAM file ")
+			+ remapBAMfileName + std::string(" in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
 
 	BAMheaderDeleter headDeleter;
 	auto remapHeader = std::unique_ptr<sam_hdr_t, BAMheaderDeleter>(bam_hdr_read( inputBAMfile.get() ), headDeleter);
@@ -1050,7 +1068,7 @@ void BAMfile::addRemaps(const std::string &remapBAMfileName, const float &remapI
 		if (nBytes < -1) {
 			continue;
 		}
-		if ( (remapBAMrecordPtr->core.flag & secondaryOrUnpammpedAlgn_) == 0 ) {
+		if ( (remapBAMrecordPtr->core.flag & secondaryOrUnmappedAlgn_) == 0 ) {
 			// mapped primary alignment; process
 			const std::string readName{bam_get_qname(remapBAMrecordPtr)};
 			const ReadPortion realignedInfo{parseRemappedReadName(readName)};
@@ -1083,7 +1101,7 @@ std::vector<std::string> BAMfile::saveRemappedBAM(const std::string &outputBAMfi
 	);
 	if (outputBAMfile == nullptr) {
 		throw std::string("ERROR: failed to open the BAM file ")
-			+ outputBAMfileName + " for reading in "
+			+ outputBAMfileName + " for writing in "
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
 
@@ -1101,12 +1119,16 @@ std::vector<std::string> BAMfile::saveRemappedBAM(const std::string &outputBAMfi
 	while (iRef < nRef) {
 		const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), iRef); 
 		const std::string refName{refNamePtr};
-		for ( const auto &eachRead : bamRecords_.at(refName) ) {
-			for (const auto &eachAlignment : eachRead.second) {
-				const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
+		// not all references have primary mapped reads, so finding is necessary
+		const auto refIt = bamRecords_.find(refName);
+		if ( refIt != bamRecords_.end() ) {
+			for ( const auto &eachRead : refIt->second ) {
+				for (const auto &eachAlignment : eachRead.second) {
+					const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
 					if (writeSuccess < 0) {
 						failedReads.push_back(eachRead.first);
 					}
+				}
 			}
 		}
 		++iRef;
@@ -1128,7 +1150,7 @@ std::vector<std::string> BAMfile::saveSortedRemappedBAM(const std::string &outpu
 	);
 	if (outputBAMfile == nullptr) {
 		throw std::string("ERROR: failed to open the BAM file ")
-			+ outputBAMfileName + " for reading in "
+			+ outputBAMfileName + " for writing in "
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
 
@@ -1146,24 +1168,28 @@ std::vector<std::string> BAMfile::saveSortedRemappedBAM(const std::string &outpu
 	while (iRef < nRef) {
 		const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), iRef); 
 		const std::string refName{refNamePtr};
-		// copy over just the map positions of reads
-		std::vector< std::pair<std::string, hts_pos_t> > readPositions;
-		for ( const auto &eachRead : bamRecords_.at(refName) ) {
-			readPositions.emplace_back(eachRead.first, eachRead.second.front()->core.pos);
-		}
-		std::sort(
-			readPositions.begin(),
-			readPositions.end(),
-			[](const std::pair<std::string, hts_pos_t> &firstPair, const std::pair<std::string, hts_pos_t> &secondPair) {
-				return firstPair.second < secondPair.second;
+		// not all references have primary mapped reads, so finding is necessary
+		const auto refIt = bamRecords_.find(refName);
+		if ( refIt != bamRecords_.end() ) {
+			// copy over just the map positions of reads
+			std::vector< std::pair<std::string, hts_pos_t> > readPositions;
+			for ( const auto &eachRead : refIt->second ) {
+				readPositions.emplace_back(eachRead.first, eachRead.second.front()->core.pos);
 			}
-		);
-		for (const auto &eachReadPosition : readPositions) {
-			for ( const auto &eachAlignment : bamRecords_.at(refName).at(eachReadPosition.first) ) {
-				const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
+			std::sort(
+				readPositions.begin(),
+				readPositions.end(),
+				[](const std::pair<std::string, hts_pos_t> &firstPair, const std::pair<std::string, hts_pos_t> &secondPair) {
+					return firstPair.second < secondPair.second;
+				}
+			);
+			for (const auto &eachReadPosition : readPositions) {
+				for ( const auto &eachAlignment : refIt->second.at(eachReadPosition.first) ) {
+					const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
 					if (writeSuccess < 0) {
 						failedReads.push_back(eachReadPosition.first);
 					}
+				}
 			}
 		}
 		++iRef;

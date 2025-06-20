@@ -633,19 +633,28 @@ std::unordered_map<std::string, std::string> isaSpace::parseCL(int &argc, char *
 			cliResult[curFlag] = pchar;
 		}
 	}
+	if (val) { // The last flag had no value
+		cliResult[curFlag] = "set";
+	}
 	return cliResult;
 }
 
-void isaSpace::extractCLinfo(const std::unordered_map<std::string, std::string> &parsedCLI,
-		std::unordered_map<std::string, int> &intVariables, std::unordered_map<std::string, std::string> &stringVariables) {
+void isaSpace::extractCLinfo(
+		const std::unordered_map<std::string, std::string> &parsedCLI,
+		std::unordered_map<std::string, int> &intVariables,
+		std::unordered_map<std::string, float> &floatVariables,
+		std::unordered_map<std::string, std::string> &stringVariables) {
 	intVariables.clear();
+	floatVariables.clear();
 	stringVariables.clear();
-	const std::array<std::string, 3> requiredStringVariables{"input-bam", "input-gff", "out"};
-	const std::array<std::string, 1> optionalStringVariables{"out-fastq"};
+	const std::array<std::string, 4> requiredStringVariables{"input-bam", "input-gff", "out", "remapped-bam"};
+	const std::array<std::string, 2> optionalStringVariables{"out-fastq", "unsorted-output"};
 	const std::array<std::string, 2> optionalIntVariables{"threads", "window-size"};
+	const std::array<std::string, 1> optionalFloatVariables{"remap-cutoff"};
 
 	const std::unordered_map<std::string, int> defaultIntValues{ {"threads", -1}, {"window-size", 75} };
-	const std::unordered_map<std::string, std::string> defaultStringValues{ {"out-fastq", "NULL"} };
+	const std::unordered_map<std::string, float> defaultFloatValues{ {"remap-cutoff", 0.99F} };
+	const std::unordered_map<std::string, std::string> defaultStringValues{ {"out-fastq", "NULL"}, {"unsorted-output", "unset"} };
 
 	if ( parsedCLI.empty() ) {
 		throw std::string("No command line flags specified;");
@@ -655,6 +664,13 @@ void isaSpace::extractCLinfo(const std::unordered_map<std::string, std::string> 
 			intVariables[eachFlag] = stoi( parsedCLI.at(eachFlag) );
 		} catch(const std::exception &problem) {
 			intVariables[eachFlag] = defaultIntValues.at(eachFlag);
+		}
+	}
+	for (const auto &eachFlag : optionalFloatVariables) {
+		try {
+			floatVariables[eachFlag] = stof( parsedCLI.at(eachFlag) );
+		} catch(const std::exception &problem) {
+			floatVariables[eachFlag] = defaultFloatValues.at(eachFlag);
 		}
 	}
 	for (const auto &eachFlag : requiredStringVariables) {

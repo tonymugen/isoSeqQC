@@ -203,6 +203,32 @@ install(TARGETS partialmaps
 	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+add_executable(addremaps
+	${CMAKE_CURRENT_LIST_DIR}/apps/addremaps.cpp
+)
+target_include_directories(addremaps
+	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
+)
+target_include_directories(addremaps SYSTEM
+	PRIVATE ${htslib_SOURCE_DIR}/htslib
+)
+target_link_libraries(addremaps
+	PRIVATE isoseqAln
+)
+target_compile_options(addremaps
+	PRIVATE ${PROJECT_WARNINGS_CXX}
+)
+if(BUILD_TESTS)
+	target_compile_options(addremaps
+		PRIVATE -fsanitize=${SANITIZER_LIST}
+	)
+endif()
+set_target_properties(addremaps PROPERTIES
+	CXX_STANDARD_REQUIRED ON
+)
+install(TARGETS addremaps
+	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
 # library
 add_library(isoseqAln
 	${CMAKE_CURRENT_LIST_DIR}/src/isoseqAlgn.cpp
