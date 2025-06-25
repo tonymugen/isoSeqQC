@@ -203,6 +203,14 @@ namespace isaSpace {
 			const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &newRecordHeader, const std::unique_ptr<bam1_t, BAMrecordDeleter> &newRecord, const ReadPortion &remapInfo,
 			const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &originalHeader, const float &remapIdentityCutoff, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > &readMapVector);
 
+	/** \brief Open a BGZF file handle for appending
+	 *
+	 * Opens a handle to the BAM file for appending, deleting the original if it exists.
+	 *
+	 * \param[in] bamFileName BAM file name
+	 */
+	std::unique_ptr<BGZF, BGZFhandleDeleter> openBGZFtoAppend(const std::string &bamFileName);
+
 	/** \brief Make per-thread alignment record/annotation vector ranges
 	 *
 	 * Constructs a vector of iterator pairs bracketing chunks of a vector to be processed in parallel.

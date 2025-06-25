@@ -1089,20 +1089,12 @@ void BAMfile::addRemaps(const std::string &remapBAMfileName, const float &remapI
 }
 
 std::vector<std::string> BAMfile::saveRemappedBAM(const std::string &outputBAMfileName) const {
-	// we will be appending, so must delete this file if it exists
-	const auto rmvSuccess = std::remove( outputBAMfileName.c_str() );
+	std::unique_ptr<BGZF, BGZFhandleDeleter> outputBAMfile;
 
-	constexpr char openMode{'a'};
-	std::unique_ptr<BGZF, void(*)(BGZF *)> outputBAMfile(
-		bgzf_open(outputBAMfileName.c_str(), &openMode),
-		[](BGZF *bamFile) {
-			bgzf_close(bamFile);
-		}
-	);
-	if (outputBAMfile == nullptr) {
-		throw std::string("ERROR: failed to open the BAM file ")
-			+ outputBAMfileName + " for writing in "
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	try {
+		outputBAMfile = openBGZFtoAppend(outputBAMfileName);
+	} catch (std::string &problem) {
+		throw std::move(problem);	
 	}
 
 	const int32_t headerWriteResult = bam_hdr_write( outputBAMfile.get(), bamFileHeader_.get() );
@@ -1138,20 +1130,13 @@ std::vector<std::string> BAMfile::saveRemappedBAM(const std::string &outputBAMfi
 }
 
 std::vector<std::string> BAMfile::saveSortedRemappedBAM(const std::string &outputBAMfileName) const {
-	// we will be appending, so must delete this file if it exists
-	const auto rmvSuccess = std::remove( outputBAMfileName.c_str() );
+	// we will be appen
+	std::unique_ptr<BGZF, BGZFhandleDeleter> outputBAMfile;
 
-	constexpr char openMode{'a'};
-	std::unique_ptr<BGZF, void(*)(BGZF *)> outputBAMfile(
-		bgzf_open(outputBAMfileName.c_str(), &openMode),
-		[](BGZF *bamFile) {
-			bgzf_close(bamFile);
-		}
-	);
-	if (outputBAMfile == nullptr) {
-		throw std::string("ERROR: failed to open the BAM file ")
-			+ outputBAMfileName + " for writing in "
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	try {
+		outputBAMfile = openBGZFtoAppend(outputBAMfileName);
+	} catch (std::string &problem) {
+		throw std::move(problem);	
 	}
 
 	const int32_t headerWriteResult = bam_hdr_write( outputBAMfile.get(), bamFileHeader_.get() );

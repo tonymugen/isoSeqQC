@@ -574,6 +574,25 @@ void isaSpace::addRemappedSecondaryAlignment(
 	}
 }
 
+std::unique_ptr<BGZF, BGZFhandleDeleter> isaSpace::openBGZFtoAppend(const std::string &bamFileName) {
+	// we will be appending, so must delete this file if it exists
+	const auto rmvSuccess = std::remove( bamFileName.c_str() );
+
+	constexpr char openMode{'a'};
+	BGZFhandleDeleter handleDeleter;
+	std::unique_ptr<BGZF, BGZFhandleDeleter> outputBAMfile(
+		bgzf_open(bamFileName.c_str(), &openMode),
+		handleDeleter
+	);
+	if (outputBAMfile == nullptr) {
+		throw std::string("ERROR: failed to open the BAM file ")
+			+ bamFileName + " for writing in "
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+
+	return outputBAMfile;
+}
+
 std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
 											isaSpace::makeThreadRanges(const bamGFFvector &targetVector, const size_t &threadCount) {
 	std::vector<bamGFFvector::difference_type> chunkSizes(

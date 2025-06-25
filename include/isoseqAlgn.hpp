@@ -38,6 +38,7 @@
 #include <string>
 
 #include "sam.h"
+#include "bgzf.h"
 
 namespace isaSpace {
 	struct BamAndGffFiles;
@@ -254,6 +255,14 @@ namespace isaSpace {
 		 * \param[in] bamRecord pointer to a BAM record
 		 */
 		void operator()(bam1_t *bamRecord) const { bam_destroy1(bamRecord); }
+	};
+	/** \brief BGZF handle pointer deleter */
+	struct BGZFhandleDeleter {
+		/** \brief Functor operator
+		 *
+		 * \param[in] bgzfHandle pointer to a BGZF handle
+		 */
+		void operator()(BGZF *bgzfHandle) const { bgzf_close(bgzfHandle); }
 	};
 
 	/** \brief Group of exons from the same gene
