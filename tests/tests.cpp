@@ -39,7 +39,7 @@
 
 #include "catch2/catch_test_macros.hpp"
 //#include "catch2/matchers/catch_matchers.hpp"
-//#include "catch2/matchers/catch_matchers_string.hpp"
+#include "catch2/matchers/catch_matchers_string.hpp"
 #include "catch2/catch_approx.hpp"
 
 TEST_CASE("Helper functions work") {
@@ -546,6 +546,11 @@ TEST_CASE("Helper functions work") {
 		const auto lastCIGAR = *(bam_get_cigar( originalVector2.back().get() ) + originalVector2.back()->core.n_cigar - 1); // NOLINT
 		REQUIRE(bam_cigar_op(lastCIGAR) == BAM_CSOFT_CLIP);
 	}
+}
+
+TEST_CASE("Safe BAM reading works") {
+	const std::string goodBAM("../tests/oneRecord.bam");
+	isaSpace::BAMsafeReader goodOneRecordBAM(goodBAM);
 }
 
 TEST_CASE("Exon range extraction works") {
@@ -1528,6 +1533,19 @@ TEST_CASE("Catching bad GFF and BAM files works") {
 */
 
 TEST_CASE("GFF and BAM parsing works") {
+	isaSpace::BamAndGffFiles doNotExist;
+	doNotExist.gffFileName = "doesNotExist.gff";
+	doNotExist.bamFileName = "doesNotExist.bam";
+	REQUIRE_THROWS_WITH(
+		isaSpace::BAMtoGenome(doNotExist),
+		Catch::Matchers::StartsWith("ERROR: GFF file doesNotExist.gff does not exist")
+	);
+	doNotExist.gffFileName = "../tests/posNegYak.gff";
+	REQUIRE_THROWS_WITH(
+		isaSpace::BAMtoGenome(doNotExist),
+		Catch::Matchers::StartsWith("ERROR: BAM file doesNotExist.bam does not exist")
+	);
+
 	const std::string gffName("../tests/posNegYak.gff");
 	const std::string testAlignmentBAMname("../tests/testAlignment.bam");
 	const std::string outFileName("../tests/testResults.tsv");

@@ -43,6 +43,7 @@
 #include <fstream>
 #include <future>
 #include <thread>
+#include <filesystem>
 
 #include "hts.h"
 #include "sam.h"
@@ -52,6 +53,90 @@
 #include "helperFunctions.hpp"
 
 using namespace isaSpace;
+
+// BAMsafeReader methods
+BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFileName} {
+	auto bamFileStatus{std::filesystem::status(bamFileName)};
+	if ( !std::filesystem::exists(bamFileStatus) ) {
+		throw std::string("ERROR: BAM file ")
+			+ bamFileName + std::string(" does not exist in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+	initialPermissions_ = bamFileStatus.permissions();
+	std::filesystem::permissions(
+		bamFileName,
+		std::filesystem::perms::owner_write | std::filesystem::perms::group_write | std::filesystem::perms::others_write,
+		std::filesystem::perm_options::remove
+	);
+
+	constexpr char openMode{'r'};
+	fileHandle_ = bgzf_open(bamFileName.c_str(), &openMode);
+	if (fileHandle_ == nullptr) {
+		throw std::string("ERROR: failed to open the BAM file ")
+			+ bamFileName + std::string(" for reading in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+	const int32_t eofTest = bgzf_check_EOF(fileHandle_);
+	if (eofTest != 1) {
+		throw std::string("ERROR: no EOF marker in the BAM file ")
+			+ bamFileName + std::string(" in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+
+	// must read the header first to get to the alignments
+	BAMheaderDeleter headDeleter;
+	headerUPointer_ = std::unique_ptr<sam_hdr_t, BAMheaderDeleter>(
+		bam_hdr_read(fileHandle_),
+		headDeleter
+	);
+	if (headerUPointer_ == nullptr) {
+		throw std::string("ERROR: failed to read the header from the BAM file ")
+			+ bamFileName + std::string(" in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+}
+
+BAMsafeReader& BAMsafeReader::operator=(BAMsafeReader &&toMove) noexcept {
+    if (this != &toMove) {
+        fileHandle_         = toMove.fileHandle_;
+        fileName_           = std::move(toMove.fileName_);
+		headerUPointer_     = std::move(toMove.headerUPointer_);
+        initialPermissions_ = toMove.initialPermissions_;
+
+        toMove.fileHandle_         = nullptr;
+        toMove.initialPermissions_ = std::filesystem::perms::none;
+    }
+    return *this;
+}
+
+BAMsafeReader::~BAMsafeReader() {
+    if (fileHandle_ != nullptr) {
+        bgzf_close(fileHandle_);
+    }
+	if ( std::filesystem::exists(fileName_) ) {
+		std::filesystem::permissions(fileName_, initialPermissions_);
+	}
+}
+
+std::unique_ptr<sam_hdr_t, BAMheaderDeleter> BAMsafeReader::getHeaderCopy() const {
+	BAMheaderDeleter headCopyDeleter;
+	std::unique_ptr<sam_hdr_t, BAMheaderDeleter> headerCopy{
+		sam_hdr_dup( headerUPointer_.get() ),
+		headCopyDeleter
+	};
+	return headerCopy;
+}
+
+std::pair<std::unique_ptr<bam1_t, BAMrecordDeleter>, int32_t> BAMsafeReader::getNextRecord() {
+	std::pair<std::unique_ptr<bam1_t, BAMrecordDeleter>, int32_t> result;
+	BAMrecordDeleter recordDeleter;
+	result.first = std::unique_ptr<bam1_t, BAMrecordDeleter>(
+		bam_init1(),
+		recordDeleter
+	);
+	result.second = bam_read1( fileHandle_, result.first.get() );
+	return result;
+}
 
 //ExonGroup constants
 constexpr size_t ExonGroup::strandIDidx_{6UL};
@@ -311,9 +396,15 @@ std::vector<float> ExonGroup::getBestExonCoverageQuality(const BAMrecord &alignm
 }
 
 // ReadMatchWindowBIC methods
-ReadMatchWindowBIC::ReadMatchWindowBIC(const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin, const BinomialWindowParameters &windowParameters) :
-						leftProbability_{windowParameters.currentProbability}, rightProbability_{windowParameters.alternativeProbability}, nTrials_{static_cast<float>(windowParameters.windowSize)} {
-	kSuccesses_ = std::accumulate(
+float ReadMatchWindowBIC::getBICdifference() const noexcept {
+	const float jFailures = nTrials_ - kSuccesses_;
+	const float leftLlik  = ( kSuccesses_ * logf(leftProbability_) ) + ( jFailures * logf(1.0F - leftProbability_) );
+	const float rightLlik = ( kSuccesses_ * logf(rightProbability_) ) + ( jFailures * logf(1.0F - rightProbability_) );
+    return logf(nTrials_) + ( 2.0F * (leftLlik - rightLlik) );
+};
+
+float ReadMatchWindowBIC::calculateKsuccesses_(const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin, const BinomialWindowParameters &windowParameters) {
+	 return std::accumulate(
 		windowBegin,
 		windowBegin + windowParameters.windowSize,
 		0.0F,
@@ -322,13 +413,6 @@ ReadMatchWindowBIC::ReadMatchWindowBIC(const std::vector< std::pair<float, hts_p
 		}
 	);
 }
-
-float ReadMatchWindowBIC::getBICdifference() const noexcept {
-	const float jFailures = nTrials_ - kSuccesses_;
-	const float leftLlik  = ( kSuccesses_ * logf(leftProbability_) ) + ( jFailures * logf(1.0F - leftProbability_) );
-	const float rightLlik = ( kSuccesses_ * logf(rightProbability_) ) + ( jFailures * logf(1.0F - rightProbability_) );
-    return logf(nTrials_) + ( 2.0F * (leftLlik - rightLlik) );
-};
 
 // BAMrecord methods
 constexpr uint16_t BAMrecord::sequenceMask_{0x000F};
@@ -670,6 +754,13 @@ std::string BAMrecord::getSequenceAndQuality(const MappedReadInterval &segmentBo
 constexpr uint16_t BAMtoGenome::suppSecondaryAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
 
 BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
+	const auto gffFileStatus{std::filesystem::status(bamGFFfilePairNames.gffFileName)};
+	if ( !std::filesystem::exists(gffFileStatus) ) {
+		throw std::string("ERROR: GFF file ")
+			+ bamGFFfilePairNames.gffFileName + std::string(" does not exist in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+
 	const auto gffExonGroups{parseGFF(bamGFFfilePairNames.gffFileName)};
 
 	if ( gffExonGroups.empty() ) {
@@ -677,17 +768,23 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			+ bamGFFfilePairNames.gffFileName + std::string(" GFF file in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
+	auto bamFileStatus{std::filesystem::status(bamGFFfilePairNames.bamFileName)};
+	if ( !std::filesystem::exists(bamFileStatus) ) {
+		throw std::string("ERROR: BAM file ")
+			+ bamGFFfilePairNames.bamFileName + std::string(" does not exist in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
 
+	// TODO: change file to read only and change back in the deleter
 	constexpr char openMode{'r'};
-	std::unique_ptr<BGZF, void(*)(BGZF *)> bamFile(
+	BGZFhandleDeleter bgzfDeleter;
+	std::unique_ptr<BGZF, BGZFhandleDeleter> bamFile(
 		bgzf_open(bamGFFfilePairNames.bamFileName.c_str(), &openMode),
-		[](BGZF *bamFile) {
-			bgzf_close(bamFile);
-		}
+		bgzfDeleter
 	);
 	if (bamFile == nullptr) {
 		throw std::string("ERROR: failed to open the BAM file ")
-			+ bamGFFfilePairNames.bamFileName + std::string(" in ")
+			+ bamGFFfilePairNames.bamFileName + std::string(" for reading in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
 	const int32_t eofTest = bgzf_check_EOF( bamFile.get() );
@@ -698,11 +795,10 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 	}
 
 	// must read the header first to get to the alignments
-	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> bamHeader(
+	BAMheaderDeleter headDeleter;
+	std::unique_ptr<sam_hdr_t, BAMheaderDeleter> bamHeader(
 		bam_hdr_read( bamFile.get() ),
-		[](sam_hdr_t *samHeader) {
-			sam_hdr_destroy(samHeader);
-		}
+		headDeleter
 	);
 	if (bamHeader == nullptr) {
 		throw std::string("ERROR: failed to read the header from the BAM file ")
