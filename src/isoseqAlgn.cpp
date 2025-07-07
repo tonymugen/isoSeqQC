@@ -72,12 +72,18 @@ BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFile
 	constexpr char openMode{'r'};
 	fileHandle_ = bgzf_open(bamFileName.c_str(), &openMode);
 	if (fileHandle_ == nullptr) {
+		if ( std::filesystem::exists(fileName_) ) {
+			std::filesystem::permissions(fileName_, initialPermissions_);
+		}
 		throw std::string("ERROR: failed to open the BAM file ")
 			+ bamFileName + std::string(" for reading in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
 	const int32_t eofTest = bgzf_check_EOF(fileHandle_);
 	if (eofTest != 1) {
+		if ( std::filesystem::exists(fileName_) ) {
+			std::filesystem::permissions(fileName_, initialPermissions_);
+		}
 		throw std::string("ERROR: no EOF marker in the BAM file ")
 			+ bamFileName + std::string(" in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
@@ -90,6 +96,9 @@ BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFile
 		headDeleter
 	);
 	if (headerUPointer_ == nullptr) {
+		if ( std::filesystem::exists(fileName_) ) {
+			std::filesystem::permissions(fileName_, initialPermissions_);
+		}
 		throw std::string("ERROR: failed to read the header from the BAM file ")
 			+ bamFileName + std::string(" in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
