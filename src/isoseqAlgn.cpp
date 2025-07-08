@@ -55,6 +55,7 @@
 using namespace isaSpace;
 
 // BAMsafeReader methods
+constexpr uint16_t BAMsafeReader::nRetries_{5};
 BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFileName} {
 	auto bamFileStatus{std::filesystem::status(bamFileName)};
 	if ( !std::filesystem::exists(bamFileStatus) ) {
@@ -70,7 +71,12 @@ BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFile
 	);
 
 	constexpr char openMode{'r'};
-	fileHandle_ = bgzf_open(bamFileName.c_str(), &openMode);
+	// HTSLIB occasionally fails to open a file for no apparent reason, retrying a few times seems to help
+	uint16_t iRetry{0};
+	while ( (fileHandle_ == nullptr) && (iRetry < nRetries_) ) {
+		fileHandle_ = bgzf_open(bamFileName.c_str(), &openMode);
+		++iRetry;
+	}
 	if (fileHandle_ == nullptr) {
 		if ( std::filesystem::exists(fileName_) ) {
 			std::filesystem::permissions(fileName_, initialPermissions_);
@@ -102,6 +108,14 @@ BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFile
 		throw std::string("ERROR: failed to read the header from the BAM file ")
 			+ bamFileName + std::string(" in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+	if (sam_hdr_nref( headerUPointer_.get() ) < 0) {
+		if ( std::filesystem::exists(fileName_) ) {
+			std::filesystem::permissions(fileName_, initialPermissions_);
+		}
+		throw std::string("ERROR: invalid number of references/chromosomes in the ") 
+			+ bamFileName + std::string(" BAM file in ")
+            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
 }
 
@@ -777,43 +791,9 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			+ bamGFFfilePairNames.gffFileName + std::string(" GFF file in ")
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
-	auto bamFileStatus{std::filesystem::status(bamGFFfilePairNames.bamFileName)};
-	if ( !std::filesystem::exists(bamFileStatus) ) {
-		throw std::string("ERROR: BAM file ")
-			+ bamGFFfilePairNames.bamFileName + std::string(" does not exist in ")
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
 
-	// TODO: change file to read only and change back in the deleter
-	constexpr char openMode{'r'};
-	BGZFhandleDeleter bgzfDeleter;
-	std::unique_ptr<BGZF, BGZFhandleDeleter> bamFile(
-		bgzf_open(bamGFFfilePairNames.bamFileName.c_str(), &openMode),
-		bgzfDeleter
-	);
-	if (bamFile == nullptr) {
-		throw std::string("ERROR: failed to open the BAM file ")
-			+ bamGFFfilePairNames.bamFileName + std::string(" for reading in ")
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
-	const int32_t eofTest = bgzf_check_EOF( bamFile.get() );
-	if (eofTest != 1) {
-		throw std::string("ERROR: no EOF marker in the BAM file ")
-			+ bamGFFfilePairNames.bamFileName + std::string(" in ")
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
-
-	// must read the header first to get to the alignments
-	BAMheaderDeleter headDeleter;
-	std::unique_ptr<sam_hdr_t, BAMheaderDeleter> bamHeader(
-		bam_hdr_read( bamFile.get() ),
-		headDeleter
-	);
-	if (bamHeader == nullptr) {
-		throw std::string("ERROR: failed to read the header from the BAM file ")
-			+ bamGFFfilePairNames.bamFileName + std::string(" in ")
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
+	BAMsafeReader bamFile(bamGFFfilePairNames.bamFileName);
+	const auto bamHeader{bamFile.getHeaderCopy()};
 
 	std::vector<std::string> outputLines; // gene information, if any, for each alignment to save
 	// keeping track of the latest iterators pointing to identified exon groups, one per chromosome/reference sequence
@@ -822,27 +802,21 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 		latestExonGroupIts[eachChromosome.first] = eachChromosome.second.cbegin();
 	}
 	while (true) {
-		std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr(
-			bam_init1(),
-			[](bam1_t *bamRecord){
-				bam_destroy1(bamRecord);
-			}
-		);
-		const auto nBytes = bam_read1( bamFile.get(), bamRecordPtr.get() );
-		if (nBytes == -1) {
+		const auto bamRecord{bamFile.getNextRecord()};
+		if (bamRecord.second == -1) {
 			break;
 		}
-		if (nBytes < -1) {
+		if (bamRecord.second < -1) {
 			continue;
 		}
 		// Is this a secondary alignment?
-		if ( ( (bamRecordPtr->core.flag & suppSecondaryAlgn_) != 0 ) ) {
+		if ( ( (bamRecord.first->core.flag & suppSecondaryAlgn_) != 0 ) ) {
 			if ( !readsAndExons_.empty() ) {
-				readsAndExons_.back().first.addSecondaryAlignment( bamRecordPtr.get(), bamHeader.get() );
+				readsAndExons_.back().first.addSecondaryAlignment( bamRecord.first.get(), bamHeader.get() );
 			}
 			continue;
 		}
-		BAMrecord currentBAM( bamRecordPtr.get(), bamHeader.get() );
+		BAMrecord currentBAM( bamRecord.first.get(), bamHeader.get() );
 		std::string referenceName{currentBAM.getReferenceName()};
 		const char strandID = (currentBAM.isRevComp() ? '-' : '+');
 		referenceName.push_back(strandID);
@@ -1067,55 +1041,24 @@ std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const s
 constexpr uint16_t BAMfile::secondaryOrUnmappedAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY | BAM_FUNMAP};
 
 BAMfile::BAMfile(const std::string &BAMfileName) {
-	constexpr char openMode{'r'};
-	std::unique_ptr<BGZF, void(*)(BGZF *)> inputBAMfile(
-		bgzf_open(BAMfileName.c_str(), &openMode),
-		[](BGZF *bamFile) {
-			bgzf_close(bamFile);
-		}
-	);
-	if (inputBAMfile == nullptr) {
-		throw std::string("ERROR: failed to open the BAM file ")
-			+ BAMfileName + " in "
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
-	const int32_t eofTest = bgzf_check_EOF( inputBAMfile.get() );
-	if (eofTest != 1) {
-		throw std::string("ERROR: no EOF marker in the BAM file ")
-			+ BAMfileName + std::string(" in ")
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
-
-	BAMheaderDeleter headDeleter;
-	bamFileHeader_ = std::unique_ptr<sam_hdr_t, BAMheaderDeleter>(bam_hdr_read( inputBAMfile.get() ), headDeleter);
-	if (bamFileHeader_ == nullptr) {
-		throw std::string("ERROR: failed to read the header for the BAM file in ")
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
-	const int32_t nRef = sam_hdr_nref( bamFileHeader_.get() );
-	if (nRef < 0) {
-		throw std::string("ERROR: invalid number of references/chromosomes in the ") 
-			+ BAMfileName + std::string(" BAM file in ")
-            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
+	BAMsafeReader inputBAMfile(BAMfileName);
+	bamFileHeader_ = inputBAMfile.getHeaderCopy();
 
 	while (true) {
-		BAMrecordDeleter currentBAMdeleter;
-		std::unique_ptr<bam1_t, BAMrecordDeleter> bamRecordPtr(bam_init1(), currentBAMdeleter);
-		const auto nBytes = bam_read1( inputBAMfile.get(), bamRecordPtr.get() );
-		if (nBytes == -1) {
+		auto bamRecord{inputBAMfile.getNextRecord()};
+		if (bamRecord.second == -1) {
 			break;
 		}
-		if (nBytes < -1) {
+		if (bamRecord.second < -1) {
 			continue;
 		}
-		if ( (bamRecordPtr->core.flag & secondaryOrUnmappedAlgn_) == 0 ) {
+		if ( (bamRecord.first->core.flag & secondaryOrUnmappedAlgn_) == 0 ) {
 			// mapped primary alignment; process
-			const std::string readName{bam_get_qname(bamRecordPtr)};
-			const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), bamRecordPtr->core.tid); 
+			const std::string readName{bam_get_qname(bamRecord.first)};
+			const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), bamRecord.first->core.tid); 
 			if (refNamePtr != nullptr) {
 				const std::string refName{refNamePtr};
-				bamRecords_[refName][readName].emplace_back( std::move(bamRecordPtr) );
+				bamRecords_[refName][readName].emplace_back( std::move(bamRecord.first) );
 			}
 		}
 
@@ -1131,51 +1074,20 @@ size_t BAMfile::getPrimaryAlignmentCount() const noexcept {
 }
 
 void BAMfile::addRemaps(const std::string &remapBAMfileName, const float &remapIdentityCutoff) {
-	constexpr char openMode{'r'};
-	std::unique_ptr<BGZF, void(*)(BGZF *)> inputBAMfile(
-		bgzf_open(remapBAMfileName.c_str(), &openMode),
-		[](BGZF *bamFile) {
-			bgzf_close(bamFile);
-		}
-	);
-	if (inputBAMfile == nullptr) {
-		throw std::string("ERROR: failed to open the BAM file ")
-			+ remapBAMfileName + " in "
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
-	const int32_t eofTest = bgzf_check_EOF( inputBAMfile.get() );
-	if (eofTest != 1) {
-		throw std::string("ERROR: no EOF marker in the BAM file ")
-			+ remapBAMfileName + std::string(" in ")
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
-
-	BAMheaderDeleter headDeleter;
-	auto remapHeader = std::unique_ptr<sam_hdr_t, BAMheaderDeleter>(bam_hdr_read( inputBAMfile.get() ), headDeleter);
-	if (remapHeader == nullptr) {
-		throw std::string("ERROR: failed to read the header for the remap BAM file in ")
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
-	const int32_t nRef = sam_hdr_nref( remapHeader.get() );
-	if (nRef < 0) {
-		throw std::string("ERROR: invalid number of references/chromosomes in the ") 
-			+ remapBAMfileName + std::string(" BAM file in ")
-            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
+	BAMsafeReader remapBAMfile(remapBAMfileName);
+	const auto remapHeader{remapBAMfile.getHeaderCopy()};
 
 	while (true) {
-		BAMrecordDeleter currentBAMdeleter;
-		std::unique_ptr<bam1_t, BAMrecordDeleter> remapBAMrecordPtr(bam_init1(), currentBAMdeleter);
-		const auto nBytes = bam_read1( inputBAMfile.get(), remapBAMrecordPtr.get() );
-		if (nBytes == -1) {
+		auto remapBAMrecord{remapBAMfile.getNextRecord()};
+		if (remapBAMrecord.second == -1) {
 			break;
 		}
-		if (nBytes < -1) {
+		if (remapBAMrecord.second < -1) {
 			continue;
 		}
-		if ( (remapBAMrecordPtr->core.flag & secondaryOrUnmappedAlgn_) == 0 ) {
+		if ( (remapBAMrecord.first->core.flag & secondaryOrUnmappedAlgn_) == 0 ) {
 			// mapped primary alignment; process
-			const std::string readName{bam_get_qname(remapBAMrecordPtr)};
+			const std::string readName{bam_get_qname(remapBAMrecord.first)};
 			const ReadPortion realignedInfo{parseRemappedReadName(readName)};
 
 			// must search all references because the re-map may hit a different one from the original
@@ -1183,7 +1095,7 @@ void BAMfile::addRemaps(const std::string &remapBAMfileName, const float &remapI
 				for (auto &eachReference : bamRecords_) {
 					const auto primaryRecordIt = eachReference.second.find(realignedInfo.originalName);
 					if ( primaryRecordIt != eachReference.second.end() ) {
-						addRemappedSecondaryAlignment(remapHeader, remapBAMrecordPtr, realignedInfo, bamFileHeader_, remapIdentityCutoff, primaryRecordIt->second);
+						addRemappedSecondaryAlignment(remapHeader, remapBAMrecord.first, realignedInfo, bamFileHeader_, remapIdentityCutoff, primaryRecordIt->second);
 						break;
 					}
 				}

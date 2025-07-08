@@ -327,6 +327,8 @@ namespace isaSpace {
 		 */
 		[[nodiscard]] std::pair<std::unique_ptr<bam1_t, BAMrecordDeleter>, int32_t> getNextRecord();
 	private:
+		/** \brief Retry count for file opening attempts */
+		static const uint16_t nRetries_;
 		/** \brief BAM file handle */
 		BGZF *fileHandle_{nullptr};
 		/** \brief BAM header */

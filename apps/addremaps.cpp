@@ -53,14 +53,25 @@ int main(int argc, char *argv[]) {
 
 		isaSpace::BAMfile primaryBAM( stringVariables.at("input-bam") );
 		primaryBAM.addRemaps( stringVariables.at("remapped-bam"), floatVariables.at("remap-cutoff") );
+		constexpr uint16_t nRetries{5}; // sometimes saves fail randomly; retry a few times to attempt a fix
 		if (stringVariables.at("unsorted-output") == "unset") {
-			const std::vector<std::string> failedReads{primaryBAM.saveSortedRemappedBAM( stringVariables.at("out") )};
+			std::vector<std::string> failedReads;
+			uint16_t iRetry{0};
+			while ( failedReads.empty() && (iRetry < nRetries) ) {
+				failedReads = primaryBAM.saveSortedRemappedBAM( stringVariables.at("out") );
+				++iRetry;
+			}
 			if ( !failedReads.empty() ) {
                 std::cerr << "WARNING: failed to save " << failedReads.size() << " reads" << "\n";
 			}
 			return 0;
 		}
-		const std::vector<std::string> failedReads{primaryBAM.saveRemappedBAM( stringVariables.at("out") )};
+		std::vector<std::string> failedReads;
+		uint16_t iRetry{0};
+		while ( failedReads.empty() && (iRetry < nRetries) ) {
+			failedReads = primaryBAM.saveRemappedBAM( stringVariables.at("out") );
+			++iRetry;
+		}
 		if ( !failedReads.empty() ) {
 			std::cerr << "WARNING: failed to save " << failedReads.size() << " reads" << "\n";
 		}
