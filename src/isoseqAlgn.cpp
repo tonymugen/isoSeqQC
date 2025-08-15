@@ -55,7 +55,7 @@
 using namespace isaSpace;
 
 // BAMsafeReader methods
-constexpr uint16_t BAMsafeReader::nRetries_{5};
+constexpr uint16_t BAMsafeReader::nRetries_{10};
 BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFileName} {
 	auto bamFileStatus{std::filesystem::status(bamFileName)};
 	if ( !std::filesystem::exists(bamFileStatus) ) {
@@ -322,6 +322,10 @@ std::pair<hts_pos_t, hts_pos_t> ExonGroup::getFirstIntronSpan() const {
 }
 
 std::vector<float> ExonGroup::getExonCoverageQuality(const BAMrecord &alignment) const {
+	if ( !alignment.isMapped() ) {
+		std::vector<float> emptyResult;
+		return emptyResult;
+	}
 	// find the first overlapping exon
 	const auto exonRangeIt = std::lower_bound(
 		exonRanges_.cbegin(),
@@ -347,16 +351,16 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const BAMrecord &alignment)
 			const auto rmsStartPosition{
 				std::min(
 					static_cast<std::vector<float>::difference_type>( realExonStart - alignment.getMapStart() ),
-					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.size() - 1)
+					static_cast<std::vector<float>::difference_type>( referenceMatchStatus.size() )
 				)
 			};
+			const auto rmsBeginIt = referenceMatchStatus.cbegin() + rmsStartPosition;
 			const auto rmsSpan{
 				std::min(
 					static_cast<std::vector<float>::difference_type>(realExonLength),
-					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.size() - rmsStartPosition)
+					std::distance( rmsBeginIt, referenceMatchStatus.cend() )
 				)
 			};
-			const auto rmsBeginIt  = referenceMatchStatus.cbegin() + rmsStartPosition;
 			const float matchCount = std::accumulate(rmsBeginIt, rmsBeginIt + rmsSpan, 0.0F);
 			qualityScores.push_back( matchCount / static_cast<float>(currExonSpan.second - currExonSpan.first + 1) );
 		}
@@ -397,16 +401,16 @@ std::vector<float> ExonGroup::getBestExonCoverageQuality(const BAMrecord &alignm
 			const auto rmsStartPosition{
 				std::min(
 					static_cast<std::vector<float>::difference_type>(realExonStart - referenceMatchStatus.mapStart),
-					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.matchStatus.size() - 1)
-				)
-			};
-			const auto rmsSpan{
-				std::min(
-					static_cast<std::vector<float>::difference_type>(realExonLength),
-					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.matchStatus.size() - rmsStartPosition)
+					static_cast<std::vector<float>::difference_type>( referenceMatchStatus.matchStatus.size() )
 				)
 			};
 			const auto rmsBeginIt  = referenceMatchStatus.matchStatus.cbegin() + rmsStartPosition;
+			const auto rmsSpan{
+				std::min(
+					static_cast<std::vector<float>::difference_type>(realExonLength),
+					std::distance( rmsBeginIt, referenceMatchStatus.matchStatus.cend() )
+				)
+			};
 			const float matchCount = std::accumulate(rmsBeginIt, rmsBeginIt + rmsSpan, 0.0F);
 			qualityScores.push_back( matchCount / static_cast<float>(currExonSpan.second - currExonSpan.first + 1) );
 		}
@@ -865,6 +869,7 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 	std::vector< std::future<void> > tasks;
 	tasks.reserve(actualNthreads);
 	size_t iThread{0};
+	//threadOutStrings.at(iThread) = stringifyAlignmentRange( readsAndExons_.cbegin(), readsAndExons_.cend() );
 	std::for_each(
 		threadRanges.cbegin(),
 		threadRanges.cend(),

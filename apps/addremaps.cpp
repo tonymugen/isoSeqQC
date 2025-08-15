@@ -53,7 +53,7 @@ int main(int argc, char *argv[]) {
 
 		isaSpace::BAMfile primaryBAM( stringVariables.at("input-bam") );
 		primaryBAM.addRemaps( stringVariables.at("remapped-bam"), floatVariables.at("remap-cutoff") );
-		constexpr uint16_t nRetries{5}; // sometimes saves fail randomly; retry a few times to attempt a fix
+		constexpr uint16_t nRetries{10}; // sometimes saves fail randomly; retry a few times to attempt a fix
 		if (stringVariables.at("unsorted-output") == "unset") {
 			std::vector<std::string> failedReads;
 			uint16_t iRetry{0};
@@ -62,7 +62,7 @@ int main(int argc, char *argv[]) {
 				++iRetry;
 			}
 			if ( !failedReads.empty() ) {
-                std::cerr << "WARNING: failed to save " << failedReads.size() << " reads" << "\n";
+                std::cerr << "WARNING: failed to save " << failedReads.size() << " reads to the " << stringVariables.at("out") << " file\n";
 			}
 			return 0;
 		}
@@ -73,7 +73,7 @@ int main(int argc, char *argv[]) {
 			++iRetry;
 		}
 		if ( !failedReads.empty() ) {
-			std::cerr << "WARNING: failed to save " << failedReads.size() << " reads" << "\n";
+			std::cerr << "WARNING: failed to save " << failedReads.size() << " reads to the " << stringVariables.at("out") << " file\n";
 		}
 		return 0;
 	} catch(std::string &problem) {
