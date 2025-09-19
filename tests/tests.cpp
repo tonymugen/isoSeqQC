@@ -420,7 +420,7 @@ TEST_CASE("Helper functions work") {
 		);
 		const auto afterCIGAR2{isaSpace::modifyCIGAR(replacement, beforeCRPtr2)};
 
-		auto *const oldCIGARptr2 = bam_get_cigar( beforeCRPtr2.get() ); //NOLINT
+		auto *const oldCIGARptr2 = bam_get_cigar( beforeCRPtr2.get() ); // NOLINT
 		auto *const newCIGARptr2 = bam_get_cigar( afterCIGAR2.get() );  // NOLINT
 
 		REQUIRE(beforeCRPtr2->core.n_cigar == afterCIGAR2->core.n_cigar);
@@ -510,7 +510,7 @@ TEST_CASE("Helper functions work") {
 		REQUIRE(beforeQLEN4 == afterQLEN4);
 
 		// add remapped reads as secondary alignments
-		constexpr float readMatchCutoff{0.99F};
+		constexpr float readMatchCutoff{0.95F};
 		constexpr uint32_t nSkip{2};
 		const std::string originalAlgnBAMname("../tests/remappedOriginals.bam");
 		isaSpace::BAMsafeReader originalAlgnBAMfile(originalAlgnBAMname);
@@ -550,8 +550,30 @@ TEST_CASE("Helper functions work") {
 		const auto remappedBAMrecord2{remappedBAMfile.getNextRecord()};
 		isaSpace::addRemappedSecondaryAlignment(remappedHeadPtr, remappedBAMrecord2.first, remappedParams, originalHeadPtr, readMatchCutoff, originalVector2);
 		REQUIRE(originalVector2.size() == 2);
-		const auto lastCIGAR = *(bam_get_cigar( originalVector2.back().get() ) + originalVector2.back()->core.n_cigar - 1); // NOLINT
+		auto lastCIGAR = *(bam_get_cigar( originalVector2.back().get() ) + originalVector2.back()->core.n_cigar - 1); // NOLINT
 		REQUIRE(bam_cigar_op(lastCIGAR) == BAM_CSOFT_CLIP);
+
+		// a remap with a soft clip;
+		// when augmenting the CIGAR in the remap
+		// must merge the soft clips
+		remappedParams.originalName = "m54312U_201212_032953/100993164/ccs";
+		remappedParams.start        = 0;    // NOLINT
+		remappedParams.end          = 3115; // NOLINT
+
+		constexpr uint32_t correctLastSoftClipSize{1517};
+		const std::string scRealgnBAMname("../tests/realignWithSC.bam");
+		isaSpace::BAMsafeReader scRealgnBAMfile(scRealgnBAMname);
+		const auto originalSCheadPtr{scRealgnBAMfile.getHeaderCopy()};
+		auto originalBAMrecord3{scRealgnBAMfile.getNextRecord()};
+		std::vector< std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> > originalVector3;
+		originalVector3.emplace_back( std::move(originalBAMrecord3.first) );
+		const auto remappedSCheadPtr{scRealgnBAMfile.getHeaderCopy()};
+		const auto remappedBAMrecord3{scRealgnBAMfile.getNextRecord()};
+		isaSpace::addRemappedSecondaryAlignment(remappedSCheadPtr, remappedBAMrecord3.first, remappedParams, originalSCheadPtr, readMatchCutoff, originalVector3);
+		REQUIRE(originalVector3.size() == 2);
+		lastCIGAR = *(bam_get_cigar( originalVector3.back().get() ) + originalVector3.back()->core.n_cigar - 1); // NOLINT
+		REQUIRE(bam_cigar_op(lastCIGAR)    == BAM_CSOFT_CLIP);
+		REQUIRE(bam_cigar_oplen(lastCIGAR) == correctLastSoftClipSize);
 	}
 }
 

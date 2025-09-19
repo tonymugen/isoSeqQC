@@ -510,7 +510,7 @@ void isaSpace::addRemappedSecondaryAlignment(
 	// reference indexes may not be the same in the original and new headers
 	// retrieve the original index from the reference name
 	const auto *const newRefNamePtr = sam_hdr_tid2name(newRecordHeader.get(), newRecord->core.tid); 
-	if (newRefNamePtr == nullptr) {
+	if ( (newRefNamePtr == nullptr) || (newRecord->core.n_cigar == 0) ) {
 		return;
 	}
 	const int32_t originalTID = bam_name2id(originalHeader.get(), newRefNamePtr);
@@ -535,9 +535,24 @@ void isaSpace::addRemappedSecondaryAlignment(
 	// only the remapped portion of the read counts towards the identity fraction calculation
 	float matchCount{0.0};
 	float readLength{0.0};
-	for (uint32_t iCIGAR = 0; iCIGAR < newRecord->core.n_cigar; ++iCIGAR) {
+	// we made sure there is at least one CIGAR field above
+	// must test if the first CIGAR is a soft clip because we can only have one
+	const uint32_t firstCIGAR{*bam_get_cigar( newRecord.get() )};
+	if ( (bam_cigar_op(firstCIGAR) == BAM_CSOFT_CLIP) && !remapCIGAR.empty() ) {
+		const uint32_t summedFirstSoftClips{bam_cigar_oplen(remapCIGAR.back() + bam_cigar_oplen(firstCIGAR))};
+		remapCIGAR.back() = bam_cigar_gen(summedFirstSoftClips, BAM_CSOFT_CLIP);
+		const auto cigarOpLength{static_cast<float>( bam_cigar_oplen(firstCIGAR) )};
+		// match count is 0 for a soft clip
+		readLength += cigarOpLength * readConsumption.at( bam_cigar_op( remapCIGAR.back() ) );
+	} else {
+		remapCIGAR.push_back( *( bam_get_cigar( newRecord.get() ) ) );
+		const auto cigarOpLength{static_cast<float>( bam_cigar_oplen( remapCIGAR.back() ) )};
+		matchCount += cigarOpLength * sequenceMatch.at( bam_cigar_op( remapCIGAR.back() ) );
+		readLength += cigarOpLength * readConsumption.at( bam_cigar_op( remapCIGAR.back() ) );
+	}
+	for (uint32_t iCIGAR = 1; iCIGAR < newRecord->core.n_cigar; ++iCIGAR) {
 		remapCIGAR.push_back( *(bam_get_cigar( newRecord.get() ) + iCIGAR) );
-		const auto cigarOpLength = static_cast<float>( bam_cigar_oplen( remapCIGAR.back() ) );
+		const auto cigarOpLength{static_cast<float>( bam_cigar_oplen( remapCIGAR.back() ) )};
 		matchCount += cigarOpLength * sequenceMatch.at( bam_cigar_op( remapCIGAR.back() ) );
 		readLength += cigarOpLength * readConsumption.at( bam_cigar_op( remapCIGAR.back() ) );
 	}
@@ -546,7 +561,12 @@ void isaSpace::addRemappedSecondaryAlignment(
 	}
 	if (remapInfo.end <= readMapVector.front()->core.l_qseq) {
 		softClip = static_cast<uint32_t>(readMapVector.front()->core.l_qseq - remapInfo.end);
-		remapCIGAR.push_back( bam_cigar_gen(softClip, BAM_CSOFT_CLIP) );
+		if (bam_cigar_op( remapCIGAR.back() ) == BAM_CSOFT_CLIP) {
+			softClip         += bam_cigar_oplen( remapCIGAR.back() );
+			remapCIGAR.back() = bam_cigar_gen(softClip, BAM_CSOFT_CLIP);
+		} else {
+			remapCIGAR.push_back( bam_cigar_gen(softClip, BAM_CSOFT_CLIP) );
+		}
 	}
 	assert(
 		bam_cigar2qlen( static_cast<int32_t>( remapCIGAR.size() ), remapCIGAR.data() ) == 
