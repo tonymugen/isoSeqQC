@@ -590,8 +590,8 @@ MappedReadMatchStatus BAMrecord::getBestReferenceMatchStatus() const {
 		}
 	);
 	MappedReadMatchStatus bestMatch;
-	bestMatch.mapStart     = matchVectors.front().first;
-	bestMatch.matchStatus  = std::move(matchVectors.front().second);
+	bestMatch.mapStart    = matchVectors.front().first;
+	bestMatch.matchStatus = std::move(matchVectors.front().second);
 	std::for_each(
 		std::next( matchVectors.cbegin() ),
 		matchVectors.cend(),
@@ -625,7 +625,7 @@ MappedReadMatchStatus BAMrecord::getBestReferenceMatchStatus() const {
 				static_cast<hts_pos_t>(0),
 				eachSecondaryMatch.first - static_cast<hts_pos_t>( bestMatch.mapStart + bestMatch.matchStatus.size() )
 			);
-			bestMatch.matchStatus.resize(gapToSecondary, 0.0F);
+			bestMatch.matchStatus.resize(bestMatch.matchStatus.size() + gapToSecondary, 0.0F);
 
 			// if the current match status vector extends beyond the current best match
 			// if not, currentMatchIt will be the end iterator and nothing happens
@@ -869,7 +869,6 @@ void BAMtoGenome::saveReadCoverageStats(const std::string &outFileName, const si
 	std::vector< std::future<void> > tasks;
 	tasks.reserve(actualNthreads);
 	size_t iThread{0};
-	//threadOutStrings.at(iThread) = stringifyAlignmentRange( readsAndExons_.cbegin(), readsAndExons_.cend() );
 	std::for_each(
 		threadRanges.cbegin(),
 		threadRanges.cend(),

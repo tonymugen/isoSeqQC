@@ -1356,8 +1356,8 @@ TEST_CASE("Reading individual BAM records works") {
 		REQUIRE(primaryWithSecondaryBAM.secondaryAlignmentCount() == correctNsecondary);
 		REQUIRE(primaryWithSecondaryBAM.localSecondaryAlignmentCount() == correctNlocalSecondary);
 		REQUIRE(primaryWithSecondaryBAM.localReversedSecondaryAlignmentCount() == correctNlocalSecondaryRev);
-		const isaSpace::MappedReadMatchStatus primaryBAQ = primaryWithSecondaryBAM.getBestReferenceMatchStatus();
-		const std::vector<float> primaryAQ               = isaSpace::getReferenceMatchStatus(primaryWithSecondaryBAM.getCIGARvector());
+		const isaSpace::MappedReadMatchStatus primaryBAQ{primaryWithSecondaryBAM.getBestReferenceMatchStatus()};
+		const std::vector<float> primaryAQ{isaSpace::getReferenceMatchStatus( primaryWithSecondaryBAM.getCIGARvector() )};
 		REQUIRE(primaryWithSecondaryBAM.getMapStart() == primaryBAQ.mapStart);
 		REQUIRE( primaryAQ.size() < primaryBAQ.matchStatus.size() );
 		const auto aqMatchCount = std::count_if(
@@ -1375,6 +1375,22 @@ TEST_CASE("Reading individual BAM records works") {
 			}
 		);
 		REQUIRE(aqMatchCount < baqMatchCount);
+
+		// secondary that is completely in front of the primary
+		const std::string noOverlapBAMname("../tests/noOverlapRealign.bam");
+		isaSpace::BAMsafeReader noOverlapBAMfile(noOverlapBAMname);
+		const auto noOverlapBAMheader{noOverlapBAMfile.getHeaderCopy()};
+		const auto noOverlapPrimaryRecordPtr{noOverlapBAMfile.getNextRecord()};
+		isaSpace::BAMrecord noOverlapBAM( noOverlapPrimaryRecordPtr.first.get(), noOverlapBAMheader.get() );
+		const auto noOverlapSecondaryRecordPtr{noOverlapBAMfile.getNextRecord()};
+		noOverlapBAM.addSecondaryAlignment( noOverlapSecondaryRecordPtr.first.get(), noOverlapBAMheader.get() );
+		const std::vector<float> noOverlapPrimaryAQ{isaSpace::getReferenceMatchStatus( noOverlapBAM.getCIGARvector() )};
+		REQUIRE( noOverlapBAM.hasSecondaryAlignments() );
+		REQUIRE(noOverlapBAM.secondaryAlignmentCount() == 1);
+		REQUIRE(noOverlapBAM.localSecondaryAlignmentCount() == 1);
+		const isaSpace::MappedReadMatchStatus noOverlapBestAQ{noOverlapBAM.getBestReferenceMatchStatus()};
+		REQUIRE( noOverlapBestAQ.mapStart < noOverlapBAM.getMapStart() );
+		REQUIRE( noOverlapPrimaryAQ.size() < noOverlapBestAQ.matchStatus.size() );
 	}
 }
 
