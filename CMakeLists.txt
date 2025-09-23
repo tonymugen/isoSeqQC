@@ -72,7 +72,7 @@ endif()
 include(ExternalProject)
 ExternalProject_Add(htslib
 	GIT_REPOSITORY         https://github.com/samtools/htslib
-	GIT_TAG                6a7d33abc6cae840023868ccdd946d0d8759f259
+	GIT_TAG                c1f35d67dd5ff1e226d94abe7b850f28c60f5910
 	GIT_SUBMODULES_RECURSE TRUE
 	GIT_PROGRESS           TRUE
 	CONFIGURE_COMMAND      autoreconf -i <SOURCE_DIR>

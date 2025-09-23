@@ -97,10 +97,14 @@ BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFile
 
 	// must read the header first to get to the alignments
 	BAMheaderDeleter headDeleter;
-	headerUPointer_ = std::unique_ptr<sam_hdr_t, BAMheaderDeleter>(
-		bam_hdr_read(fileHandle_),
-		headDeleter
-	);
+	iRetry = 0;
+	while ( (headerUPointer_ == nullptr) && (iRetry < nRetries_) ) {
+		headerUPointer_ = std::unique_ptr<sam_hdr_t, BAMheaderDeleter>(
+			bam_hdr_read(fileHandle_),
+			headDeleter
+		);
+		++iRetry;
+	}
 	if (headerUPointer_ == nullptr) {
 		if ( std::filesystem::exists(fileName_) ) {
 			std::filesystem::permissions(fileName_, initialPermissions_);
@@ -1118,7 +1122,13 @@ std::vector<std::string> BAMfile::saveRemappedBAM(const std::string &outputBAMfi
 		throw std::move(problem);	
 	}
 
-	const int32_t headerWriteResult = bam_hdr_write( outputBAMfile.get(), bamFileHeader_.get() );
+	constexpr uint32_t nRetries{10};
+	uint16_t iRetry{0};
+	int32_t headerWriteResult{-1};
+	while ( (headerWriteResult < 0) && (iRetry < nRetries) ) {
+		headerWriteResult = bam_hdr_write( outputBAMfile.get(), bamFileHeader_.get() );
+		++iRetry;
+	}
     if (headerWriteResult < 0) {
         throw std::string("ERROR: failed to write the header for the output BAM file ")
 			+ outputBAMfileName + " in "
@@ -1135,14 +1145,27 @@ std::vector<std::string> BAMfile::saveRemappedBAM(const std::string &outputBAMfi
 		// not all references have primary mapped reads, so finding is necessary
 		const auto refIt = bamRecords_.find(refName);
 		if ( refIt != bamRecords_.end() ) {
-			for ( const auto &eachRead : refIt->second ) {
-				for (const auto &eachAlignment : eachRead.second) {
-					const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
-					if (writeSuccess < 0) {
-						failedReads.push_back(eachRead.first);
-					}
+			uint32_t localRetry{0};
+			std::vector<std::string> localFailedReads;
+			while (localRetry < nRetries) {
+				for (const auto &eachRead : refIt->second) {
+					std::for_each(
+						refIt->second.at(eachRead.first).cbegin(),
+						refIt->second.at(eachRead.first).cend(),
+						[&localFailedReads, &outputBAMfile, &eachRead](const auto &eachAlignment) {
+							const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
+							if (writeSuccess < 0) {
+								localFailedReads.push_back(eachRead.first);
+							}
+						}
+					);
 				}
+				if ( localFailedReads.empty() ) {
+					break;
+				}
+				++localRetry;
 			}
+			std::move( localFailedReads.begin(), localFailedReads.end(), std::back_inserter(failedReads) );
 		}
 		++iRef;
 	}
@@ -1160,7 +1183,13 @@ std::vector<std::string> BAMfile::saveSortedRemappedBAM(const std::string &outpu
 		throw std::move(problem);	
 	}
 
-	const int32_t headerWriteResult = bam_hdr_write( outputBAMfile.get(), bamFileHeader_.get() );
+	constexpr uint32_t nRetries{10};
+	uint16_t iRetry{0};
+	int32_t headerWriteResult{-1};
+	while ( (headerWriteResult < 0) && (iRetry < nRetries) ) {
+		headerWriteResult = bam_hdr_write( outputBAMfile.get(), bamFileHeader_.get() );
+		++iRetry;
+	}
     if (headerWriteResult < 0) {
         throw std::string("ERROR: failed to write the header for the output BAM file ")
 			+ outputBAMfileName + " in "
@@ -1179,9 +1208,13 @@ std::vector<std::string> BAMfile::saveSortedRemappedBAM(const std::string &outpu
 		if ( refIt != bamRecords_.end() ) {
 			// copy over just the map positions of reads
 			std::vector< std::pair<std::string, hts_pos_t> > readPositions;
-			for ( const auto &eachRead : refIt->second ) {
-				readPositions.emplace_back(eachRead.first, eachRead.second.front()->core.pos);
-			}
+			std::for_each(
+				refIt->second.cbegin(),
+				refIt->second.cend(),
+				[&readPositions](const auto &eachRead) {
+					readPositions.emplace_back(eachRead.first, eachRead.second.front()->core.pos);
+				}
+			);
 			std::sort(
 				readPositions.begin(),
 				readPositions.end(),
@@ -1189,14 +1222,27 @@ std::vector<std::string> BAMfile::saveSortedRemappedBAM(const std::string &outpu
 					return firstPair.second < secondPair.second;
 				}
 			);
-			for (const auto &eachReadPosition : readPositions) {
-				for ( const auto &eachAlignment : refIt->second.at(eachReadPosition.first) ) {
-					const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
-					if (writeSuccess < 0) {
-						failedReads.push_back(eachReadPosition.first);
-					}
+			uint32_t localRetry{0};
+			std::vector<std::string> localFailedReads;
+			while (localRetry < nRetries) {
+				for (const auto &eachReadPosition : readPositions) {
+					std::for_each(
+						refIt->second.at(eachReadPosition.first).cbegin(),
+						refIt->second.at(eachReadPosition.first).cend(),
+						[&localFailedReads, &outputBAMfile, &eachReadPosition](const auto &eachAlignment) {
+							const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
+							if (writeSuccess < 0) {
+								localFailedReads.push_back(eachReadPosition.first);
+							}
+						}
+					);
 				}
+				if ( localFailedReads.empty() ) {
+					break;
+				}
+				++localRetry;
 			}
+			std::move( localFailedReads.begin(), localFailedReads.end(), std::back_inserter(failedReads) );
 		}
 		++iRef;
 	}

@@ -332,7 +332,7 @@ namespace isaSpace {
 		/** \brief BAM file handle */
 		BGZF *fileHandle_{nullptr};
 		/** \brief BAM header */
-		std::unique_ptr<sam_hdr_t, BAMheaderDeleter> headerUPointer_;
+		std::unique_ptr<sam_hdr_t, BAMheaderDeleter> headerUPointer_{nullptr};
 		/** \brief BAM file name */
 		std::string fileName_;
 		/** \brief Original BAM file permissions */
