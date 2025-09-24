@@ -607,7 +607,8 @@ std::unique_ptr<BGZF, BGZFhandleDeleter> isaSpace::openBGZFtoAppend(const std::s
 	if (outputBAMfile == nullptr) {
 		throw std::string("ERROR: failed to open the BAM file ")
 			+ bamFileName + " for writing in "
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) )
+			+ std::string( strerror(errno) ); // NOLINT
 	}
 
 	return outputBAMfile;

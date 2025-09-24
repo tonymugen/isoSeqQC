@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cmath>
+#include<cerrno>
 #include <algorithm>
 #include <memory>
 #include <iterator>
@@ -83,7 +84,8 @@ BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFile
 		}
 		throw std::string("ERROR: failed to open the BAM file ")
 			+ bamFileName + std::string(" for reading in ")
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) )
+			+ std::string( strerror(errno) ); // NOLINT
 	}
 	const int32_t eofTest = bgzf_check_EOF(fileHandle_);
 	if (eofTest != 1) {
@@ -111,7 +113,8 @@ BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFile
 		}
 		throw std::string("ERROR: failed to read the header from the BAM file ")
 			+ bamFileName + std::string(" in ")
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) )
+			+ std::string( strerror(errno) ); // NOLINT
 	}
 	if (sam_hdr_nref( headerUPointer_.get() ) < 0) {
 		if ( std::filesystem::exists(fileName_) ) {
@@ -137,12 +140,12 @@ BAMsafeReader& BAMsafeReader::operator=(BAMsafeReader &&toMove) noexcept {
 }
 
 BAMsafeReader::~BAMsafeReader() {
-    if (fileHandle_ != nullptr) {
-        bgzf_close(fileHandle_);
-    }
 	if ( std::filesystem::exists(fileName_) ) {
 		std::filesystem::permissions(fileName_, initialPermissions_);
 	}
+    if (fileHandle_ != nullptr) {
+        bgzf_close(fileHandle_);
+    }
 }
 
 std::unique_ptr<sam_hdr_t, BAMheaderDeleter> BAMsafeReader::getHeaderCopy() const {
@@ -1132,7 +1135,8 @@ std::vector<std::string> BAMfile::saveRemappedBAM(const std::string &outputBAMfi
     if (headerWriteResult < 0) {
         throw std::string("ERROR: failed to write the header for the output BAM file ")
 			+ outputBAMfileName + " in "
-            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) )
+			+ std::string( strerror(errno) ); // NOLINT
     }
 
 	std::vector<std::string> failedReads;
@@ -1193,7 +1197,8 @@ std::vector<std::string> BAMfile::saveSortedRemappedBAM(const std::string &outpu
     if (headerWriteResult < 0) {
         throw std::string("ERROR: failed to write the header for the output BAM file ")
 			+ outputBAMfileName + " in "
-            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) )
+			+ std::string( strerror(errno) ); // NOLINT
     }
 
 	std::vector<std::string> failedReads;
