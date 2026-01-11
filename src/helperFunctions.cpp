@@ -27,9 +27,9 @@
  *
  */
 
+#include <cassert>
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <iterator>
 #include <numeric>
 #include <string>
@@ -355,6 +355,265 @@ std::pair<std::string, std::string> isaSpace::getUnmappedRegionsAndFASTQ(const b
 	return badAlignmentInfoFQ;
 }
 
+ReadPortion isaSpace::parseRemappedReadName(const std::string &remappedReadName) {
+	ReadPortion result;
+	if ( remappedReadName.empty() ) {
+		return result;
+	}
+	constexpr size_t nStartEnd{2};
+	std::array<std::string, nStartEnd> startAndEndStrings;
+	auto trailerBeginIt = std::prev( remappedReadName.end() );
+	size_t iRange{0};
+	while ( (iRange < nStartEnd) && ( trailerBeginIt != remappedReadName.begin() ) ) {
+		if (*trailerBeginIt == '_') {
+			++iRange;
+			--trailerBeginIt;
+			continue;
+		}
+		startAndEndStrings.at(iRange) = *trailerBeginIt + startAndEndStrings.at(iRange); // reversing the order since we are moving from the back
+		--trailerBeginIt;
+	}
+
+	result.originalName = std::string( remappedReadName.begin(), std::next(trailerBeginIt) ); // next because we advance back on '_'
+	try {
+		// start is in the back of the array because we are reading back to front
+		result.start = std::stoul( startAndEndStrings.at(1) );
+		result.end   = std::stoul( startAndEndStrings.at(0) );
+	} catch(const std::exception &invalid) {
+		result.originalName.clear();
+		result.start = 0;
+		result.end   = 0;
+		return result;
+	}
+	return result;
+}
+
+std::unique_ptr<bam1_t, BAMrecordDeleter> isaSpace::modifyCIGAR(const ReadPortion &modRange, const std::unique_ptr<bam1_t, BAMrecordDeleter> &bamRecord) {
+	assert( (modRange.end >= modRange.start)
+		&& "ERROR: end of the range must be no smaller than the start");
+	assert( (bamRecord->core.n_cigar > 0)
+		&& "ERROR: CIGAR string is empty");
+
+	constexpr std::array<uint32_t, 2>  mismatchKind{BAM_CDIFF, BAM_CSOFT_CLIP};
+	constexpr std::array<uint32_t, 10> readConsumption{1, 1, 0, 0, 1, 0, 0, 1, 1, 0};
+	constexpr std::array<uint32_t, 10> referenceConsumption{1, 0, 1, 1, 0, 0, 0, 1, 1, 0};
+	constexpr std::array<char, 16>     seqNT16str{'=', 'A', 'C', 'M', 'G', 'R', 'S', 'V', 'T', 'W', 'Y', 'H', 'K', 'D', 'B', 'N'};
+
+	std::vector<uint32_t> newCIGAR;
+	auto *oldCIGARptr = bam_get_cigar( bamRecord.get() );
+	const auto readLength{
+		static_cast<size_t>( bam_cigar2qlen(static_cast<int32_t>(bamRecord->core.n_cigar), oldCIGARptr) )
+	};
+	const uint32_t actualMismatchKind{mismatchKind.at(
+		static_cast<size_t>( (modRange.start == 0) || (modRange.end == readLength) ) 
+	)};
+
+	uint32_t iCIGAR{0};
+	uint32_t readConsumptionCounter{0};
+	// accumulate any elements before the replacement range start
+	while ( (readConsumptionCounter < modRange.start) && (iCIGAR < bamRecord->core.n_cigar) ) {
+		readConsumptionCounter += bam_cigar_oplen(oldCIGARptr[iCIGAR]) * readConsumption.at( bam_cigar_op(oldCIGARptr[iCIGAR]) );
+		newCIGAR.push_back(oldCIGARptr[iCIGAR]);
+		++iCIGAR;
+	}
+	// deal with over-shoot, if any
+	if (iCIGAR > 0) {
+		auto lastCIGARlen   = bam_cigar_oplen( newCIGAR.back() );
+		const auto overhang = readConsumptionCounter  -  std::min(static_cast<uint32_t>(modRange.start), readConsumptionCounter);
+
+		assert( (overhang < lastCIGARlen)
+			&& "ERROR: CIGAR field overhang is greater than the current field length");
+
+		lastCIGARlen   -= overhang;
+		lastCIGARlen    = bam_cigar_gen( lastCIGARlen, bam_cigar_op( newCIGAR.back() ) );
+		newCIGAR.back() = lastCIGARlen;
+		// I originally thought that I need to put the reference consumption counter back to modRange.start
+		// but that is not correct because I would have to add back the overhang to track reference consumption
+		// within the substitution range
+	}
+	uint32_t referenceConsumptionCounter{0};
+	while ( (readConsumptionCounter < modRange.end) && (iCIGAR < bamRecord->core.n_cigar) ) {
+		// the read consumption counter is necessary to calculate the remainder of a possible overshoot
+		readConsumptionCounter      += bam_cigar_oplen(oldCIGARptr[iCIGAR]) * readConsumption.at( bam_cigar_op(oldCIGARptr[iCIGAR]) );
+		referenceConsumptionCounter += bam_cigar_oplen(oldCIGARptr[iCIGAR]) * referenceConsumption.at( bam_cigar_op(oldCIGARptr[iCIGAR]) );
+		++iCIGAR;
+	}
+
+	// advance the reference start position if the unmapped region is at the beginning
+	hts_pos_t newRefPos{bamRecord->core.pos};
+	if (modRange.start == 0) {
+		newRefPos += referenceConsumptionCounter;
+	}
+	newCIGAR.push_back( bam_cigar_gen(modRange.end - modRange.start, actualMismatchKind) );
+
+	// only deal with the remainder if we are not at the read start;
+	// cannot be more than one past the end
+	if (iCIGAR > 0) {
+		const uint32_t currentCIGARlen{bam_cigar_oplen(oldCIGARptr[iCIGAR - 1])};
+		const uint32_t remainderCIGARlen =  readConsumptionCounter - std::min(static_cast<uint32_t>(modRange.end), readConsumptionCounter);
+		if (remainderCIGARlen > 0) {
+			newCIGAR.push_back( bam_cigar_gen( remainderCIGARlen, bam_cigar_op(oldCIGARptr[iCIGAR - 1]) ) );
+		}
+	}
+
+	while (iCIGAR < bamRecord->core.n_cigar) { // this iCIGAR is already past the previous one dealt with above
+		newCIGAR.push_back(oldCIGARptr[iCIGAR]);
+		++iCIGAR;
+	}
+
+	BAMrecordDeleter localDeleter;
+	std::unique_ptr<bam1_t, BAMrecordDeleter> modifiedBAM(bam_init1(), localDeleter);
+
+	// Casting from uint8_t*, should be safe
+	// Necessary to match the function signature
+	//auto *const seqPtr    = reinterpret_cast<char*>( bam_get_seq( bamRecord.get() ) );
+	auto *const seqPtr    = bam_get_seq( bamRecord.get() );
+	auto *const qualPtr   = reinterpret_cast<char*>( bam_get_qual( bamRecord.get() ) );
+
+	// Must unpack the sequence before presenting it to bam_set1
+	std::string unpackedSequence;
+	for (size_t iSeq = 0; iSeq < bamRecord->core.l_qseq; ++iSeq) {
+		unpackedSequence += seqNT16str.at( static_cast<char>( bam_seqi(seqPtr, iSeq) ) );
+	}
+	const int32_t success = bam_set1(
+		modifiedBAM.get(),
+		modRange.originalName.size(),
+		modRange.originalName.c_str(),
+		bamRecord->core.flag,
+		bamRecord->core.tid,
+		newRefPos,
+		bamRecord->core.qual,
+		newCIGAR.size(),
+		newCIGAR.data(),
+		bamRecord->core.mtid,
+		bamRecord->core.mpos,
+		bamRecord->core.isize,
+		bamRecord->core.l_qseq,
+		//seqPtr,
+		unpackedSequence.c_str(),
+		qualPtr,
+		0 // no need for the aux field
+	);
+
+	assert( (success >= 0)
+		&& "ERROR: failed to set new BAM record");
+
+	return modifiedBAM;
+}
+
+void isaSpace::addRemappedSecondaryAlignment(
+		const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &newRecordHeader, const std::unique_ptr<bam1_t, BAMrecordDeleter> &newRecord, const ReadPortion &remapInfo,
+		const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &originalHeader, const float &remapIdentityCutoff, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > &readMapVector) {
+	BAMrecordDeleter newSecondaryDeleter;
+	std::unique_ptr<bam1_t, BAMrecordDeleter> secondaryFromNew(bam_init1(), newSecondaryDeleter);
+
+	// reference indexes may not be the same in the original and new headers
+	// retrieve the original index from the reference name
+	const auto *const newRefNamePtr = sam_hdr_tid2name(newRecordHeader.get(), newRecord->core.tid); 
+	if ( (newRefNamePtr == nullptr) || (newRecord->core.n_cigar == 0) ) {
+		return;
+	}
+	const int32_t originalTID = bam_name2id(originalHeader.get(), newRefNamePtr);
+	if (originalTID < 0) {
+		return;
+	}
+
+	constexpr std::array<float, 10> sequenceMatch{
+		1.0, 0.0, 0.0, 0.0, 0.0,
+		0.0, 0.0, 1.0, 0.0, 0.0
+	};
+	constexpr std::array<float, 10> readConsumption{
+		1.0, 1.0, 0.0, 0.0, 1.0,
+		0.0, 0.0, 1.0, 1.0, 0.0
+	};
+	// Add soft clips to the CIGAR string of the remapped portion if necessary
+	auto softClip = static_cast<uint32_t>(remapInfo.start);
+	std::vector<uint32_t> remapCIGAR(
+		static_cast<uint32_t>(remapInfo.start > 0),
+		bam_cigar_gen(softClip, BAM_CSOFT_CLIP)
+	);
+	// only the remapped portion of the read counts towards the identity fraction calculation
+	float matchCount{0.0};
+	float readLength{0.0};
+	// we made sure there is at least one CIGAR field above
+	// must test if the first CIGAR is a soft clip because we can only have one
+	const uint32_t firstCIGAR{*bam_get_cigar( newRecord.get() )};
+	if ( (bam_cigar_op(firstCIGAR) == BAM_CSOFT_CLIP) && !remapCIGAR.empty() ) {
+		const uint32_t summedFirstSoftClips{bam_cigar_oplen(remapCIGAR.back() + bam_cigar_oplen(firstCIGAR))};
+		remapCIGAR.back() = bam_cigar_gen(summedFirstSoftClips, BAM_CSOFT_CLIP);
+		const auto cigarOpLength{static_cast<float>( bam_cigar_oplen(firstCIGAR) )};
+		// match count is 0 for a soft clip
+		readLength += cigarOpLength * readConsumption.at( bam_cigar_op( remapCIGAR.back() ) );
+	} else {
+		remapCIGAR.push_back( *( bam_get_cigar( newRecord.get() ) ) );
+		const auto cigarOpLength{static_cast<float>( bam_cigar_oplen( remapCIGAR.back() ) )};
+		matchCount += cigarOpLength * sequenceMatch.at( bam_cigar_op( remapCIGAR.back() ) );
+		readLength += cigarOpLength * readConsumption.at( bam_cigar_op( remapCIGAR.back() ) );
+	}
+	for (uint32_t iCIGAR = 1; iCIGAR < newRecord->core.n_cigar; ++iCIGAR) {
+		remapCIGAR.push_back( *(bam_get_cigar( newRecord.get() ) + iCIGAR) );
+		const auto cigarOpLength{static_cast<float>( bam_cigar_oplen( remapCIGAR.back() ) )};
+		matchCount += cigarOpLength * sequenceMatch.at( bam_cigar_op( remapCIGAR.back() ) );
+		readLength += cigarOpLength * readConsumption.at( bam_cigar_op( remapCIGAR.back() ) );
+	}
+	if (matchCount/readLength < remapIdentityCutoff) {
+		return;
+	}
+	if (remapInfo.end <= readMapVector.front()->core.l_qseq) {
+		softClip = static_cast<uint32_t>(readMapVector.front()->core.l_qseq - remapInfo.end);
+		if (bam_cigar_op( remapCIGAR.back() ) == BAM_CSOFT_CLIP) {
+			softClip         += bam_cigar_oplen( remapCIGAR.back() );
+			remapCIGAR.back() = bam_cigar_gen(softClip, BAM_CSOFT_CLIP);
+		} else {
+			remapCIGAR.push_back( bam_cigar_gen(softClip, BAM_CSOFT_CLIP) );
+		}
+	}
+	assert(
+		bam_cigar2qlen( static_cast<int32_t>( remapCIGAR.size() ), remapCIGAR.data() ) == 
+			bam_cigar2qlen(
+				static_cast<int32_t>(readMapVector.front()->core.n_cigar), bam_get_cigar( readMapVector.front().get() )
+			) &&
+		"ERROR: original and new CIGAR strings imply different read lengths"
+	);
+	const int32_t success = bam_set1(
+		secondaryFromNew.get(),
+		remapInfo.originalName.size(),
+		remapInfo.originalName.c_str(),
+		newRecord->core.flag | BAM_FSECONDARY,
+		originalTID,
+		newRecord->core.pos,
+		newRecord->core.qual,
+		remapCIGAR.size(),
+		remapCIGAR.data(),
+		0, 0, newRecord->core.isize, 0, nullptr, nullptr, 0
+	);
+
+	if (success >= 0) {
+		readMapVector.emplace_back( std::move(secondaryFromNew) );
+		readMapVector.front() = modifyCIGAR( remapInfo, readMapVector.front() );
+	}
+}
+
+std::unique_ptr<BGZF, BGZFhandleDeleter> isaSpace::openBGZFtoAppend(const std::string &bamFileName) {
+	// we will be appending, so must delete this file if it exists
+	const auto rmvSuccess = std::remove( bamFileName.c_str() );
+
+	constexpr char openMode{'a'};
+	BGZFhandleDeleter handleDeleter;
+	std::unique_ptr<BGZF, BGZFhandleDeleter> outputBAMfile(
+		bgzf_open(bamFileName.c_str(), &openMode),
+		handleDeleter
+	);
+	if (outputBAMfile == nullptr) {
+		throw std::string("ERROR: failed to open the BAM file ")
+			+ bamFileName + " for writing in "
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) )
+			+ std::string( strerror(errno) ); // NOLINT
+	}
+
+	return outputBAMfile;
+}
+
 std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
 											isaSpace::makeThreadRanges(const bamGFFvector &targetVector, const size_t &threadCount) {
 	std::vector<bamGFFvector::difference_type> chunkSizes(
@@ -414,19 +673,28 @@ std::unordered_map<std::string, std::string> isaSpace::parseCL(int &argc, char *
 			cliResult[curFlag] = pchar;
 		}
 	}
+	if (val) { // The last flag had no value
+		cliResult[curFlag] = "set";
+	}
 	return cliResult;
 }
 
-void isaSpace::extractCLinfo(const std::unordered_map<std::string, std::string> &parsedCLI,
-		std::unordered_map<std::string, int> &intVariables, std::unordered_map<std::string, std::string> &stringVariables) {
+void isaSpace::extractCLinfo(
+		const std::unordered_map<std::string, std::string> &parsedCLI,
+		std::unordered_map<std::string, int> &intVariables,
+		std::unordered_map<std::string, float> &floatVariables,
+		std::unordered_map<std::string, std::string> &stringVariables) {
 	intVariables.clear();
+	floatVariables.clear();
 	stringVariables.clear();
-	const std::array<std::string, 3> requiredStringVariables{"input-bam", "input-gff", "out"};
-	const std::array<std::string, 1> optionalStringVariables{"out-fastq"};
+	const std::array<std::string, 4> requiredStringVariables{"input-bam", "input-gff", "out", "remapped-bam"};
+	const std::array<std::string, 2> optionalStringVariables{"out-fastq", "unsorted-output"};
 	const std::array<std::string, 2> optionalIntVariables{"threads", "window-size"};
+	const std::array<std::string, 1> optionalFloatVariables{"remap-cutoff"};
 
 	const std::unordered_map<std::string, int> defaultIntValues{ {"threads", -1}, {"window-size", 75} };
-	const std::unordered_map<std::string, std::string> defaultStringValues{ {"out-fastq", "NULL"} };
+	const std::unordered_map<std::string, float> defaultFloatValues{ {"remap-cutoff", 0.99F} };
+	const std::unordered_map<std::string, std::string> defaultStringValues{ {"out-fastq", "NULL"}, {"unsorted-output", "unset"} };
 
 	if ( parsedCLI.empty() ) {
 		throw std::string("No command line flags specified;");
@@ -436,6 +704,13 @@ void isaSpace::extractCLinfo(const std::unordered_map<std::string, std::string> 
 			intVariables[eachFlag] = stoi( parsedCLI.at(eachFlag) );
 		} catch(const std::exception &problem) {
 			intVariables[eachFlag] = defaultIntValues.at(eachFlag);
+		}
+	}
+	for (const auto &eachFlag : optionalFloatVariables) {
+		try {
+			floatVariables[eachFlag] = stof( parsedCLI.at(eachFlag) );
+		} catch(const std::exception &problem) {
+			floatVariables[eachFlag] = defaultFloatValues.at(eachFlag);
 		}
 	}
 	for (const auto &eachFlag : requiredStringVariables) {

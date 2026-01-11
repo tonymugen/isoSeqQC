@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
+ * Copyright (c) 2025 Anthony J. Greenberg and Rebekah Rogers
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
  *
@@ -18,50 +18,54 @@
  */
 
 
-/// Find exons covered by isoSeq reads
+/// Add remapped read portions as secondary alignments
 /** \file
  * \author Anthony J. Greenberg and Rebekah Rogers
- * \copyright Copyright (c) 2024 Anthony J. Greenberg and Rebekah Rogers
+ * \copyright Copyright (c) 2025 Anthony J. Greenberg and Rebekah Rogers
  * \version 0.2
  *
- * Goes through isoSeq read alignments and looks for exons annotated in a GFF file that overlap the reads.
+ * Goes through read portion realignments and add the successfully re-mapped regions as secondary alignments.
  *
  */
 
 #include <string>
 #include <unordered_map>
 #include <iostream>
-#include <thread>
 
 #include "isoseqAlgn.hpp"
 #include "helperFunctions.hpp"
 
 int main(int argc, char *argv[]) {
-
 	// set usage message
 	const std::string cliHelp = "Available command line flags (in any order):\n" 
-		"  --input-bam   bam_file_name (input BAM file name; required).\n"
-		"  --input-gff   gff_file_name (input GFF file name; required).\n"
-		"  --out         out_file_name (output file name; required).\n"
-		"  --threads     number_of_threads (maximal number of threads to use; defaults to maximal available).\n";
+		"  --input-bam        bam_file_name (input BAM file name; required).\n"
+		"  --remapped-bam     remapped_bam_file_name (BAM file with remapped read portions; required).\n"
+		"  --out              out_file_name (output BAM file name; required).\n"
+		"  --remap-cutoff     identity cutoff for read portion remapping (defaults to 0.99).\n"
+		"  --unsorted-output  if set (with no value), the output BAM file is unsorted (otherwise, sorted).\n";
 	try {
 		std::unordered_map <std::string, std::string> stringVariables;
 		std::unordered_map <std::string, int>         intVariables;
 		std::unordered_map <std::string, float>       floatVariables;
 		auto clInfo{isaSpace::parseCL(argc, argv)};
-		clInfo["remapped-bam"] = "NULL";
+		clInfo["input-gff"] = "NULL";
 		isaSpace::extractCLinfo(clInfo, intVariables, floatVariables, stringVariables);
-		size_t nThreads{0};
-		if (intVariables.at("threads") < 1) {
-			nThreads = static_cast<size_t>( std::thread::hardware_concurrency() );
-		} else {
-			nThreads = static_cast<size_t>( intVariables.at("threads") );
+
+		isaSpace::BAMfile primaryBAM( stringVariables.at("input-bam") );
+		primaryBAM.addRemaps( stringVariables.at("remapped-bam"), floatVariables.at("remap-cutoff") );
+		if (stringVariables.at("unsorted-output") == "unset") {
+			std::vector<std::string> failedReads;
+			failedReads = primaryBAM.saveSortedRemappedBAM( stringVariables.at("out") );
+			if ( !failedReads.empty() ) {
+                std::cerr << "WARNING: failed to save " << failedReads.size() << " reads to the " << stringVariables.at("out") << " file\n";
+			}
+			return 0;
 		}
-		isaSpace::BamAndGffFiles bamAndGFF;
-		bamAndGFF.bamFileName = stringVariables.at("input-bam");
-		bamAndGFF.gffFileName = stringVariables.at("input-gff");
-		isaSpace::BAMtoGenome bam2genome(bamAndGFF);
-		bam2genome.saveReadCoverageStats(stringVariables.at("out"), nThreads);
+		std::vector<std::string> failedReads;
+		failedReads = primaryBAM.saveRemappedBAM( stringVariables.at("out") );
+		if ( !failedReads.empty() ) {
+			std::cerr << "WARNING: failed to save " << failedReads.size() << " reads to the " << stringVariables.at("out") << " file\n";
+		}
 		return 0;
 	} catch(std::string &problem) {
 		std::cerr << problem << "\n";

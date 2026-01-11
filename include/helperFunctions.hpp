@@ -29,10 +29,13 @@
 
 #pragma once
 
+#include <memory>
 #include <array>
 #include <string>
 #include <utility> // for std::pair
 #include <vector>
+
+#include "sam.h"
 
 #include "isoseqAlgn.hpp"
 
@@ -46,7 +49,7 @@ namespace isaSpace {
 	 *
 	 * \param[in] tokenAndAttrList field token and the list of attributes
 	 */
-	[[gnu::warn_unused_result]] std::string extractAttributeName(const TokenAttibuteListPair &tokenAndAttrList);
+	[[nodiscard]] std::string extractAttributeName(const TokenAttibuteListPair &tokenAndAttrList);
 
 	/** \brief Extract parent name
 	 *
@@ -55,7 +58,7 @@ namespace isaSpace {
 	 * \param[in] attributeString GFF attribute string
 	 * \return parent name
 	 */
-	[[gnu::warn_unused_result]] std::string extractParentName(const std::string &attributeString);
+	[[nodiscard]] std::string extractParentName(const std::string &attributeString);
 
 	/** \brief Test for range overlap
 	 *
@@ -65,7 +68,7 @@ namespace isaSpace {
 	 * \param[in] range2 second range
 	 * \return `true` if there is overlap
 	 */
-	[[gnu::warn_unused_result]] bool rangesOverlap(const std::pair<hts_pos_t, hts_pos_t> &range1, const std::pair<hts_pos_t, hts_pos_t> &range2) noexcept;
+	[[nodiscard]] bool rangesOverlap(const std::pair<hts_pos_t, hts_pos_t> &range1, const std::pair<hts_pos_t, hts_pos_t> &range2) noexcept;
 
 	/** \brief Parse a GFF line into fields
 	 *
@@ -75,7 +78,7 @@ namespace isaSpace {
 	 * \param[in] gffLine one line of a GFF file
 	 * \return each GFF field in a separate element
 	 */
-	[[gnu::warn_unused_result]] std::array<std::string, nGFFfields> parseGFFline(const std::string &gffLine);
+	[[nodiscard]] std::array<std::string, nGFFfields> parseGFFline(const std::string &gffLine);
 
 	/** \brief Parse a GFF file
 	 *
@@ -85,7 +88,7 @@ namespace isaSpace {
 	 * \param[in] gffFileName GFF file name
 	 * \return collection of exon group vectors by chromosome and strand
 	 */
-	[[gnu::warn_unused_result]] std::unordered_map< std::string, std::vector<ExonGroup> > parseGFF(const std::string &gffFileName);
+	[[nodiscard]] std::unordered_map< std::string, std::vector<ExonGroup> > parseGFF(const std::string &gffFileName);
 
 	/** \brief Identify peaks in numerical data 
 	 *
@@ -97,7 +100,7 @@ namespace isaSpace {
 	 * \return vector of iterators to peak elements
 	 *
 	 */
-	[[gnu::warn_unused_result]] std::vector<std::vector<float>::const_iterator> getPeaks(const std::vector<float> &values, const float &threshold);
+	[[nodiscard]] std::vector<std::vector<float>::const_iterator> getPeaks(const std::vector<float> &values, const float &threshold);
 
 	/** \brief Identify valleys in numerical data 
 	 *
@@ -109,7 +112,7 @@ namespace isaSpace {
 	 * \return vector of iterators to valley elements
 	 *
 	 */
-	[[gnu::warn_unused_result]] std::vector<std::vector<float>::const_iterator> getValleys(const std::vector<float> &values, const float &threshold);
+	[[nodiscard]] std::vector<std::vector<float>::const_iterator> getValleys(const std::vector<float> &values, const float &threshold);
 
 	/** \brief Read match status along the reference
 	 *
@@ -120,14 +123,14 @@ namespace isaSpace {
 	 * \param[in] cigar CIGAR vector
 	 * \return vector of match status
 	 */
-	[[gnu::warn_unused_result]] std::vector<float> getReferenceMatchStatus(const std::vector<uint32_t> &cigar);
+	[[nodiscard]] std::vector<float> getReferenceMatchStatus(const std::vector<uint32_t> &cigar);
 
 	/** \brief Extract exon coverage statistics for a read 
 	 *
 	 * \param[in] readAndExons read alignment with the corresponding exon group
 	 * \return exon coverage object
 	 */
-	[[gnu::warn_unused_result]] ReadExonCoverage getExonCoverageStats(const std::pair<BAMrecord, ExonGroup> &readAndExons);
+	[[nodiscard]] ReadExonCoverage getExonCoverageStats(const std::pair<BAMrecord, ExonGroup> &readAndExons);
 
 	/** \brief Convert `ReadExonCoverage` to string
 	 *
@@ -135,7 +138,7 @@ namespace isaSpace {
 	 * \param[in] separator field separator
 	 * \return `std::string` with the read record elements, without a new line at the end
 	 */
-	[[gnu::warn_unused_result]] std::string stringifyExonCoverage(const ReadExonCoverage &readRecord, char separator = '\t');
+	[[nodiscard]] std::string stringifyExonCoverage(const ReadExonCoverage &readRecord, char separator = '\t');
 
 	/** \brief Produce a string from a range of read alignments
 	 *
@@ -143,7 +146,7 @@ namespace isaSpace {
 	 * \param[in] end end iterator
 	 * \return string with coverage information
 	 */
-	[[gnu::warn_unused_result]] std::string stringifyAlignmentRange(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end);
+	[[nodiscard]] std::string stringifyAlignmentRange(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end);
 	/** \brief Produce a string of poorly aligned region statistics from an alignment range 
 	 *
 	 * Only saves information from reads that have poorly mapped regions, potentially multiple per read.
@@ -153,7 +156,7 @@ namespace isaSpace {
 	 * \param[in] windowParameters sliding window parameters
 	 * \return string with coverage information
 	 */
-	[[gnu::warn_unused_result]] std::string stringifyUnmappedRegions(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters);
+	[[nodiscard]] std::string stringifyUnmappedRegions(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters);
 	/** \brief Produce a string of poorly aligned region statistics and corresponding FASTQ records from an alignment range 
 	 *
 	 * Only saves information from reads that have poorly mapped regions, potentially multiple per read.
@@ -163,7 +166,50 @@ namespace isaSpace {
 	 * \param[in] windowParameters sliding window parameters
 	 * \return strings with coverage information (`.first`) and FASTQ (`.second`)
 	 */
-	[[gnu::warn_unused_result]] std::pair<std::string, std::string> getUnmappedRegionsAndFASTQ(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters);
+	[[nodiscard]] std::pair<std::string, std::string> getUnmappedRegionsAndFASTQ(const bamGFFvector::const_iterator &begin, const bamGFFvector::const_iterator &end, const BinomialWindowParameters &windowParameters);
+
+	/** \brief Extract original read name and coordinates
+	 *
+	 * The remapped read names are original names, with `_`-separated start and end coordinates.
+	 * Underscores in the original read name are allowed.
+	 * If the coordinates are absent, returns an empty object.
+	 *
+	 * \param[in] remappedReadName re-mapped read portion name
+	 * \return original read name and segment coordinates
+	 */
+	[[nodiscard]] ReadPortion parseRemappedReadName(const std::string &remappedReadName);
+	/** \brief Modify the BAM CIGAR string to erase alignment in a range 
+	 *
+	 * Substitute operations in a BAM record within the given range with non-matching operations.
+	 *
+	 * \param[in] modRange modification range
+	 * \param[in] bamRecord BAM record to be modified
+	 * \return BAM record with the CIGAR vector replaced
+	 */
+	[[nodiscard]] std::unique_ptr<bam1_t, BAMrecordDeleter> modifyCIGAR(const ReadPortion &modRange, const std::unique_ptr<bam1_t, BAMrecordDeleter> &bamRecord);
+	/** \brief Add a re-mapped secondary alignment
+	 *
+	 * Add a read portion remap as a secondary alignment to a vector of BAM records.
+	 * Only reads that pass the identity threshold are added.
+	 *
+	 * \param[in] newRecordHeader header corresponding to the re-mapped record
+	 * \param[in] newRecord remapped BAM record
+	 * \param[in] remapInfo original name and read segment range
+	 * \param[in] originalHeader header corresponding to the original record
+	 * \param[in] remapIdentityCutoff fraction of sites in the remapped read that are identical to the reference
+	 * \param[in,out] readMapVector vector of alignments of a read, first element is the primary alignment
+	 */
+	void addRemappedSecondaryAlignment(
+			const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &newRecordHeader, const std::unique_ptr<bam1_t, BAMrecordDeleter> &newRecord, const ReadPortion &remapInfo,
+			const std::unique_ptr<sam_hdr_t, BAMheaderDeleter> &originalHeader, const float &remapIdentityCutoff, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > &readMapVector);
+
+	/** \brief Open a BGZF file handle for appending
+	 *
+	 * Opens a handle to the BAM file for appending, deleting the original if it exists.
+	 *
+	 * \param[in] bamFileName BAM file name
+	 */
+	std::unique_ptr<BGZF, BGZFhandleDeleter> openBGZFtoAppend(const std::string &bamFileName);
 
 	/** \brief Make per-thread alignment record/annotation vector ranges
 	 *
@@ -174,7 +220,7 @@ namespace isaSpace {
 	 *
 	 * \return vector of iterator pairs for each thread
 	 */
-	[[gnu::warn_unused_result]] std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
+	[[nodiscard]] std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
 		makeThreadRanges(const bamGFFvector &targetVector, const size_t &threadCount);
 
 	/** \brief Command line parser
@@ -185,7 +231,7 @@ namespace isaSpace {
 	 * \param[in] argv command line input array
 	 * \return map of tags to values
 	 */
-	[[gnu::warn_unused_result]] std::unordered_map<std::string, std::string> parseCL(int &argc, char **argv);
+	[[nodiscard]] std::unordered_map<std::string, std::string> parseCL(int &argc, char **argv);
 
 	/** \brief Extract parameters from parsed command line interface flags
 	 *
@@ -193,8 +239,11 @@ namespace isaSpace {
 	 *
 	 * \param[in] parsedCLI flag values parsed from the command line
 	 * \param[out] intVariables indexed `int` variables for use by `main()`
+	 * \param[out] floatVariables indexed `float` variables for use by `main()`
 	 * \param[out] stringVariables indexed `std::string` variables for use by `main()`
 	 */
 	void extractCLinfo(const std::unordered_map<std::string, std::string> &parsedCLI,
-			std::unordered_map<std::string, int> &intVariables, std::unordered_map<std::string, std::string> &stringVariables);
+			std::unordered_map<std::string, int> &intVariables,
+			std::unordered_map<std::string, float> &floatVariables,
+			std::unordered_map<std::string, std::string> &stringVariables);
 }

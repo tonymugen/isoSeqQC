@@ -29,14 +29,17 @@
 
 #pragma once
 
+#include <memory>
 #include <utility>
 #include <vector>
 #include <array>
 #include <set>
 #include <unordered_map>
 #include <string>
+#include <filesystem>
 
 #include "sam.h"
+#include "bgzf.h"
 
 namespace isaSpace {
 	struct BamAndGffFiles;
@@ -46,11 +49,17 @@ namespace isaSpace {
 	struct MappedReadMatchStatus;
 	struct BinomialWindowParameters;
 	struct ReadExonCoverage;
+	struct ReadPortion;
 	struct BAMsecondary;
+	struct BAMheaderDeleter;
+	struct BAMrecordDeleter;
+	struct BGZFhandleDeleter;
+	class  BAMsafeReader;
 	class  ExonGroup;
 	class  ReadMatchWindowBIC;
 	class  BAMrecord;
 	class  BAMtoGenome;
+	class  BAMfile;
 
 	/** \brief BAM and GFF file name pair */
 	struct BamAndGffFiles {
@@ -211,21 +220,124 @@ namespace isaSpace {
 		 */
 		std::vector<float> bestExonCoverageScores;
 	};
+	/** \brief Read portion for re-mapping */
+	struct ReadPortion {
+		/** \brief Base-0 read start */
+		size_t start{0};
+		/** \brief Base-0 one past the read end */
+		size_t end{0};
+		/** \brief Original read name */
+		std::string originalName;
+	};
 	/** \brief BAM secondary alignment
 	 *
-	 * Only secondary alignments on the same reference and strand are used.
+	 * Only secondary alignments on the same reference.
 	 */
 	struct BAMsecondary {
-		/** Base-1 map start position on the reference */
+		/** \brief Base-1 map start position on the reference */
 		hts_pos_t mapStart{-1};
-		/** Base-1 map end position on the reference */
+		/** \brief Base-1 map end position on the reference */
 		hts_pos_t mapEnd{-1};
 		/** \brief Is it the same strand as the primary? */
 		bool sameStrandAsPrimary{false};
 		/** \brief CIGAR string */
 		std::vector<uint32_t> cigar;
 	};
+	/** \brief BAM header pointer deleter */
+	struct BAMheaderDeleter {
+		/** \brief Functor operator
+		 *
+		 * \param[in] header pointer to the header
+		 */
+		void operator()(sam_hdr_t *header) const { sam_hdr_destroy(header); }
+	};
+	/** \brief BAM record pointer deleter */
+	struct BAMrecordDeleter {
+		/** \brief Functor operator
+		 *
+		 * \param[in] bamRecord pointer to a BAM record
+		 */
+		void operator()(bam1_t *bamRecord) const { bam_destroy1(bamRecord); }
+	};
+	/** \brief BGZF handle pointer deleter */
+	struct BGZFhandleDeleter {
+		/** \brief Functor operator
+		 *
+		 * \param[in] bgzfHandle pointer to a BGZF handle
+		 */
+		void operator()(BGZF *bgzfHandle) const { bgzf_close(bgzfHandle); }
+	};
 
+	/** \brief BAM file safe reader
+	 *
+	 * Temporarily sets read-only on the BAM file while reading from it.
+	 * This is because I observed that calls to some (unclear which) HTSL BAM file read function 
+	 * very rarely deletes the file instead of reading it.
+	 * Restores permissions after closing.
+	 */
+	class BAMsafeReader {
+	public:
+		/** \brief Default constructor */
+		BAMsafeReader() = default;
+		/** \brief Constructor with file name
+		 *
+		 * \param[in] bamFileName BAM file name
+		 */
+		BAMsafeReader(const std::string &bamFileName);
+		/** \brief Copy constructor
+		 *
+		 * \param[in] toCopy object to copy
+		 */
+		BAMsafeReader(const BAMsafeReader &toCopy) = delete;
+		/** \brief Copy assignment operator
+		 *
+		 * \param[in] toCopy object to copy
+		 * \return `BAMsafeReader` object
+		 */
+		BAMsafeReader& operator=(const BAMsafeReader &toCopy) = delete;
+		/** \brief Move constructor
+		 *
+		 * \param[in] toMove object to move
+		 */
+		BAMsafeReader(BAMsafeReader &&toMove) noexcept {
+			*this = std::move(toMove);
+		};
+		/** \brief Move assignment operator
+		 *
+		 * \param[in] toMove object to move
+		 * \return `BAMsafeReader` object
+		 */
+		BAMsafeReader& operator=(BAMsafeReader &&toMove) noexcept;
+		/** \brief Destructor */
+		~BAMsafeReader();
+
+		/** \brief Get BAM header 
+		 *
+		 * Returns a pointer to a copy of the stored BAM header.
+		 *
+		 * \return pointer to a copy of the header
+		 */
+		[[nodiscard]] std::unique_ptr<sam_hdr_t, BAMheaderDeleter> getHeaderCopy() const;
+		/** \brief Get the next BAM record 
+		 *
+		 * Returns a pointer to the next BAM record in the file and number of bytes read.
+		 * The byte count can also be used to test for read success.
+		 *
+		 * \return BAM header pointer and byte count
+		 */
+		[[nodiscard]] std::pair<std::unique_ptr<bam1_t, BAMrecordDeleter>, int32_t> getNextRecord();
+	private:
+		/** \brief Retry count for file opening attempts */
+		static const uint16_t nRetries_;
+		/** \brief BAM file handle */
+		BGZF *fileHandle_{nullptr};
+		/** \brief BAM header */
+		std::unique_ptr<sam_hdr_t, BAMheaderDeleter> headerUPointer_{nullptr};
+		/** \brief BAM file name */
+		std::string fileName_;
+		/** \brief Original BAM file permissions */
+		std::filesystem::perms initialPermissions_{std::filesystem::perms::none};
+	};
 	/** \brief Group of exons from the same gene
 	 *
 	 * Gathers exons belonging to all transcripts of a gene.
@@ -283,28 +395,28 @@ namespace isaSpace {
 		 *
 		 * \return true is the object has no exons
 		 */
-		[[gnu::warn_unused_result]] bool empty() const noexcept { return exonRanges_.empty(); };
+		[[nodiscard]] bool empty() const noexcept { return exonRanges_.empty(); };
 		/** \brief Report the gene name 
 		 *
 		 * \return gene name
 		 */
-		[[gnu::warn_unused_result]] std::string geneName() const { return geneName_; };
+		[[nodiscard]] std::string geneName() const { return geneName_; };
 		/** \brief Number of exons in the gene 
 		 *
 		 * \return number of exons
 		 */
-		[[gnu::warn_unused_result]] size_t nExons() const noexcept { return exonRanges_.size(); };
+		[[nodiscard]] size_t nExons() const noexcept { return exonRanges_.size(); };
 		/** \brief Strand ID
 		 *
 		 * \return strand ID (`+` or `-`)
 		 */
-		[[gnu::warn_unused_result]] char strand() const noexcept { return isNegativeStrand_ ? '-' : '+'; };
+		[[nodiscard]] char strand() const noexcept { return isNegativeStrand_ ? '-' : '+'; };
 		/** \brief Range covered by a given exon
 		 *
 		 * \param[in] idx exon index
 		 * \return the exon start and end nucleotide position pair
 		 */
-		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> at(const size_t &idx) const {return exonRanges_.at(idx);};
+		[[nodiscard]] std::pair<hts_pos_t, hts_pos_t> at(const size_t &idx) const {return exonRanges_.at(idx);};
 		/** \brief Gene span 
 		 *
 		 * Returns the position span of the gene.
@@ -313,7 +425,7 @@ namespace isaSpace {
 		 *
 		 * \return first and last nucleotide position (1-based) of the gene
 		 */
-		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> geneSpan() const noexcept;
+		[[nodiscard]] std::pair<hts_pos_t, hts_pos_t> geneSpan() const noexcept;
 		/** \brief First exon span 
 		 *
 		 * Returns the position of the first exon, depends on the strand.
@@ -322,12 +434,12 @@ namespace isaSpace {
 		 *
 		 * \return first exon nucleotide position pair (1-based)
 		 */
-		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> firstExonSpan() const noexcept;
+		[[nodiscard]] std::pair<hts_pos_t, hts_pos_t> firstExonSpan() const noexcept;
 		/** \brief First exon length
 		 *
 		 * \return first exon length
 		 */
-		[[gnu::warn_unused_result]] hts_pos_t firstExonLength() const noexcept;
+		[[nodiscard]] hts_pos_t firstExonLength() const noexcept;
 		/** \brief Index of the first exon after a given position
 		 * 
 		 * 0-based index of the first exon found entirely after the given position.
@@ -336,7 +448,7 @@ namespace isaSpace {
 		 * \param[in] position genome position to test
 		 * \return index of the first exon after the given position
 		 */
-		[[gnu::warn_unused_result]] uint32_t firstExonAfter(const hts_pos_t &position) const noexcept;
+		[[nodiscard]] uint32_t firstExonAfter(const hts_pos_t &position) const noexcept;
 		/** \brief Index of the first exon overlapping a given position
 		 * 
 		 * 0-based index of the first exon found at least partially after the given position.
@@ -345,7 +457,7 @@ namespace isaSpace {
 		 * \param[in] position genome position to test
 		 * \return index of the first exon overlapping the given position
 		 */
-		[[gnu::warn_unused_result]] uint32_t firstOverlappingExon(const hts_pos_t &position) const noexcept;
+		[[nodiscard]] uint32_t firstOverlappingExon(const hts_pos_t &position) const noexcept;
 		/** \brief Index of the last exon before a given position
 		 * 
 		 * 0-based index of the last exon found entirely before the given position.
@@ -354,7 +466,7 @@ namespace isaSpace {
 		 * \param[in] position genome position to test
 		 * \return index of the last exon before the given position
 		 */
-		[[gnu::warn_unused_result]] uint32_t lastExonBefore(const hts_pos_t &position) const noexcept;
+		[[nodiscard]] uint32_t lastExonBefore(const hts_pos_t &position) const noexcept;
 		/** \brief Index of the last exon overlapping a given position
 		 * 
 		 * 0-based index of the last exon found at least before after the given position.
@@ -363,7 +475,7 @@ namespace isaSpace {
 		 * \param[in] position genome position to test
 		 * \return index of the last exon overlapping the given position
 		 */
-		[[gnu::warn_unused_result]] uint32_t lastOverlappingExon(const hts_pos_t &position) const noexcept;
+		[[nodiscard]] uint32_t lastOverlappingExon(const hts_pos_t &position) const noexcept;
 		/** \brief First intron span
 		 *
 		 * Smaller value first regardless of strand, but the intron is always the first in the gene,
@@ -372,7 +484,7 @@ namespace isaSpace {
 		 *
 		 * \return first intron start and end positions
 		 */
-		[[gnu::warn_unused_result]] std::pair<hts_pos_t, hts_pos_t> getFirstIntronSpan() const;
+		[[nodiscard]] std::pair<hts_pos_t, hts_pos_t> getFirstIntronSpan() const;
 		/** \brief Get read coverage quality per exon 
 		 *
 		 * Use CIGAR information to extract alignment quality for each exon.
@@ -382,7 +494,7 @@ namespace isaSpace {
 		 * \return vector of alignment qualities, one per exon
 		 *
 		 */
-		[[gnu::warn_unused_result]] std::vector<float> getExonCoverageQuality(const BAMrecord &alignment) const;
+		[[nodiscard]] std::vector<float> getExonCoverageQuality(const BAMrecord &alignment) const;
 		/** \brief Get best read coverage quality per exon 
 		 *
 		 * Use CIGAR information, adding local secondary alignments, to extract alignment quality for each exon.
@@ -392,7 +504,7 @@ namespace isaSpace {
 		 * \return vector best alignment qualities, one per exon
 		 *
 		 */
-		[[gnu::warn_unused_result]] std::vector<float> getBestExonCoverageQuality(const BAMrecord &alignment) const;
+		[[nodiscard]] std::vector<float> getBestExonCoverageQuality(const BAMrecord &alignment) const;
 	private:
 		/** \brief Index of the strand ID field */
 		static const size_t strandIDidx_;
@@ -430,7 +542,11 @@ namespace isaSpace {
 		 * \param[in] windowBegin start of a read match status vector
 		 * \param[in] windowParameters binomial probability parameters of the window
 		 */
-		ReadMatchWindowBIC(const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin, const BinomialWindowParameters &windowParameters);
+		ReadMatchWindowBIC(const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin, const BinomialWindowParameters &windowParameters) :
+			leftProbability_{windowParameters.currentProbability},
+			rightProbability_{windowParameters.alternativeProbability},
+			kSuccesses_{calculateKsuccesses_(windowBegin, windowParameters)},
+			nTrials_{static_cast<float>(windowParameters.windowSize)} {};
 		/** \brief Copy constructor
 		 *
 		 * \param[in] toCopy object to copy
@@ -463,7 +579,7 @@ namespace isaSpace {
 		 *
 		 * \return evidence for a switch in mapping quality
 		 */
-	 	[[gnu::warn_unused_result]] float getBICdifference() const noexcept;
+	 	[[nodiscard]] float getBICdifference() const noexcept;
 	private:
 		/** \brief Success probability for the previous window */
 		float leftProbability_{0.0F};
@@ -477,6 +593,13 @@ namespace isaSpace {
 		float kSuccesses_{0.0F};
 		/** \brief Window size */
 		float nTrials_{0.0F};
+
+		/** \brief Initializer for `kSuccesses_`
+		 *
+		 * \param[in] windowBegin start of a read match status vector
+		 * \param[in] windowParameters binomial probability parameters of the window
+		 */
+		[[nodiscard]] static float calculateKsuccesses_(const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin, const BinomialWindowParameters &windowParameters);
 	};
 
 	/** \brief Summary of a BAM record set
@@ -534,103 +657,103 @@ namespace isaSpace {
 		 *
 		 * \return read name
 		 */
-		[[gnu::warn_unused_result]] std::string getReadName() const {return readName_; };
+		[[nodiscard]] std::string getReadName() const {return readName_; };
 		/** \brief Map start position
 		 *
 		 * Position of the first mapped nucleotide.
 		 *
 		 * \return 1-based read map start position
 		 */
-		[[gnu::warn_unused_result]] hts_pos_t getMapStart() const noexcept { return mapStart_; };
+		[[nodiscard]] hts_pos_t getMapStart() const noexcept { return mapStart_; };
 		/** \brief Map end position
 		 *
 		 * Position of the first past the mapped region of the reference.
 		 *
 		 * \return 1-based read map end position
 		 */
-		[[gnu::warn_unused_result]] hts_pos_t getMapEnd() const noexcept { return mapEnd_; };
+		[[nodiscard]] hts_pos_t getMapEnd() const noexcept { return mapEnd_; };
 		/** \brief mRNA start position
 		 *
 		 * Position of the first mRNA read nucleotide, taking into account possible reverse-complement.
 		 *
 		 * \return 1-based read mRNA start position
 		 */
-		[[gnu::warn_unused_result]] hts_pos_t getmRNAstart() const noexcept {
+		[[nodiscard]] hts_pos_t getmRNAstart() const noexcept {
 			return isRev_ ? mapEnd_ : mapStart_;
 		};
 		/** \brief Is the read reverse-complemented?
 		 *
 		 * \return `true` if the read is reverse-complemented
 		 */
-		[[gnu::warn_unused_result]] bool isRevComp() const noexcept { return isRev_; };
+		[[nodiscard]] bool isRevComp() const noexcept { return isRev_; };
 		/** \brief Is the read mapped? 
 		 *
 		 * \return `true` if the read is mapped
 		 */
-		[[gnu::warn_unused_result]] bool isMapped() const noexcept { return isMapped_; };
+		[[nodiscard]] bool isMapped() const noexcept { return isMapped_; };
 		/** \brief Are there any secondary alignments?
 		 *
 		 * \return `true` if there are any secondary alignments
 		 */
-		[[gnu::warn_unused_result]] bool hasSecondaryAlignments() const noexcept { return secondaryAlignmentCount_ > 0; };
+		[[nodiscard]] bool hasSecondaryAlignments() const noexcept { return secondaryAlignmentCount_ > 0; };
 		/** \brief Are there any local secondary alignments?
 		 *
 		 * \return `true` if there are any secondary alignments overlapping the primary
 		 */
-		[[gnu::warn_unused_result]] bool hasLocalSecondaryAlignments() const noexcept { return !localSecondaryAlignments_.empty(); };
+		[[nodiscard]] bool hasLocalSecondaryAlignments() const noexcept { return !localSecondaryAlignments_.empty(); };
 		/** \brief Count of all secondary alignments regardless of position
 		 * 
 		 * \return Secondary alignment count
 		 */
-		[[gnu::warn_unused_result]] uint16_t secondaryAlignmentCount() const noexcept { return secondaryAlignmentCount_; };
+		[[nodiscard]] uint16_t secondaryAlignmentCount() const noexcept { return secondaryAlignmentCount_; };
 		/** \brief Count of secondary alignments overlapping the primary
 		 *
 		 * \return Local secondary alignment count
 		 */
-		[[gnu::warn_unused_result]] uint16_t localSecondaryAlignmentCount() const noexcept { return static_cast<uint16_t>( localSecondaryAlignments_.size() ); };
+		[[nodiscard]] uint16_t localSecondaryAlignmentCount() const noexcept { return static_cast<uint16_t>( localSecondaryAlignments_.size() ); };
 		/** \brief Count of reversed secondary alignments overlapping the primary
 		 * 
 		 * \return Local reversed secondary alignment count
 		 */
-		[[gnu::warn_unused_result]] uint16_t localReversedSecondaryAlignmentCount() const noexcept;
+		[[nodiscard]] uint16_t localReversedSecondaryAlignmentCount() const noexcept;
 		/** \brief Read length 
 		 *
 		 * \return read length in bases
 		 */
-		[[gnu::warn_unused_result]] hts_pos_t getReadLength() const noexcept { return static_cast<hts_pos_t>( sequenceAndQuality_.size() ); };
+		[[nodiscard]] hts_pos_t getReadLength() const noexcept { return static_cast<hts_pos_t>( sequenceAndQuality_.size() ); };
 		/** \brief CIGAR vector 
 		 *
 		 * Orientation independent of strand
 		 *
 		 * \return CIGAR vector
 		 */
-		[[gnu::warn_unused_result]] std::vector<uint32_t> getCIGARvector() const { return cigar_; };
+		[[nodiscard]] std::vector<uint32_t> getCIGARvector() const { return cigar_; };
 		/** \brief CIGAR string 
 		 *
 		 * Reversed if the read is reverse-complemented.
 		 *
 		 * \return CIGAR string
 		 */
-		[[gnu::warn_unused_result]] std::string getCIGARstring() const;
+		[[nodiscard]] std::string getCIGARstring() const;
 		/** \brief Get the first cigar element with strand reversal
 		 *
 		 * \return first CIGAR vector element or 0 if none
 		 */
-		[[gnu::warn_unused_result]] uint32_t getFirstCIGAR() const noexcept;
+		[[nodiscard]] uint32_t getFirstCIGAR() const noexcept;
 		/** \brief Get reference name 
 		 *
 		 * Reference sequence (e.g., chromosome) name. If absent, returns `*` like samtools.
 		 *
 		 * \return reference name
 		 */ 
-		[[gnu::warn_unused_result]] std::string getReferenceName() const {return referenceName_; };
+		[[nodiscard]] std::string getReferenceName() const {return referenceName_; };
 		/** \brief Best reference-centric match status
 		 *
 		 * For each position, best match among all primary and secondary alignments.
 		 *
 		 * \return match status with map start
 		 */
-		[[gnu::warn_unused_result]] MappedReadMatchStatus getBestReferenceMatchStatus() const;
+		[[nodiscard]] MappedReadMatchStatus getBestReferenceMatchStatus() const;
 		/** \brief Reference match status along the read 
 		 *
 		 * Parses CIGAR to track reference match/mismatch (1.0 for match, 0.0 for mismatch) status along the read,
@@ -639,7 +762,7 @@ namespace isaSpace {
 		 *
 		 * \return vector of match status/reference position pairs
 		 */
-		[[gnu::warn_unused_result]] std::vector< std::pair<float, hts_pos_t> > getReadCentricMatchStatus() const;
+		[[nodiscard]] std::vector< std::pair<float, hts_pos_t> > getReadCentricMatchStatus() const;
 		/** \brief Identify unmapped portions of the read 
 		 *
 		 * Returns a vector of poorly mapped portions of the read. Vector is empty if the read is mapped.
@@ -648,7 +771,7 @@ namespace isaSpace {
 		 *
 		 * \return vector of poorly mapped region coordinates
 		 */
-		[[gnu::warn_unused_result]] std::vector<MappedReadInterval> getPoorlyMappedRegions(const BinomialWindowParameters &windowParameters) const;
+		[[nodiscard]] std::vector<MappedReadInterval> getPoorlyMappedRegions(const BinomialWindowParameters &windowParameters) const;
 		/** \brief Get a segment of the sequence and the ASCII quality score
 		 *
 		 * Returns sequence and printable ASCII quality scores separated by a newline, with a newline at the end.
@@ -657,7 +780,7 @@ namespace isaSpace {
 		 * \param[in] segmentBoundaries read interval to retrieve
 		 * \return sequence and quality
 		 */
-		[[gnu::warn_unused_result]] std::string getSequenceAndQuality(const MappedReadInterval &segmentBoundaries) const;
+		[[nodiscard]] std::string getSequenceAndQuality(const MappedReadInterval &segmentBoundaries) const;
 	private:
 		/** \brief Mask isolating the sequence byte */
 		static const uint16_t sequenceMask_;
@@ -768,12 +891,12 @@ namespace isaSpace {
 		 *
 		 * \return number of chromosomes
 		 */
-		[[gnu::warn_unused_result]] size_t nChromosomes() const noexcept;
+		[[nodiscard]] size_t nChromosomes() const noexcept;
 		/** \brief Number of exon sets (genes with exons)
 		 *
 		 * \return number of exon sets
 		 */
-		[[gnu::warn_unused_result]] size_t nExonSets() const noexcept;
+		[[nodiscard]] size_t nExonSets() const noexcept;
 		/** \brief Save read coverage to file
 		 *
 		 * Saves the read coverage statistics to a file.
@@ -826,7 +949,7 @@ namespace isaSpace {
 		 * \param[in,out] alignmentRecord aligned read to find an overlapping gene for; consumed during execution
 		 * \return iterator to the new search start position
 		 */
-		[[gnu::warn_unused_result]] std::vector<ExonGroup>::const_iterator findOverlappingGene_(const std::vector<ExonGroup> &chromosomeExonGroups,
+		[[nodiscard]] std::vector<ExonGroup>::const_iterator findOverlappingGene_(const std::vector<ExonGroup> &chromosomeExonGroups,
 				const std::vector<ExonGroup>::const_iterator &exonGroupSearchStart, BAMrecord &alignedRead);
 		/** \brief Process a primary alignment 
 		 *
@@ -842,5 +965,88 @@ namespace isaSpace {
 		 * \param[in] latestExonGroupIts iterators to the latest exon groups for each reference and strand
 		 */
 		void processSecondaryAlignment_(const std::string &referenceName, const BAMrecord &alignmentRecord, const std::unordered_map<std::string, std::vector<ExonGroup>::const_iterator> &latestExonGroupIts);
+	};
+
+	/** \brief Records from a BAM file
+	 *
+	 * Primary records from a BAM file, including the header.
+	 * Used to add realignments as secondary records.
+	 */
+	class BAMfile {
+	public:
+		/** \brief Default constructor */
+		BAMfile() = default;
+		/** \brief Constructor with BAM file name 
+		 *
+		 * \param[in] BAMfileName name of the input BAM file
+		 */
+		BAMfile(const std::string &BAMfileName);
+		/** \brief Copy constructor
+		 *
+		 * \param[in] toCopy object to copy
+		 */
+		BAMfile(const BAMfile &toCopy) = delete;
+		/** \brief Copy assignment operator
+		 *
+		 * \param[in] toCopy object to copy
+		 * \return `BAMfile` object
+		 */
+		BAMfile& operator=(const BAMfile &toCopy) = delete;
+		/** \brief Move constructor
+		 *
+		 * \param[in] toMove object to move
+		 */
+		BAMfile(BAMfile &&toMove) noexcept = default;
+		/** \brief Move assignment operator
+		 *
+		 * \param[in] toMove object to move
+		 * \return `BAMfile` object
+		 */
+		BAMfile& operator=(BAMfile &&toMove) noexcept = default;
+		/** \brief Destructor */
+		~BAMfile() = default;
+
+		/** \brief Get the number of primary alignments
+		 *
+		 * \return number of primary alignments
+		 */
+		[[nodiscard]] size_t getPrimaryAlignmentCount() const noexcept;
+		/** \brief Add re-mapped read regions
+		 *
+		 * Add re-mapped read regions as secondary alignments,
+		 * fixing CIGAR strings for the primaries.
+		 *
+		 * \param[in] remapBAMfileName name of the BAM file with re-mapped read portions
+		 * \param[in] remapIdentityCutoff fraction of sites in the remapped read that are identical to the reference
+		 */
+		void addRemaps(const std::string &remapBAMfileName, const float &remapIdentityCutoff);
+		/** \brief Save the reads with re-alignments to a BAM file
+		 *
+		 * \param[in] outputBAMfileName output BAM file name
+		 * \return names of reads that failed to be written
+		 */
+		[[nodiscard]] std::vector<std::string> saveRemappedBAM(const std::string &outputBAMfileName) const;
+		/** \brief Sort and save the reads with re-alignments to a BAM file
+		 *
+		 * References saved in the order of the original BAM file.
+		 * Reads sorted by start position (which is the gene end if mapped to the negative strand).
+		 *
+		 * \param[in] outputBAMfileName output BAM file name
+		 * \return names of reads that failed to be written
+		 */
+		[[nodiscard]] std::vector<std::string> saveSortedRemappedBAM(const std::string &outputBAMfileName) const;
+	private:
+		/** \brief Flag testing the two possible secondary alignment markers */
+		static const uint16_t secondaryOrUnmappedAlgn_;
+		/** \brief BAM records indexed by name, separated by reference/chromosome */
+		std::unordered_map<
+			std::string,
+			std::unordered_map<
+				std::string,
+				std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> >
+			>
+		> bamRecords_;
+		/** \brief BAM file header */
+		std::unique_ptr<sam_hdr_t, BAMheaderDeleter> bamFileHeader_;
 	};
 }

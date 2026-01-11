@@ -27,8 +27,10 @@
  *
  */
 
+#include <cstdio>
 #include <cstring>
 #include <cmath>
+#include<cerrno>
 #include <algorithm>
 #include <memory>
 #include <iterator>
@@ -42,6 +44,7 @@
 #include <fstream>
 #include <future>
 #include <thread>
+#include <filesystem>
 
 #include "hts.h"
 #include "sam.h"
@@ -51,6 +54,119 @@
 #include "helperFunctions.hpp"
 
 using namespace isaSpace;
+
+// BAMsafeReader methods
+constexpr uint16_t BAMsafeReader::nRetries_{10};
+BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFileName} {
+	auto bamFileStatus{std::filesystem::status(bamFileName)};
+	if ( !std::filesystem::exists(bamFileStatus) ) {
+		throw std::string("ERROR: BAM file ")
+			+ bamFileName + std::string(" does not exist in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+	initialPermissions_ = bamFileStatus.permissions();
+	std::filesystem::permissions(
+		bamFileName,
+		std::filesystem::perms::owner_write | std::filesystem::perms::group_write | std::filesystem::perms::others_write,
+		std::filesystem::perm_options::remove
+	);
+
+	constexpr char openMode{'r'};
+	// HTSLIB occasionally fails to open a file for no apparent reason, retrying a few times seems to help
+	uint16_t iRetry{0};
+	while ( (fileHandle_ == nullptr) && (iRetry < nRetries_) ) {
+		fileHandle_ = bgzf_open(bamFileName.c_str(), &openMode);
+		++iRetry;
+	}
+	if (fileHandle_ == nullptr) {
+		if ( std::filesystem::exists(fileName_) ) {
+			std::filesystem::permissions(fileName_, initialPermissions_);
+		}
+		throw std::string("ERROR: failed to open the BAM file ")
+			+ bamFileName + std::string(" for reading in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) )
+			+ std::string( strerror(errno) ); // NOLINT
+	}
+	const int32_t eofTest = bgzf_check_EOF(fileHandle_);
+	if (eofTest != 1) {
+		if ( std::filesystem::exists(fileName_) ) {
+			std::filesystem::permissions(fileName_, initialPermissions_);
+		}
+		throw std::string("ERROR: no EOF marker in the BAM file ")
+			+ bamFileName + std::string(" in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+
+	// must read the header first to get to the alignments
+	BAMheaderDeleter headDeleter;
+	iRetry = 0;
+	while ( (headerUPointer_ == nullptr) && (iRetry < nRetries_) ) {
+		headerUPointer_ = std::unique_ptr<sam_hdr_t, BAMheaderDeleter>(
+			bam_hdr_read(fileHandle_),
+			headDeleter
+		);
+		++iRetry;
+	}
+	if (headerUPointer_ == nullptr) {
+		if ( std::filesystem::exists(fileName_) ) {
+			std::filesystem::permissions(fileName_, initialPermissions_);
+		}
+		throw std::string("ERROR: failed to read the header from the BAM file ")
+			+ bamFileName + std::string(" in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) )
+			+ std::string( strerror(errno) ); // NOLINT
+	}
+	if (sam_hdr_nref( headerUPointer_.get() ) < 0) {
+		if ( std::filesystem::exists(fileName_) ) {
+			std::filesystem::permissions(fileName_, initialPermissions_);
+		}
+		throw std::string("ERROR: invalid number of references/chromosomes in the ") 
+			+ bamFileName + std::string(" BAM file in ")
+            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+}
+
+BAMsafeReader& BAMsafeReader::operator=(BAMsafeReader &&toMove) noexcept {
+    if (this != &toMove) {
+        fileHandle_         = toMove.fileHandle_;
+        fileName_           = std::move(toMove.fileName_);
+		headerUPointer_     = std::move(toMove.headerUPointer_);
+        initialPermissions_ = toMove.initialPermissions_;
+
+        toMove.fileHandle_         = nullptr;
+        toMove.initialPermissions_ = std::filesystem::perms::none;
+    }
+    return *this;
+}
+
+BAMsafeReader::~BAMsafeReader() {
+	if ( std::filesystem::exists(fileName_) ) {
+		std::filesystem::permissions(fileName_, initialPermissions_);
+	}
+    if (fileHandle_ != nullptr) {
+        bgzf_close(fileHandle_);
+    }
+}
+
+std::unique_ptr<sam_hdr_t, BAMheaderDeleter> BAMsafeReader::getHeaderCopy() const {
+	BAMheaderDeleter headCopyDeleter;
+	std::unique_ptr<sam_hdr_t, BAMheaderDeleter> headerCopy{
+		sam_hdr_dup( headerUPointer_.get() ),
+		headCopyDeleter
+	};
+	return headerCopy;
+}
+
+std::pair<std::unique_ptr<bam1_t, BAMrecordDeleter>, int32_t> BAMsafeReader::getNextRecord() {
+	std::pair<std::unique_ptr<bam1_t, BAMrecordDeleter>, int32_t> result;
+	BAMrecordDeleter recordDeleter;
+	result.first = std::unique_ptr<bam1_t, BAMrecordDeleter>(
+		bam_init1(),
+		recordDeleter
+	);
+	result.second = bam_read1( fileHandle_, result.first.get() );
+	return result;
+}
 
 //ExonGroup constants
 constexpr size_t ExonGroup::strandIDidx_{6UL};
@@ -213,6 +329,10 @@ std::pair<hts_pos_t, hts_pos_t> ExonGroup::getFirstIntronSpan() const {
 }
 
 std::vector<float> ExonGroup::getExonCoverageQuality(const BAMrecord &alignment) const {
+	if ( !alignment.isMapped() ) {
+		std::vector<float> emptyResult;
+		return emptyResult;
+	}
 	// find the first overlapping exon
 	const auto exonRangeIt = std::lower_bound(
 		exonRanges_.cbegin(),
@@ -238,16 +358,16 @@ std::vector<float> ExonGroup::getExonCoverageQuality(const BAMrecord &alignment)
 			const auto rmsStartPosition{
 				std::min(
 					static_cast<std::vector<float>::difference_type>( realExonStart - alignment.getMapStart() ),
-					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.size() - 1)
+					static_cast<std::vector<float>::difference_type>( referenceMatchStatus.size() )
 				)
 			};
+			const auto rmsBeginIt = referenceMatchStatus.cbegin() + rmsStartPosition;
 			const auto rmsSpan{
 				std::min(
 					static_cast<std::vector<float>::difference_type>(realExonLength),
-					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.size() - rmsStartPosition)
+					std::distance( rmsBeginIt, referenceMatchStatus.cend() )
 				)
 			};
-			const auto rmsBeginIt  = referenceMatchStatus.cbegin() + rmsStartPosition;
 			const float matchCount = std::accumulate(rmsBeginIt, rmsBeginIt + rmsSpan, 0.0F);
 			qualityScores.push_back( matchCount / static_cast<float>(currExonSpan.second - currExonSpan.first + 1) );
 		}
@@ -288,16 +408,16 @@ std::vector<float> ExonGroup::getBestExonCoverageQuality(const BAMrecord &alignm
 			const auto rmsStartPosition{
 				std::min(
 					static_cast<std::vector<float>::difference_type>(realExonStart - referenceMatchStatus.mapStart),
-					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.matchStatus.size() - 1)
-				)
-			};
-			const auto rmsSpan{
-				std::min(
-					static_cast<std::vector<float>::difference_type>(realExonLength),
-					static_cast<std::vector<float>::difference_type>(referenceMatchStatus.matchStatus.size() - rmsStartPosition)
+					static_cast<std::vector<float>::difference_type>( referenceMatchStatus.matchStatus.size() )
 				)
 			};
 			const auto rmsBeginIt  = referenceMatchStatus.matchStatus.cbegin() + rmsStartPosition;
+			const auto rmsSpan{
+				std::min(
+					static_cast<std::vector<float>::difference_type>(realExonLength),
+					std::distance( rmsBeginIt, referenceMatchStatus.matchStatus.cend() )
+				)
+			};
 			const float matchCount = std::accumulate(rmsBeginIt, rmsBeginIt + rmsSpan, 0.0F);
 			qualityScores.push_back( matchCount / static_cast<float>(currExonSpan.second - currExonSpan.first + 1) );
 		}
@@ -310,9 +430,15 @@ std::vector<float> ExonGroup::getBestExonCoverageQuality(const BAMrecord &alignm
 }
 
 // ReadMatchWindowBIC methods
-ReadMatchWindowBIC::ReadMatchWindowBIC(const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin, const BinomialWindowParameters &windowParameters) :
-						leftProbability_{windowParameters.currentProbability}, rightProbability_{windowParameters.alternativeProbability}, nTrials_{static_cast<float>(windowParameters.windowSize)} {
-	kSuccesses_ = std::accumulate(
+float ReadMatchWindowBIC::getBICdifference() const noexcept {
+	const float jFailures = nTrials_ - kSuccesses_;
+	const float leftLlik  = ( kSuccesses_ * logf(leftProbability_) ) + ( jFailures * logf(1.0F - leftProbability_) );
+	const float rightLlik = ( kSuccesses_ * logf(rightProbability_) ) + ( jFailures * logf(1.0F - rightProbability_) );
+    return logf(nTrials_) + ( 2.0F * (leftLlik - rightLlik) );
+};
+
+float ReadMatchWindowBIC::calculateKsuccesses_(const std::vector< std::pair<float, hts_pos_t> >::const_iterator &windowBegin, const BinomialWindowParameters &windowParameters) {
+	 return std::accumulate(
 		windowBegin,
 		windowBegin + windowParameters.windowSize,
 		0.0F,
@@ -321,13 +447,6 @@ ReadMatchWindowBIC::ReadMatchWindowBIC(const std::vector< std::pair<float, hts_p
 		}
 	);
 }
-
-float ReadMatchWindowBIC::getBICdifference() const noexcept {
-	const float jFailures = nTrials_ - kSuccesses_;
-	const float leftLlik  = ( kSuccesses_ * logf(leftProbability_) ) + ( jFailures * logf(1.0F - leftProbability_) );
-	const float rightLlik = ( kSuccesses_ * logf(rightProbability_) ) + ( jFailures * logf(1.0F - rightProbability_) );
-    return logf(nTrials_) + ( 2.0F * (leftLlik - rightLlik) );
-};
 
 // BAMrecord methods
 constexpr uint16_t BAMrecord::sequenceMask_{0x000F};
@@ -478,8 +597,8 @@ MappedReadMatchStatus BAMrecord::getBestReferenceMatchStatus() const {
 		}
 	);
 	MappedReadMatchStatus bestMatch;
-	bestMatch.mapStart     = matchVectors.front().first;
-	bestMatch.matchStatus  = std::move(matchVectors.front().second);
+	bestMatch.mapStart    = matchVectors.front().first;
+	bestMatch.matchStatus = std::move(matchVectors.front().second);
 	std::for_each(
 		std::next( matchVectors.cbegin() ),
 		matchVectors.cend(),
@@ -513,7 +632,7 @@ MappedReadMatchStatus BAMrecord::getBestReferenceMatchStatus() const {
 				static_cast<hts_pos_t>(0),
 				eachSecondaryMatch.first - static_cast<hts_pos_t>( bestMatch.mapStart + bestMatch.matchStatus.size() )
 			);
-			bestMatch.matchStatus.resize(gapToSecondary, 0.0F);
+			bestMatch.matchStatus.resize(bestMatch.matchStatus.size() + gapToSecondary, 0.0F);
 
 			// if the current match status vector extends beyond the current best match
 			// if not, currentMatchIt will be the end iterator and nothing happens
@@ -669,6 +788,13 @@ std::string BAMrecord::getSequenceAndQuality(const MappedReadInterval &segmentBo
 constexpr uint16_t BAMtoGenome::suppSecondaryAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY};
 
 BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
+	const auto gffFileStatus{std::filesystem::status(bamGFFfilePairNames.gffFileName)};
+	if ( !std::filesystem::exists(gffFileStatus) ) {
+		throw std::string("ERROR: GFF file ")
+			+ bamGFFfilePairNames.gffFileName + std::string(" does not exist in ")
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+	}
+
 	const auto gffExonGroups{parseGFF(bamGFFfilePairNames.gffFileName)};
 
 	if ( gffExonGroups.empty() ) {
@@ -677,31 +803,8 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
 	}
 
-	constexpr char openMode{'r'};
-	std::unique_ptr<BGZF, void(*)(BGZF *)> bamFile(
-		bgzf_open(bamGFFfilePairNames.bamFileName.c_str(), &openMode),
-		[](BGZF *bamFile) {
-			bgzf_close(bamFile);
-		}
-	);
-	if (bamFile == nullptr) {
-		throw std::string("ERROR: failed to open the BAM file ")
-			+ bamGFFfilePairNames.bamFileName + std::string(" in ")
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
-
-	// must read the header first to get to the alignments
-	std::unique_ptr<sam_hdr_t, void(*)(sam_hdr_t *)> bamHeader(
-		bam_hdr_read( bamFile.get() ),
-		[](sam_hdr_t *samHeader) {
-			sam_hdr_destroy(samHeader);
-		}
-	);
-	if (bamHeader == nullptr) {
-		throw std::string("ERROR: failed to read the header from the BAM file ")
-			+ bamGFFfilePairNames.bamFileName + std::string(" in ")
-			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
-	}
+	BAMsafeReader bamFile(bamGFFfilePairNames.bamFileName);
+	const auto bamHeader{bamFile.getHeaderCopy()};
 
 	std::vector<std::string> outputLines; // gene information, if any, for each alignment to save
 	// keeping track of the latest iterators pointing to identified exon groups, one per chromosome/reference sequence
@@ -710,27 +813,21 @@ BAMtoGenome::BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames) {
 		latestExonGroupIts[eachChromosome.first] = eachChromosome.second.cbegin();
 	}
 	while (true) {
-		std::unique_ptr<bam1_t, void(*)(bam1_t *)> bamRecordPtr(
-			bam_init1(),
-			[](bam1_t *bamRecord){
-				bam_destroy1(bamRecord);
-			}
-		);
-		const auto nBytes = bam_read1( bamFile.get(), bamRecordPtr.get() );
-		if (nBytes == -1) {
+		const auto bamRecord{bamFile.getNextRecord()};
+		if (bamRecord.second == -1) {
 			break;
 		}
-		if (nBytes < -1) {
+		if (bamRecord.second < -1) {
 			continue;
 		}
 		// Is this a secondary alignment?
-		if ( ( (bamRecordPtr->core.flag & suppSecondaryAlgn_) != 0 ) ) {
+		if ( ( (bamRecord.first->core.flag & suppSecondaryAlgn_) != 0 ) ) {
 			if ( !readsAndExons_.empty() ) {
-				readsAndExons_.back().first.addSecondaryAlignment( bamRecordPtr.get(), bamHeader.get() );
+				readsAndExons_.back().first.addSecondaryAlignment( bamRecord.first.get(), bamHeader.get() );
 			}
 			continue;
 		}
-		BAMrecord currentBAM( bamRecordPtr.get(), bamHeader.get() );
+		BAMrecord currentBAM( bamRecord.first.get(), bamHeader.get() );
 		std::string referenceName{currentBAM.getReferenceName()};
 		const char strandID = (currentBAM.isRevComp() ? '-' : '+');
 		referenceName.push_back(strandID);
@@ -950,3 +1047,210 @@ std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const s
 	readsAndExons_.emplace_back(alignedRead, *searchIt);
 	return searchIt;
 };
+
+// BAMfile methods
+constexpr uint16_t BAMfile::secondaryOrUnmappedAlgn_{BAM_FSECONDARY | BAM_FSUPPLEMENTARY | BAM_FUNMAP};
+
+BAMfile::BAMfile(const std::string &BAMfileName) {
+	BAMsafeReader inputBAMfile(BAMfileName);
+	bamFileHeader_ = inputBAMfile.getHeaderCopy();
+
+	while (true) {
+		auto bamRecord{inputBAMfile.getNextRecord()};
+		if (bamRecord.second == -1) {
+			break;
+		}
+		if (bamRecord.second < -1) {
+			continue;
+		}
+		if ( (bamRecord.first->core.flag & secondaryOrUnmappedAlgn_) == 0 ) {
+			// mapped primary alignment; process
+			const std::string readName{bam_get_qname(bamRecord.first)};
+			const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), bamRecord.first->core.tid); 
+			if (refNamePtr != nullptr) {
+				const std::string refName{refNamePtr};
+				bamRecords_[refName][readName].emplace_back( std::move(bamRecord.first) );
+			}
+		}
+
+	}
+}
+
+size_t BAMfile::getPrimaryAlignmentCount() const noexcept {
+	size_t paCount{0};
+	for (const auto &eachReference : bamRecords_) {
+		paCount += eachReference.second.size();
+	}
+	return paCount;
+}
+
+void BAMfile::addRemaps(const std::string &remapBAMfileName, const float &remapIdentityCutoff) {
+	BAMsafeReader remapBAMfile(remapBAMfileName);
+	const auto remapHeader{remapBAMfile.getHeaderCopy()};
+
+	while (true) {
+		auto remapBAMrecord{remapBAMfile.getNextRecord()};
+		if (remapBAMrecord.second == -1) {
+			break;
+		}
+		if (remapBAMrecord.second < -1) {
+			continue;
+		}
+		if ( (remapBAMrecord.first->core.flag & secondaryOrUnmappedAlgn_) == 0 ) {
+			// mapped primary alignment; process
+			const std::string readName{bam_get_qname(remapBAMrecord.first)};
+			const ReadPortion realignedInfo{parseRemappedReadName(readName)};
+
+			// must search all references because the re-map may hit a different one from the original
+			if ( !realignedInfo.originalName.empty() ) {
+				for (auto &eachReference : bamRecords_) {
+					const auto primaryRecordIt = eachReference.second.find(realignedInfo.originalName);
+					if ( primaryRecordIt != eachReference.second.end() ) {
+						addRemappedSecondaryAlignment(remapHeader, remapBAMrecord.first, realignedInfo, bamFileHeader_, remapIdentityCutoff, primaryRecordIt->second);
+						break;
+					}
+				}
+			}
+		}
+
+	}
+}
+
+std::vector<std::string> BAMfile::saveRemappedBAM(const std::string &outputBAMfileName) const {
+	std::unique_ptr<BGZF, BGZFhandleDeleter> outputBAMfile;
+
+	try {
+		outputBAMfile = openBGZFtoAppend(outputBAMfileName);
+	} catch (std::string &problem) {
+		throw std::move(problem);	
+	}
+
+	constexpr uint32_t nRetries{10};
+	uint16_t iRetry{0};
+	int32_t headerWriteResult{-1};
+	while ( (headerWriteResult < 0) && (iRetry < nRetries) ) {
+		headerWriteResult = bam_hdr_write( outputBAMfile.get(), bamFileHeader_.get() );
+		++iRetry;
+	}
+    if (headerWriteResult < 0) {
+        throw std::string("ERROR: failed to write the header for the output BAM file ")
+			+ outputBAMfileName + " in "
+            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) )
+			+ std::string( strerror(errno) ); // NOLINT
+    }
+
+	std::vector<std::string> failedReads;
+	const int32_t nRef{sam_hdr_nref( bamFileHeader_.get() )};
+	int32_t iRef{0};
+	// save references/chromosomes in the same order as the original BAM file
+	while (iRef < nRef) {
+		const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), iRef); 
+		const std::string refName{refNamePtr};
+		// not all references have primary mapped reads, so finding is necessary
+		const auto refIt = bamRecords_.find(refName);
+		if ( refIt != bamRecords_.end() ) {
+			uint32_t localRetry{0};
+			std::vector<std::string> localFailedReads;
+			while (localRetry < nRetries) {
+				for (const auto &eachRead : refIt->second) {
+					std::for_each(
+						refIt->second.at(eachRead.first).cbegin(),
+						refIt->second.at(eachRead.first).cend(),
+						[&localFailedReads, &outputBAMfile, &eachRead](const auto &eachAlignment) {
+							const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
+							if (writeSuccess < 0) {
+								localFailedReads.push_back(eachRead.first);
+							}
+						}
+					);
+				}
+				if ( localFailedReads.empty() ) {
+					break;
+				}
+				++localRetry;
+			}
+			std::move( localFailedReads.begin(), localFailedReads.end(), std::back_inserter(failedReads) );
+		}
+		++iRef;
+	}
+
+	return failedReads;
+}
+
+std::vector<std::string> BAMfile::saveSortedRemappedBAM(const std::string &outputBAMfileName) const {
+	// we will be appen
+	std::unique_ptr<BGZF, BGZFhandleDeleter> outputBAMfile;
+
+	try {
+		outputBAMfile = openBGZFtoAppend(outputBAMfileName);
+	} catch (std::string &problem) {
+		throw std::move(problem);	
+	}
+
+	constexpr uint32_t nRetries{10};
+	uint16_t iRetry{0};
+	int32_t headerWriteResult{-1};
+	while ( (headerWriteResult < 0) && (iRetry < nRetries) ) {
+		headerWriteResult = bam_hdr_write( outputBAMfile.get(), bamFileHeader_.get() );
+		++iRetry;
+	}
+    if (headerWriteResult < 0) {
+        throw std::string("ERROR: failed to write the header for the output BAM file ")
+			+ outputBAMfileName + " in "
+            + std::string( static_cast<const char*>(__PRETTY_FUNCTION__) )
+			+ std::string( strerror(errno) ); // NOLINT
+    }
+
+	std::vector<std::string> failedReads;
+	const int32_t nRef{sam_hdr_nref( bamFileHeader_.get() )};
+	int32_t iRef{0};
+	// save references/chromosomes in the same order as the original BAM file
+	while (iRef < nRef) {
+		const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), iRef); 
+		const std::string refName{refNamePtr};
+		// not all references have primary mapped reads, so finding is necessary
+		const auto refIt = bamRecords_.find(refName);
+		if ( refIt != bamRecords_.end() ) {
+			// copy over just the map positions of reads
+			std::vector< std::pair<std::string, hts_pos_t> > readPositions;
+			std::for_each(
+				refIt->second.cbegin(),
+				refIt->second.cend(),
+				[&readPositions](const auto &eachRead) {
+					readPositions.emplace_back(eachRead.first, eachRead.second.front()->core.pos);
+				}
+			);
+			std::sort(
+				readPositions.begin(),
+				readPositions.end(),
+				[](const std::pair<std::string, hts_pos_t> &firstPair, const std::pair<std::string, hts_pos_t> &secondPair) {
+					return firstPair.second < secondPair.second;
+				}
+			);
+			uint32_t localRetry{0};
+			std::vector<std::string> localFailedReads;
+			while (localRetry < nRetries) {
+				for (const auto &eachReadPosition : readPositions) {
+					std::for_each(
+						refIt->second.at(eachReadPosition.first).cbegin(),
+						refIt->second.at(eachReadPosition.first).cend(),
+						[&localFailedReads, &outputBAMfile, &eachReadPosition](const auto &eachAlignment) {
+							const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
+							if (writeSuccess < 0) {
+								localFailedReads.push_back(eachReadPosition.first);
+							}
+						}
+					);
+				}
+				if ( localFailedReads.empty() ) {
+					break;
+				}
+				++localRetry;
+			}
+			std::move( localFailedReads.begin(), localFailedReads.end(), std::back_inserter(failedReads) );
+		}
+		++iRef;
+	}
+
+	return failedReads;
+}

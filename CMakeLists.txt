@@ -7,7 +7,7 @@ include(CheckCXXCompilerFlag)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 if (NOT DEFINED CMAKE_CXX_STANDARD)
-	set(CMAKE_CXX_STANDARD 14)
+	set(CMAKE_CXX_STANDARD 17)
 endif()
 
 # Adding a Profile build type
@@ -72,7 +72,7 @@ endif()
 include(ExternalProject)
 ExternalProject_Add(htslib
 	GIT_REPOSITORY         https://github.com/samtools/htslib
-	GIT_TAG                6a7d33abc6cae840023868ccdd946d0d8759f259
+	GIT_TAG                c1f35d67dd5ff1e226d94abe7b850f28c60f5910
 	GIT_SUBMODULES_RECURSE TRUE
 	GIT_PROGRESS           TRUE
 	CONFIGURE_COMMAND      autoreconf -i <SOURCE_DIR>
@@ -203,6 +203,32 @@ install(TARGETS partialmaps
 	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+add_executable(addremaps
+	${CMAKE_CURRENT_LIST_DIR}/apps/addremaps.cpp
+)
+target_include_directories(addremaps
+	PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include
+)
+target_include_directories(addremaps SYSTEM
+	PRIVATE ${htslib_SOURCE_DIR}/htslib
+)
+target_link_libraries(addremaps
+	PRIVATE isoseqAln
+)
+target_compile_options(addremaps
+	PRIVATE ${PROJECT_WARNINGS_CXX}
+)
+if(BUILD_TESTS)
+	target_compile_options(addremaps
+		PRIVATE -fsanitize=${SANITIZER_LIST}
+	)
+endif()
+set_target_properties(addremaps PROPERTIES
+	CXX_STANDARD_REQUIRED ON
+)
+install(TARGETS addremaps
+	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
 # library
 add_library(isoseqAln
 	${CMAKE_CURRENT_LIST_DIR}/src/isoseqAlgn.cpp
