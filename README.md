@@ -1,6 +1,6 @@
 # Overview
 
-A C++14 library and software to assess the quality of [iso-Seq](https://www.pacb.com/wp-content/uploads/2018-10-NA-UGM-Iso-Seq-Method.pdf) read alignments. The project is still in development. Planned functionality includes:
+A C++17 library and software to assess the quality of [iso-Seq](https://www.pacb.com/wp-content/uploads/2018-10-NA-UGM-Iso-Seq-Method.pdf) read alignments. The project is still in development. Planned functionality includes:
 
     1. Assessing mapping quality and relating mapped regions to annotated genes.
     2. Identification of mistakes in mapping and read regions with poor mapping quality.
@@ -10,7 +10,7 @@ Goals (1) and (2) have been completed. Goal (3) is under development.
 
 # Dependencies
 
-The project requires a C++14 compiler and depends on [htslib](https://github.com/samtools/htslib) for handling BAM files. A `cmake` script is included in the repository for easy building and installation. It requires `cmake` version 3.21 or later and automatically downloads `htslib`. If one wants to optionally build tests, Catch2 is also required and is automatically downloaded using the `cmake` script.
+The project requires a C++17 compiler and depends on [htslib](https://github.com/samtools/htslib) for handling BAM files. A `cmake` script is included in the repository for easy building and installation. It requires `cmake` version 3.21 or later and automatically downloads `htslib`. If one wants to optionally build tests, Catch2 is also required and is automatically downloaded using the `cmake` script.
 
 # Download and install
 
@@ -76,11 +76,25 @@ The output is a tab-delimited text file with the following columns:
 
     read_name      -- read name.
     read_length    -- read length.
-	unmapped_start -- 0-based index of the unmapped region start in the read.
-	unmapped_end   -- 0-based index of the unmapped region end in the read.
+	unmapped_start -- 0-base index of the unmapped region start in the read.
+	unmapped_end   -- 0-base index of the unmapped region end in the read.
     window_size    -- sliding window size.
 
 FASTQ sequence identifier fields are read names, with read portion base-0 start and stop positions added, separated by underscores.
+
+# `addremaps`
+
+`addremaps` is a command line tool that takes the initial alignment and a file with re-mapped read portions and adds successful re-maps to the original BAM records as a secondary alignment. CIGAR strings are modified to mark re-mapped regions as unaligned. Primary alignments from records without re-maps are transferred to the output unchanged. The output file is sorted by default, but this can be turned off. The CLI flags are
+
+```{sh}
+  --input-bam        bam_file_name (input BAM file name; required).
+  --remapped-bam     remapped_bam_file_name (BAM file with remapped read portions; required).
+  --out              out_file_name (output BAM file name; required).
+  --remap-cutoff     identity cutoff for read portion remapping (defaults to 0.99).
+  --unsorted-output  if set (with no value), the output BAM file is unsorted (otherwise, sorted).
+```
+
+As with the other tools, running `addremaps` without flags prints the above list.
 
 # Tests
 
