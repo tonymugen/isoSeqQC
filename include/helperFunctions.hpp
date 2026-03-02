@@ -40,7 +40,9 @@
 #include "isoseqAlgn.hpp"
 
 namespace isaSpace {
+	/** \brief Number of GFF file fields */
 	constexpr size_t nGFFfields{9UL};
+	/** \brief Alias for BAM record and exon group pair vector */
 	using bamGFFvector = std::vector< std::pair<BAMrecord, ExonGroup> >;
 
 	/** \brief Extract a name 

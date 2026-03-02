@@ -90,12 +90,12 @@ set(htslib_SOURCE_DIR ${SOURCE_DIR})
 #
 # Tests with Catch2
 #
+include(FetchContent)
 option(BUILD_TESTS
 	"Build tests"
 	OFF
 )
 if(PROJECT_IS_TOP_LEVEL AND BUILD_TESTS)
-	Include(FetchContent)
 	set (FETCHCONTENT_QUIET FALSE)
 	FetchContent_Declare(
 	  Catch2
@@ -105,6 +105,16 @@ if(PROJECT_IS_TOP_LEVEL AND BUILD_TESTS)
 	  SYSTEM                # to disable Catch2 warnings
 	)
 	FetchContent_MakeAvailable(Catch2)
+endif()
+#
+# Documentation
+#
+option(BUILD_DOCS
+	"Build docs"
+	OFF
+)
+if(PROJECT_IS_TOP_LEVEL AND BUILD_DOCS)
+	add_subdirectory(docs)
 endif()
 #
 # Find active available sanitizers
