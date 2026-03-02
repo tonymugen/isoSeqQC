@@ -855,7 +855,7 @@ namespace isaSpace {
 		 * Uses exon positions from the provided GFF file to find iso-Seq alignments from the
 		 * provided BAM file that may have mis-mapped first exons.
 		 *
-		 * \param[in] BamAndGffFiles BAM and GFF file name pair
+		 * \param[in] bamGFFfilePairNames BAM and GFF file name pair
 		 *
 		 */
 		BAMtoGenome(const BamAndGffFiles &bamGFFfilePairNames);
