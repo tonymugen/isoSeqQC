@@ -1,12 +1,6 @@
 # Overview
 
-A C++17 library and software to assess the quality of [iso-Seq](https://www.pacb.com/wp-content/uploads/2018-10-NA-UGM-Iso-Seq-Method.pdf) read alignments. The project is still in development. Planned functionality includes:
-
-    1. Assessing mapping quality and relating mapped regions to annotated genes.
-    2. Identification of mistakes in mapping and read regions with poor mapping quality.
-    3. Re-alignment of poorly mapped read portions and re-integration of the results into alignment BAM files.
-
-Goals (1) and (2) have been completed. Goal (3) is under development.
+A C++17 library and software to assess the quality of [iso-Seq](https://www.pacb.com/wp-content/uploads/2018-10-NA-UGM-Iso-Seq-Method.pdf) read alignments.
 
 # Dependencies
 
@@ -96,7 +90,7 @@ FASTQ sequence identifier fields are read names, with read portion base-0 start 
 
 As with the other tools, running `addremaps` without flags prints the above list.
 
-# Tests
+# Tests and documentation
 
 Unit tests can be optionally built, without installing the software on the system:
 
@@ -107,6 +101,15 @@ cmake -DCMAKE_BUILD_TYPE=Test ..
 cmake --build .
 ./tests
 ```
+
+Library API documentation is in the header files, and can be optionally built using [Doxygen](https://www.doxygen.nl/):
+
+```sh
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_DOCS=ON
+cmake --build .
+```
+
+in the `build` directory. This requires that `doxygen` and `pdflatex` are installed in the execution path.
 
 # Funding
 
