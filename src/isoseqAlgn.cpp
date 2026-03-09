@@ -847,7 +847,7 @@ size_t BAMtoGenome::nChromosomes() const noexcept {
 		readsAndExons_.cbegin(),
 		readsAndExons_.cend(),
 		[&chromosomes](const std::pair<BAMrecord, ExonGroup> &currentReadEG) {
-			std::string chrName = currentReadEG.first.getReadName();
+			std::string chrName = currentReadEG.first.getReferenceName();
 			chromosomes.insert(chrName);
 		}
 	);
