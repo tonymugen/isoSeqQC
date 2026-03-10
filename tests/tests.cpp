@@ -66,6 +66,33 @@ TEST_CASE("Safe BAM reading works") {
 		isaSpace::BAMsafeReader(randomNoiseBAMname),
 		Catch::Matchers::StartsWith("ERROR: no EOF marker in the BAM file")
 	);
+
+	// Move constructor transfers the file handle: the moved-into object reads the correct header and record
+	{
+		isaSpace::BAMsafeReader moveCtorSource(goodBAM);
+		isaSpace::BAMsafeReader moveCtorDest( std::move(moveCtorSource) );
+		const auto movedHeader{ moveCtorDest.getHeaderCopy() };
+		REQUIRE(sam_hdr_nref( movedHeader.get() ) == oneRecordNREF);
+		const auto movedRecord{ moveCtorDest.getNextRecord() };
+		REQUIRE(movedRecord.first != nullptr);
+		REQUIRE(movedRecord.second == oneRecordSize);
+		const auto movedRecordLast{ moveCtorDest.getNextRecord() };
+		REQUIRE(movedRecordLast.second == -1);
+	}
+
+	// Move assignment transfers the file handle: the assigned-to object reads the correct header and record
+	{
+		isaSpace::BAMsafeReader moveAssignSource(goodBAM);
+		isaSpace::BAMsafeReader moveAssignDest;
+		moveAssignDest = std::move(moveAssignSource);
+		const auto assignedHeader{ moveAssignDest.getHeaderCopy() };
+		REQUIRE(sam_hdr_nref( assignedHeader.get() ) == oneRecordNREF);
+		const auto assignedRecord{ moveAssignDest.getNextRecord() };
+		REQUIRE(assignedRecord.first != nullptr);
+		REQUIRE(assignedRecord.second == oneRecordSize);
+		const auto assignedRecordLast{ moveAssignDest.getNextRecord() };
+		REQUIRE(assignedRecordLast.second == -1);
+	}
 }
 
 TEST_CASE("Helper functions work") {
@@ -812,7 +839,7 @@ TEST_CASE("Helper functions work") {
 		const auto throwAway{std::remove( tempBAMname.c_str() )};
 	}
 
-	SECTION("Parse command line") {
+	SECTION("Parse command line flags") {
 		// standard --flag value pairs
 		std::vector<std::string> argStrings1{"program", "--input-bam", "test.bam", "--threads", "4"};
 		std::vector<char *> argPtrs1;
@@ -947,6 +974,7 @@ TEST_CASE("Exon range extraction works") {
 	// positive strand
 	strand = '+';
 	isaSpace::ExonGroup testExonGroupPos(testGeneName, strand, testSet);
+	REQUIRE( !testExonGroupPos.empty() );
 	REQUIRE(testExonGroupPos.nExons()  == correctNexons);
 	REQUIRE(testExonGroupPos.strand()  == strand);
 	REQUIRE(testExonGroupNeg.at(1).first  == testExonSpans.at(1).first);
@@ -1299,6 +1327,7 @@ TEST_CASE("Exon range extraction works") {
 	REQUIRE( emptyExonGroup.firstExonSpan().first  == -1 );
 	REQUIRE( emptyExonGroup.firstExonSpan().second == -1 );
 	REQUIRE( emptyExonGroup.firstExonLength() == 0 );
+	REQUIRE( emptyExonGroup.empty() );
 
 	// getBestExonCoverageQuality returns empty for a default-constructed (unmapped) BAMrecord
 	const isaSpace::BAMrecord defaultBAMrec;
@@ -1904,12 +1933,20 @@ TEST_CASE("GFF and BAM parsing works") {
 	);
 
 	const std::string gffName("../tests/posNegYak.gff");
+	const std::string emptyGFFname("../tests/empty.gff");
 	const std::string testAlignmentBAMname("../tests/testAlignment.bam");
 	const std::string outFileName("../tests/testResults.tsv");
 	constexpr size_t nThreads{2};
 	isaSpace::BamAndGffFiles gffPair;
-	gffPair.gffFileName = gffName;
+	gffPair.gffFileName = emptyGFFname;
 	gffPair.bamFileName = testAlignmentBAMname;
+	REQUIRE_THROWS_WITH(
+		isaSpace::BAMtoGenome(gffPair),
+		Catch::Matchers::StartsWith("ERROR: no mRNAs with exons found in the")
+	);
+
+
+	gffPair.gffFileName = gffName;
 	isaSpace::BAMtoGenome testBTG(gffPair);
 	constexpr size_t correctNChroms{3};
 	constexpr size_t correctNexonSets{8};
