@@ -36,6 +36,7 @@
 #include <sstream>
 #include <fstream>
 #include <utility>
+#include <filesystem>
 
 #include "sam.h"
 
@@ -73,6 +74,7 @@ std::string isaSpace::extractAttributeName(const TokenAttibuteListPair &tokenAnd
 			tokenIt->cend(),
 			std::back_inserter(attributeField)
 		);
+		++tokenIt;
 	}
 	return attributeField;
 }
@@ -190,13 +192,17 @@ std::vector<std::vector<float>::const_iterator> isaSpace::getValleys(const std::
 }
 
 std::vector<float> isaSpace::getReferenceMatchStatus(const std::vector<uint32_t> &cigar) {
-	constexpr std::array<hts_pos_t, 10> referenceConsumption{
+	// bam_cigar_op returns a 4-bit value, but only the first 10 are defined by the CIGAR spec
+	// I pretend that the remaining values consume nether reference nor read
+	constexpr std::array<hts_pos_t, 16> referenceConsumption{
 		1, 0, 1, 1, 0,
-		0, 0, 1, 1, 0
+		0, 0, 1, 1, 0,
+		0, 0, 0, 0, 0, 0
 	};
-	constexpr std::array<float, 10> sequenceMatch{
+	constexpr std::array<float, 16> sequenceMatch{
 		1.0, 0.0, 0.0, 0.0, 0.0,
-		0.0, 0.0, 1.0, 0.0, 0.0
+		0.0, 0.0, 1.0, 0.0, 0.0,
+		0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 	};
 	std::vector<float> referenceMatchStatus;
 	for (const auto &eachCIGAR : cigar) {
@@ -596,7 +602,10 @@ void isaSpace::addRemappedSecondaryAlignment(
 
 std::unique_ptr<BGZF, BGZFhandleDeleter> isaSpace::openBGZFtoAppend(const std::string &bamFileName) {
 	// we will be appending, so must delete this file if it exists
-	const auto rmvSuccess = std::remove( bamFileName.c_str() );
+	const auto rmvSuccess = std::filesystem::remove(bamFileName);
+	if ( std::filesystem::exists(bamFileName) ) {
+		return nullptr;
+	}
 
 	constexpr char openMode{'a'};
 	BGZFhandleDeleter handleDeleter;

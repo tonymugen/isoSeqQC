@@ -30,6 +30,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <filesystem>
 
 #include "sam.h"
 
@@ -139,6 +140,24 @@ TEST_CASE("Helper functions work") {
 		constexpr std::pair<hts_pos_t, hts_pos_t> firstRev(lateES, earlyES);
 		constexpr std::pair<hts_pos_t, hts_pos_t> secondRev(lateEE, earlyEE);
 		REQUIRE( isaSpace::rangesOverlap(firstRev, secondRev) );
+
+		// Test two consecutive escaped semicolons
+		constexpr size_t nAttr2{4};
+		std::array<std::string, nAttr2> doubleEscapeArr{
+			"ID=rna-XM_043206943.1",
+			"Name=geneA\\",
+			"continuation\\",
+			"end"
+		};
+		isaSpace::TokenAttibuteListPair doubleEscapeTokAttr;
+		std::copy(
+			doubleEscapeArr.cbegin(),
+			doubleEscapeArr.cend(),
+			std::back_inserter(doubleEscapeTokAttr.attributeList)
+		);
+		doubleEscapeTokAttr.tokenName = "Name=";
+		const std::string doubleEscapeResult{isaSpace::extractAttributeName(doubleEscapeTokAttr)};
+		REQUIRE(doubleEscapeResult == "geneA\\;continuation\\;end");
 	}
 
 	SECTION("Peak and valley functions") {
@@ -722,7 +741,7 @@ TEST_CASE("Helper functions work") {
 		const auto midRecordPtr{midBAMfile.getNextRecord()};
 		isaSpace::BAMrecord midBAMrecord( midRecordPtr.first.get(), midBAMheader.get() );
 
-		isaSpace::bamGFFvector midVector{{midBAMrecord, isaSpace::ExonGroup{}}};
+		isaSpace::bamGFFvector midVector{ { midBAMrecord, isaSpace::ExonGroup{} } };
 		const auto badRegionStr{isaSpace::stringifyUnmappedRegions(midVector.cbegin(), midVector.cend(), windowParams)};
 
 		// one poorly mapped region produces exactly one output line
@@ -836,7 +855,7 @@ TEST_CASE("Helper functions work") {
 			REQUIRE(bgzfHandle2 != nullptr);
 		}
 
-		const auto throwAway{std::remove( tempBAMname.c_str() )};
+		const auto throwAway{std::filesystem::remove(tempBAMname)};
 	}
 
 	SECTION("Parse command line flags") {
@@ -2156,6 +2175,6 @@ TEST_CASE("Test adding and saving unmapped regions from a BAM file") {
 	const auto failedReadsSorted{testInputAlgnBAM.saveSortedRemappedBAM(sortedOutBAMname)};
 	REQUIRE( failedReadsSorted.empty() );
 
-	const auto rmvUSSuccess = std::remove( unsortedOutBAMname.c_str() );
-	const auto rmvSSuccess = std::remove( sortedOutBAMname.c_str() );
+	const auto rmvUSSuccess = std::filesystem::remove(unsortedOutBAMname);
+	const auto rmvSSuccess = std::filesystem::remove(sortedOutBAMname);
 }

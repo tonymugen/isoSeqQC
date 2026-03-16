@@ -1038,7 +1038,10 @@ namespace isaSpace {
 	private:
 		/** \brief Flag testing the two possible secondary alignment markers */
 		static const uint16_t secondaryOrUnmappedAlgn_;
-		/** \brief BAM records indexed by name, separated by reference/chromosome */
+		/** \brief BAM records indexed by name, separated by reference/chromosome
+		 *
+		 * The outer map indexes references by name. Each reference is a map of read names to a vector of BAM alignments (primary and secondary).
+		 */
 		std::unordered_map<
 			std::string,
 			std::unordered_map<

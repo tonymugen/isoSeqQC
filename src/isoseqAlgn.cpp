@@ -89,6 +89,7 @@ BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFile
 	}
 	const int32_t eofTest = bgzf_check_EOF(fileHandle_);
 	if (eofTest != 1) {
+		bgzf_close(fileHandle_);
 		if ( std::filesystem::exists(fileName_) ) {
 			std::filesystem::permissions(fileName_, initialPermissions_);
 		}
@@ -108,6 +109,7 @@ BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFile
 		++iRetry;
 	}
 	if (headerUPointer_ == nullptr) {
+		bgzf_close(fileHandle_);
 		if ( std::filesystem::exists(fileName_) ) {
 			std::filesystem::permissions(fileName_, initialPermissions_);
 		}
@@ -117,6 +119,7 @@ BAMsafeReader::BAMsafeReader(const std::string &bamFileName) : fileName_{bamFile
 			+ std::string( strerror(errno) ); // NOLINT
 	}
 	if (sam_hdr_nref( headerUPointer_.get() ) < 0) {
+		bgzf_close(fileHandle_);
 		if ( std::filesystem::exists(fileName_) ) {
 			std::filesystem::permissions(fileName_, initialPermissions_);
 		}
@@ -1001,7 +1004,7 @@ std::vector<ExonGroup>::const_iterator BAMtoGenome::findOverlappingGene_(const s
 
 	// if the BAM file is not sorted, we may have to backtrack
 	// looking for the first gene end that is after the read map start
-	if (alignedRead.getMapStart() < exonGroupSearchStart->geneSpan().first) {
+	if ( ( exonGroupSearchStart != chromosomeExonGroups.cend() ) && (alignedRead.getMapStart() < exonGroupSearchStart->geneSpan().first) ) {
 		auto reverseLEGI = std::make_reverse_iterator(searchIt);
 		reverseLEGI      = std::lower_bound(
 			reverseLEGI,
@@ -1121,6 +1124,11 @@ std::vector<std::string> BAMfile::saveRemappedBAM(const std::string &outputBAMfi
 
 	try {
 		outputBAMfile = openBGZFtoAppend(outputBAMfileName);
+		if (outputBAMfile == nullptr) {
+		throw std::string("ERROR: failed to open the BAM file ")
+			+ outputBAMfileName + " for appending in "
+			+ std::string( static_cast<const char*>(__PRETTY_FUNCTION__) );
+		}
 	} catch (std::string &problem) {
 		throw std::move(problem);	
 	}
