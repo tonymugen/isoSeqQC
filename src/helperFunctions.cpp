@@ -623,6 +623,33 @@ std::unique_ptr<BGZF, BGZFhandleDeleter> isaSpace::openBGZFtoAppend(const std::s
 	return outputBAMfile;
 }
 
+std::vector<std::string> isaSpace::appendWithRetries(
+		const std::unique_ptr<BGZF, BGZFhandleDeleter> &outputBAMfile,
+		const std::vector< std::pair<std::string, hts_pos_t> > &readNamesWithPositions,
+		const std::unordered_map< std::string, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > > &bamRecords,
+		const uint32_t &nRetries) {
+
+	std::vector<std::string> failedReads;
+	for (const auto &eachReadName : readNamesWithPositions) {
+		std::for_each(
+			bamRecords.at(eachReadName.first).cbegin(),
+			bamRecords.at(eachReadName.first).cend(),
+			[&failedReads, &outputBAMfile, &eachReadName, &nRetries](const auto &eachAlignment) {
+				uint32_t localRetry{0};
+				int32_t writeSuccess{-1};
+				while ( (localRetry < nRetries) && (writeSuccess < 0) ) {
+					writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
+					++localRetry;
+				}
+				if (writeSuccess < 0) {
+					failedReads.push_back(eachReadName.first);
+				}
+			}
+		);
+	}
+	return failedReads;
+}
+
 std::vector< std::pair<bamGFFvector::const_iterator, bamGFFvector::const_iterator> > 
 											isaSpace::makeThreadRanges(const bamGFFvector &targetVector, const size_t &threadCount) {
 	std::vector<bamGFFvector::difference_type> chunkSizes(

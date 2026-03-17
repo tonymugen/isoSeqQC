@@ -1153,30 +1153,24 @@ std::vector<std::string> BAMfile::saveRemappedBAM(const std::string &outputBAMfi
 	// save references/chromosomes in the same order as the original BAM file
 	while (iRef < nRef) {
 		const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), iRef); 
+		if (refNamePtr == nullptr) {
+			continue;
+		}
 		const std::string refName{refNamePtr};
 		// not all references have primary mapped reads, so finding is necessary
 		const auto refIt = bamRecords_.find(refName);
 		if ( refIt != bamRecords_.end() ) {
+			// copy over just the map positions of reads
+			std::vector< std::pair<std::string, hts_pos_t> > readPositions;
+			std::for_each(
+				refIt->second.cbegin(),
+				refIt->second.cend(),
+				[&readPositions](const auto &eachRead) {
+					readPositions.emplace_back(eachRead.first, eachRead.second.front()->core.pos);
+				}
+			);
 			uint32_t localRetry{0};
-			std::vector<std::string> localFailedReads;
-			while (localRetry < nRetries) {
-				for (const auto &eachRead : refIt->second) {
-					std::for_each(
-						refIt->second.at(eachRead.first).cbegin(),
-						refIt->second.at(eachRead.first).cend(),
-						[&localFailedReads, &outputBAMfile, &eachRead](const auto &eachAlignment) {
-							const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
-							if (writeSuccess < 0) {
-								localFailedReads.push_back(eachRead.first);
-							}
-						}
-					);
-				}
-				if ( localFailedReads.empty() ) {
-					break;
-				}
-				++localRetry;
-			}
+			std::vector<std::string> localFailedReads{appendWithRetries(outputBAMfile, readPositions, refIt->second, nRetries)};
 			std::move( localFailedReads.begin(), localFailedReads.end(), std::back_inserter(failedReads) );
 		}
 		++iRef;
@@ -1215,6 +1209,9 @@ std::vector<std::string> BAMfile::saveSortedRemappedBAM(const std::string &outpu
 	// save references/chromosomes in the same order as the original BAM file
 	while (iRef < nRef) {
 		const auto *const refNamePtr = sam_hdr_tid2name(bamFileHeader_.get(), iRef); 
+		if (refNamePtr == nullptr) {
+			continue;
+		}
 		const std::string refName{refNamePtr};
 		// not all references have primary mapped reads, so finding is necessary
 		const auto refIt = bamRecords_.find(refName);
@@ -1236,25 +1233,7 @@ std::vector<std::string> BAMfile::saveSortedRemappedBAM(const std::string &outpu
 				}
 			);
 			uint32_t localRetry{0};
-			std::vector<std::string> localFailedReads;
-			while (localRetry < nRetries) {
-				for (const auto &eachReadPosition : readPositions) {
-					std::for_each(
-						refIt->second.at(eachReadPosition.first).cbegin(),
-						refIt->second.at(eachReadPosition.first).cend(),
-						[&localFailedReads, &outputBAMfile, &eachReadPosition](const auto &eachAlignment) {
-							const auto writeSuccess = bam_write1( outputBAMfile.get(), eachAlignment.get() );
-							if (writeSuccess < 0) {
-								localFailedReads.push_back(eachReadPosition.first);
-							}
-						}
-					);
-				}
-				if ( localFailedReads.empty() ) {
-					break;
-				}
-				++localRetry;
-			}
+			std::vector<std::string> localFailedReads{appendWithRetries(outputBAMfile, readPositions, refIt->second, nRetries)};
 			std::move( localFailedReads.begin(), localFailedReads.end(), std::back_inserter(failedReads) );
 		}
 		++iRef;

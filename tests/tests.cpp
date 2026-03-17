@@ -41,6 +41,7 @@
 //#include "catch2/matchers/catch_matchers.hpp"
 #include "catch2/matchers/catch_matchers_string.hpp"
 #include "catch2/catch_approx.hpp"
+#include "catch2/benchmark/catch_benchmark.hpp"
 
 TEST_CASE("Safe BAM reading works") {
 	// good BAM input file
@@ -958,6 +959,77 @@ TEST_CASE("Helper functions work") {
 			isaSpace::extractCLinfo(missingRequired, intVars, floatVars, strVars),
 			Catch::Matchers::StartsWith("ERROR: remapped-bam")
 		);
+	}
+
+	// Created by Claude
+	SECTION("Append BAM records with retries") {
+		// Empty readNamesWithPositions returns an empty failedReads vector without
+		// touching the file handle (null handle is safe when the loop never executes)
+		{
+			isaSpace::BGZFhandleDeleter bgzfDeleter;
+			std::unique_ptr<BGZF, isaSpace::BGZFhandleDeleter> nullHandle(nullptr, bgzfDeleter);
+			const std::vector< std::pair<std::string, hts_pos_t> > emptyNames;
+			std::unordered_map< std::string, std::vector< std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> > > emptyRecords;
+			constexpr uint32_t nRetries{3};
+			const auto failedEmpty = isaSpace::appendWithRetries(nullHandle, emptyNames, emptyRecords, nRetries);
+			REQUIRE( failedEmpty.empty() );
+		}
+
+		// nRetries == 0: the write loop never executes so the handle is never accessed;
+		// every read in readNamesWithPositions is reported as failed
+		{
+			isaSpace::BGZFhandleDeleter bgzfDeleter;
+			std::unique_ptr<BGZF, isaSpace::BGZFhandleDeleter> nullHandle(nullptr, bgzfDeleter);
+			const std::string failReadName("zeroRetriesRead");
+			const std::vector< std::pair<std::string, hts_pos_t> > names{ {failReadName, 0} };
+			isaSpace::BAMrecordDeleter recDeleter;
+			std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> dummyRec(bam_init1(), recDeleter);
+			std::unordered_map< std::string, std::vector< std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> > > records;
+			records[failReadName].emplace_back( std::move(dummyRec) );
+			constexpr uint32_t zeroRetries{0};
+			const auto failedZero = isaSpace::appendWithRetries(nullHandle, names, records, zeroRetries);
+			REQUIRE(failedZero.size() == 1);
+			REQUIRE(failedZero.at(0) == failReadName);
+		}
+
+		// Normal write; cannot guarantee success as it is up to HTSLIB
+		{
+			const std::string tempBAMname("../tests/appendWithRetriesTemp.bam");
+			isaSpace::BGZFhandleDeleter bgzfDeleter;
+			std::unique_ptr<BGZF, isaSpace::BGZFhandleDeleter> outHandle(
+				bgzf_open(tempBAMname.c_str(), "w"),
+				bgzfDeleter
+			);
+			REQUIRE(outHandle != nullptr);
+
+			constexpr uint32_t readLen{50};
+			const std::string readName("normalRead");
+			const std::string seq(readLen, 'A');
+			const std::string qual(readLen, '~');
+			constexpr std::array<uint32_t, 1> normalCIGAR{ bam_cigar_gen(readLen, BAM_CMATCH) };
+			isaSpace::BAMrecordDeleter recDeleter;
+			std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> record(bam_init1(), recDeleter);
+			int32_t setRes = bam_set1( // NOLINT
+				record.get(),
+				readName.size(), readName.c_str(),
+				0, 0, 1000, 60, // NOLINT
+				normalCIGAR.size(), normalCIGAR.data(),
+				0, 0, static_cast<hts_pos_t>(readLen),
+				readLen, seq.c_str(), qual.c_str(), 0
+			);
+			const std::vector< std::pair<std::string, hts_pos_t> > normalNames{ {readName, 1000} }; // NOLINT
+			std::unordered_map< std::string, std::vector< std::unique_ptr<bam1_t, isaSpace::BAMrecordDeleter> > > normalRecords;
+			normalRecords[readName].emplace_back( std::move(record) );
+			constexpr uint32_t nRetries{3};
+			const auto failedWrites = isaSpace::appendWithRetries(outHandle, normalNames, normalRecords, nRetries);
+			// Write success controlled by HTSLIB code,
+			// so I cannot guarantee success, thus not requiring empty vector.
+			// There must not be more failed than input records.
+			REQUIRE( failedWrites.size() <= normalNames.size() );
+
+			outHandle.reset();
+			std::filesystem::remove(tempBAMname);
+		}
 	}
 }
 

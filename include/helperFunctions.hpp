@@ -211,7 +211,24 @@ namespace isaSpace {
 	 *
 	 * \param[in] bamFileName BAM file name
 	 */
-	std::unique_ptr<BGZF, BGZFhandleDeleter> openBGZFtoAppend(const std::string &bamFileName);
+	[[nodiscard]] std::unique_ptr<BGZF, BGZFhandleDeleter> openBGZFtoAppend(const std::string &bamFileName);
+
+	/** \brief Append BAM records to a file, retrying if failed 
+	 *
+	 * The number of re-tries is capped at `nRetries`. Returns a vector with names of reads that failed to be written.
+	 * The `bamRecords` variable typically contains data for a chromosome/reference.
+	 *
+	 * \param[in] outputBAMfile BAM file handle to append
+	 * \param[in] readNamesWithPositions read name/position pair vector
+	 * \param[in] bamRecords collection of BAM records indexed by read names
+	 * \param[in] nRetries re-try cap
+	 * \return  vector with names of reads that failed to be written
+	 */
+	[[nodiscard]] std::vector<std::string> appendWithRetries(
+		const std::unique_ptr<BGZF, BGZFhandleDeleter> &outputBAMfile,
+		const std::vector< std::pair<std::string, hts_pos_t> > &readNamesWithPositions,
+		const std::unordered_map< std::string, std::vector< std::unique_ptr<bam1_t, BAMrecordDeleter> > > &bamRecords,
+		const uint32_t &nRetries);
 
 	/** \brief Make per-thread alignment record/annotation vector ranges
 	 *
